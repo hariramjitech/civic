@@ -32,10 +32,6 @@ export default function Navbar({ role }) {
     { path: '/my-account', label: 'Account', icon: User },
   ];
 
-  if (role === 'admin' || role === 'department' || role === 'officer') {
-    links.push({ path: '/admin', label: 'Admin', icon: Shield });
-  }
-
   return (
     <>
       <nav

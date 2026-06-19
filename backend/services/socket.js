@@ -74,6 +74,19 @@ const initSocket = (io) => {
     // ── SUBSCRIBE TO LIVE FEED ───────────────
     socket.on('feed:subscribe', () => socket.join('feed'));
 
+    // ── SUBSCRIBE TO SPECIFIC POST UPDATES ────
+    socket.on('post:subscribe', ({ postId }) => {
+      if (postId) {
+        socket.join(`post:${postId}`);
+      }
+    });
+
+    socket.on('post:unsubscribe', ({ postId }) => {
+      if (postId) {
+        socket.leave(`post:${postId}`);
+      }
+    });
+
     // ── DISCONNECT (ephemeral cleanup) ───────
     socket.on('disconnect', async () => {
       const { roomId, alias } = socket.data || {};

@@ -19,7 +19,8 @@ const {
   classifyIssue, checkDuplicate, moderateContent,
   generateReport, predictRiskZones,
   reverseGeocode, fetchGovRoadData,
-  updateIntensityScore,
+  updateIntensityScore, rewriteComplaint,
+  getHaversineDistance,
 } = require('../services/services');
 
 // ═══════════════════════════════════════════
@@ -185,12 +186,76 @@ router.post('/posts',
       }
     }
 
+    // Forensic metadata parsing & validation
+    let imageMetadata = {
+      camera: 'Unknown',
+      dateTimeOriginal: null,
+      software: 'Unknown',
+      hasGPS: false,
+      exifGPS: { lat: 0, lng: 0 },
+      gpsMatchStatus: 'no_gps_data'
+    };
+    let metadataContext = '';
+
+    if (req.files?.length) {
+      try {
+        const parser = require('exif-parser').create(req.files[0].buffer);
+        const result = parser.parse();
+        if (result && result.tags) {
+          const tags = result.tags;
+          const make = tags.Make || '';
+          const model = tags.Model || '';
+          imageMetadata.camera = `${make} ${model}`.trim() || 'Unknown';
+          imageMetadata.software = tags.Software || 'None';
+
+          if (tags.DateTimeOriginal) {
+            imageMetadata.dateTimeOriginal = new Date(tags.DateTimeOriginal * 1000);
+          } else if (tags.CreateDate) {
+            imageMetadata.dateTimeOriginal = new Date(tags.CreateDate * 1000);
+          }
+
+          if (tags.GPSLatitude !== undefined && tags.GPSLongitude !== undefined) {
+            imageMetadata.hasGPS = true;
+            imageMetadata.exifGPS.lat = tags.GPSLatitude;
+            imageMetadata.exifGPS.lng = tags.GPSLongitude;
+
+            if (lat && lng) {
+              const dist = getHaversineDistance(
+                parseFloat(lat),
+                parseFloat(lng),
+                tags.GPSLatitude,
+                tags.GPSLongitude
+              );
+              imageMetadata.gpsMatchStatus = dist <= 500 ? 'matched' : 'mismatch';
+            }
+          }
+        }
+      } catch (exifErr) {
+        console.error('EXIF parsing failed:', exifErr.message);
+      }
+
+      metadataContext = `Camera: ${imageMetadata.camera}
+Software/Editor: ${imageMetadata.software}
+Date Captured: ${imageMetadata.dateTimeOriginal ? imageMetadata.dateTimeOriginal.toISOString() : 'Unknown'}
+Photo GPS: ${imageMetadata.hasGPS ? `${imageMetadata.exifGPS.lat}, ${imageMetadata.exifGPS.lng}` : 'No GPS data'}
+User Pinned GPS: ${lat && lng ? `${lat}, ${lng}` : 'Not provided'}
+GPS Match Status: ${imageMetadata.gpsMatchStatus}`;
+    }
+
     // AI classification from first image (or text only)
-    let aiResult = { category: manualCategory || 'other', severity: 'medium', tags: [], confidence: 0, summary: description };
+    let aiResult = { 
+      category: manualCategory || 'other', 
+      severity: 'medium', 
+      tags: [], 
+      confidence: 0, 
+      summary: description,
+      originalityStatus: 'unknown',
+      originalityAnalysis: 'No image uploaded for forensics.'
+    };
     if (req.files?.length) {
       const base64 = req.files[0].buffer.toString('base64');
       const mime = req.files[0].mimetype;
-      aiResult = await classifyIssue(base64, mime, description);
+      aiResult = await classifyIssue(base64, mime, description, metadataContext);
     }
 
     // Reverse geocode location
@@ -242,6 +307,9 @@ router.post('/posts',
       isDuplicate: duplicateInfo.isDuplicate,
       duplicateOf: duplicateInfo.duplicatePostId || undefined,
       statusHistory: [{ status: 'reported', note: 'Post created' }],
+      imageMetadata,
+      originalityStatus: aiResult.originalityStatus || 'unknown',
+      originalityAnalysis: aiResult.originalityAnalysis || '',
     });
 
     // Track anon token on user (for ownership claim, visible only to them)
@@ -252,6 +320,12 @@ router.post('/posts',
     const populated = await Post.findById(post._id)
       .select('-anonToken')
       .populate('attachedContacts', 'department officerName phone email portalUrl');
+
+    // Real-time broadcast
+    const io = req.app.get('io');
+    if (io) {
+      io.to('feed').emit('feed:post_created', populated);
+    }
 
     res.status(201).json({ post: populated, aiResult });
   })
@@ -273,7 +347,18 @@ router.patch('/posts/:id/status', requireAuth, attachUser, asyncHandler(async (r
   post.statusHistory.push({ status, note: note || '', updatedAt: new Date() });
   await post.save();
 
-  res.json({ success: true, status: post.status, history: post.statusHistory });
+  const populated = await Post.findById(post._id)
+    .select('-anonToken')
+    .populate('attachedContacts', 'department officerName phone email portalUrl')
+    .lean();
+
+  const io = req.app.get('io');
+  if (io) {
+    io.to('feed').emit('feed:post_updated', populated);
+    io.to(`post:${populated._id}`).emit('post:updated', populated);
+  }
+
+  res.json({ success: true, status: post.status, history: post.statusHistory, post: populated });
 }));
 
 // DELETE /api/posts/:id — soft delete (own post only)
@@ -284,6 +369,12 @@ router.delete('/posts/:id', requireAuth, attachUser, asyncHandler(async (req, re
     return res.status(403).json({ error: 'Permission denied' });
   }
   await Post.findByIdAndUpdate(req.params.id, { isDeleted: true });
+
+  const io = req.app.get('io');
+  if (io) {
+    io.to('feed').emit('feed:post_deleted', { postId: req.params.id });
+  }
+
   res.json({ success: true });
 }));
 
@@ -311,7 +402,18 @@ router.post('/posts/:id/like', requireAuth, attachUser, asyncHandler(async (req,
   const updated = await Post.findById(post._id).select('likeCount intensityScore');
   await updateIntensityScore(post._id);
 
-  res.json({ liked: !alreadyLiked, likeCount: updated.likeCount });
+  const populated = await Post.findById(post._id)
+    .select('-anonToken')
+    .populate('attachedContacts', 'department officerName phone email portalUrl')
+    .lean();
+
+  const io = req.app.get('io');
+  if (io) {
+    io.to('feed').emit('feed:post_updated', populated);
+    io.to(`post:${populated._id}`).emit('post:updated', populated);
+  }
+
+  res.json({ liked: !alreadyLiked, likeCount: populated.likeCount });
 }));
 
 // POST /api/posts/:id/support — cross-city support report (bumps intensity)
@@ -323,7 +425,19 @@ router.post('/posts/:id/support', requireAuth, attachUser, asyncHandler(async (r
   );
   if (!post) return res.status(404).json({ error: 'Post not found' });
   const newScore = await updateIntensityScore(post._id);
-  res.json({ success: true, supportCount: post.supportCount, intensityScore: newScore });
+
+  const populated = await Post.findById(post._id)
+    .select('-anonToken')
+    .populate('attachedContacts', 'department officerName phone email portalUrl')
+    .lean();
+
+  const io = req.app.get('io');
+  if (io) {
+    io.to('feed').emit('feed:post_updated', populated);
+    io.to(`post:${populated._id}`).emit('post:updated', populated);
+  }
+
+  res.json({ success: true, supportCount: populated.supportCount, intensityScore: newScore });
 }));
 
 // GET /api/posts/:id/comments — paginated comments
@@ -530,6 +644,17 @@ router.post('/ai/classify',
     const base64 = req.file.buffer.toString('base64');
     const result = await classifyIssue(base64, req.file.mimetype, req.body.description || '');
     res.json(result);
+  })
+);
+
+// POST /api/ai/rewrite — rewrite complaint description for clarity and professionalism
+router.post('/ai/rewrite',
+  requireAuth, attachUser, aiLimiter,
+  asyncHandler(async (req, res) => {
+    const { description } = req.body;
+    if (!description?.trim()) return res.status(400).json({ error: 'Description is required' });
+    const result = await rewriteComplaint(description);
+    res.json({ rewrittenText: result });
   })
 );
 

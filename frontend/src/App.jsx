@@ -63,9 +63,6 @@ export default function App() {
             {/* Private citizen logging */}
             <Route path="/my-account" element={<ProtectedRoute><MyAccount /></ProtectedRoute>} />
             
-            {/* Officer & Administration Telemetry control */}
-            <Route path="/admin" element={<ProtectedRoute><AdminDashboard /></ProtectedRoute>} />
-            
             {/* Catch-all Redirect */}
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>

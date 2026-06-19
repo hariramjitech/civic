@@ -81,6 +81,29 @@ const postSchema = new Schema({
   isDuplicate: { type: Boolean, default: false },
   duplicateOf: { type: Schema.Types.ObjectId, ref: 'Post' },
 
+  // Forensics & Digital Footprints
+  imageMetadata: {
+    camera: { type: String },
+    dateTimeOriginal: { type: Date },
+    software: { type: String },
+    hasGPS: { type: Boolean, default: false },
+    exifGPS: {
+      lat: { type: Number },
+      lng: { type: Number }
+    },
+    gpsMatchStatus: {
+      type: String,
+      enum: ['matched', 'mismatch', 'no_gps_data'],
+      default: 'no_gps_data'
+    }
+  },
+  originalityStatus: {
+    type: String,
+    enum: ['authentic', 'suspicious_screenshot', 'stock_photo_detected', 'manipulated', 'unknown'],
+    default: 'unknown'
+  },
+  originalityAnalysis: { type: String },
+
   isDeleted: { type: Boolean, default: false },
 }, { timestamps: true });
 

@@ -64,6 +64,9 @@ export default function SubmitPost() {
   // AI
   const [aiLoading, setAiLoading] = useState(false);
   const [aiResult, setAiResult] = useState(null);
+  const [rewriting, setRewriting] = useState(false);
+  const [rewrittenText, setRewrittenText] = useState('');
+  const [showRewriteCompare, setShowRewriteCompare] = useState(false);
 
   // Submit
   const [submitting, setSubmitting] = useState(false);
@@ -131,6 +134,25 @@ export default function SubmitPost() {
       toast.error('AI classification failed — categorize manually.');
     } finally {
       setAiLoading(false);
+    }
+  };
+
+  const handleAiRewrite = async () => {
+    if (!description.trim()) {
+      toast.error('Write a draft description first.');
+      return;
+    }
+    try {
+      setRewriting(true);
+      setShowRewriteCompare(false);
+      const res = await api.post('/ai/rewrite', { description: description.trim() });
+      setRewrittenText(res.data.rewrittenText);
+      setShowRewriteCompare(true);
+      toast.success('AI rewrite completed!');
+    } catch (err) {
+      toast.error('AI rewrite failed. Try again.');
+    } finally {
+      setRewriting(false);
     }
   };
 
@@ -209,9 +231,99 @@ export default function SubmitPost() {
             style={{ resize: 'vertical' }}
             maxLength={1000}
           />
-          <div style={{ textAlign: 'right', fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
-            {description.length}/1000
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 6 }}>
+            <button
+              type="button"
+              onClick={handleAiRewrite}
+              disabled={rewriting}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+                background: 'rgba(20,184,166,0.1)',
+                border: '1px solid rgba(20,184,166,0.3)',
+                borderRadius: 8,
+                padding: '5px 12px',
+                fontSize: 12,
+                fontWeight: 600,
+                color: 'var(--teal-400)',
+                cursor: 'pointer',
+                transition: 'all 0.2s',
+              }}
+              onMouseEnter={e => { e.currentTarget.style.background = 'rgba(20,184,166,0.2)'; }}
+              onMouseLeave={e => { e.currentTarget.style.background = 'rgba(20,184,166,0.1)'; }}
+            >
+              {rewriting ? (
+                <>
+                  <Loader2 size={13} style={{ animation: 'spin 0.8s linear infinite' }} />
+                  <span>Polishing...</span>
+                </>
+              ) : (
+                <>
+                  <Sparkles size={13} />
+                  <span>AI Polish / Rewrite</span>
+                </>
+              )}
+            </button>
+            <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+              {description.length}/1000
+            </div>
           </div>
+
+          {showRewriteCompare && (
+            <div className="animate-fadeIn" style={{
+              marginTop: 14,
+              background: 'var(--bg-elevated)',
+              border: '1px solid rgba(20,184,166,0.2)',
+              borderRadius: 10,
+              padding: 16,
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 12
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--teal-400)', fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                <Sparkles size={13} />
+                AI Suggested Version
+              </div>
+              
+              <p style={{
+                fontSize: 13,
+                color: 'var(--text-secondary)',
+                lineHeight: 1.6,
+                padding: '10px 12px',
+                background: 'rgba(9,9,11,0.4)',
+                border: '1px solid var(--border-subtle)',
+                borderRadius: 8,
+                whiteSpace: 'pre-wrap'
+              }}>
+                {rewrittenText}
+              </p>
+
+              <div style={{ display: 'flex', gap: 8, justifySelf: 'flex-end', justifyContent: 'flex-end' }}>
+                <button
+                  type="button"
+                  onClick={() => setShowRewriteCompare(false)}
+                  className="btn btn-secondary btn-sm"
+                  style={{ fontSize: 11, padding: '5px 12px' }}
+                >
+                  Keep Original
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDescription(rewrittenText);
+                    setShowRewriteCompare(false);
+                    toast.success('AI description applied!');
+                  }}
+                  className="btn btn-primary btn-sm"
+                  style={{ fontSize: 11, padding: '5px 12px', gap: 4 }}
+                >
+                  <Check size={11} strokeWidth={3} />
+                  Use Polished Version
+                </button>
+              </div>
+            </div>
+          )}
         </div>
 
         <div>
@@ -391,8 +503,33 @@ export default function SubmitPost() {
                   <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>Confidence</div>
                   <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--teal-400)' }}>{Math.round((aiResult.confidence || 0) * 100)}%</div>
                 </div>
+                
+                {aiResult.originalityStatus && (
+                  <div style={{ gridColumn: '1/-1', display: 'flex', flexDirection: 'column', gap: 6, padding: '12px 14px', borderRadius: 8, background: 'rgba(9,9,11,0.3)', border: '1px solid var(--border-subtle)', marginTop: 4 }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-primary)', textTransform: 'uppercase', letterSpacing: '0.06em', display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span>🕵️‍♂️</span>
+                      <span>Forensic Originality Check</span>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: 12 }}>
+                      <span style={{ color: 'var(--text-muted)' }}>Status:</span>
+                      <span style={{ 
+                        fontWeight: 800, 
+                        textTransform: 'uppercase', 
+                        color: aiResult.originalityStatus === 'authentic' ? '#4ade80' : '#f43f5e'
+                      }}>
+                        {aiResult.originalityStatus?.replace('_', ' ')}
+                      </span>
+                    </div>
+                    {aiResult.originalityAnalysis && (
+                      <p style={{ fontSize: 11, color: 'var(--text-secondary)', lineHeight: 1.45, fontStyle: 'italic', marginTop: 2 }}>
+                        "{aiResult.originalityAnalysis}"
+                      </p>
+                    )}
+                  </div>
+                )}
+
                 {aiResult.tags?.length > 0 && (
-                  <div style={{ gridColumn: '1/-1', display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                  <div style={{ gridColumn: '1/-1', display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 4 }}>
                     {aiResult.tags.map((t, i) => (
                       <span key={i} style={{ fontSize: 11, background: 'rgba(20,184,166,0.1)', color: 'var(--teal-400)', border: '1px solid rgba(20,184,166,0.2)', padding: '2px 8px', borderRadius: 4, fontWeight: 500 }}>
                         #{t}
@@ -454,9 +591,20 @@ export default function SubmitPost() {
           )}
 
           {aiResult && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--teal-400)' }}>
-              <Sparkles size={12} />
-              AI classified as <strong>{aiResult.category}</strong>, severity <strong>{aiResult.severity}</strong>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, borderTop: '1px solid var(--border-subtle)', paddingTop: 10 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--teal-400)' }}>
+                <Sparkles size={12} />
+                AI classified as <strong>{aiResult.category}</strong>, severity <strong>{aiResult.severity}</strong>
+              </div>
+              {aiResult.originalityStatus && (
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 6, fontSize: 12, color: aiResult.originalityStatus === 'authentic' ? '#4ade80' : '#f43f5e', marginTop: 2 }}>
+                  <span style={{ fontSize: 13 }}>🛡️</span>
+                  <span>
+                    Originality: <strong>{aiResult.originalityStatus?.replace('_', ' ').toUpperCase()}</strong>
+                    {aiResult.originalityAnalysis && ` — ${aiResult.originalityAnalysis}`}
+                  </span>
+                </div>
+              )}
             </div>
           )}
         </div>

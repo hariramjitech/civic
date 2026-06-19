@@ -50,7 +50,7 @@ const SEV_BORDER = {
 };
 
 export default function Feed() {
-  const { isSignedIn, role, userProfile } = useCivic();
+  const { isSignedIn, role, userProfile, socket } = useCivic();
   const [posts, setPosts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [myPostIds, setMyPostIds] = useState(new Set());
@@ -87,6 +87,37 @@ export default function Feed() {
   }, [district, category, severity, status, sort, useGeo, coords]);
 
   useEffect(() => { fetchPosts(); }, [fetchPosts]);
+
+  useEffect(() => {
+    if (!socket) return;
+    socket.emit('feed:subscribe');
+
+    const handlePostUpdated = (updatedPost) => {
+      setPosts(prev => prev.map(p => p._id === updatedPost._id ? { ...p, ...updatedPost } : p));
+    };
+
+    const handlePostCreated = (newPost) => {
+      setPosts(prev => {
+        if (prev.some(p => p._id === newPost._id)) return prev;
+        return [newPost, ...prev];
+      });
+      toast.success(`New report filed: "${newPost.title}"`, { duration: 4000 });
+    };
+
+    const handlePostDeleted = ({ postId }) => {
+      setPosts(prev => prev.filter(p => p._id !== postId));
+    };
+
+    socket.on('feed:post_updated', handlePostUpdated);
+    socket.on('feed:post_created', handlePostCreated);
+    socket.on('feed:post_deleted', handlePostDeleted);
+
+    return () => {
+      socket.off('feed:post_updated', handlePostUpdated);
+      socket.off('feed:post_created', handlePostCreated);
+      socket.off('feed:post_deleted', handlePostDeleted);
+    };
+  }, [socket]);
 
   useEffect(() => {
     if (!isSignedIn) return;

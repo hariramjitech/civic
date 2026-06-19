@@ -1,17 +1,18 @@
 import React, { useState, useEffect } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useCivic } from '../context/CivicContext';
 import api from '../lib/api';
 import {
   Heart, MessageSquare, Phone, Mail, Globe, MapPin,
   AlertTriangle, ArrowLeft, Send, Plus, Flame, Clock,
-  CheckCircle, Loader2
+  CheckCircle, Loader2, Trash2
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 export default function PostDetail() {
   const { id } = useParams();
-  const { isSignedIn, role, userProfile } = useCivic();
+  const navigate = useNavigate();
+  const { isSignedIn, role, userProfile, socket } = useCivic();
   const [data, setData] = useState(null);
   const [comments, setComments] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -69,6 +70,36 @@ export default function PostDetail() {
     fetchPostDetails();
     fetchMyPosts();
   }, [id, isSignedIn]);
+
+  useEffect(() => {
+    if (!socket || !id) return;
+
+    socket.emit('post:subscribe', { postId: id });
+
+    const handlePostUpdated = (updatedPost) => {
+      if (updatedPost._id === id) {
+        setData(prev => prev ? {
+          ...prev,
+          post: {
+            ...prev.post,
+            ...updatedPost
+          }
+        } : null);
+        setStatusForm({
+          status: updatedPost.status,
+          note: ''
+        });
+        toast.success('Complaint details updated in real-time!', { id: 'status-realtime' });
+      }
+    };
+
+    socket.on('post:updated', handlePostUpdated);
+
+    return () => {
+      socket.emit('post:unsubscribe', { postId: id });
+      socket.off('post:updated', handlePostUpdated);
+    };
+  }, [socket, id]);
 
   const handleLike = async () => {
     try {
@@ -164,6 +195,17 @@ export default function PostDetail() {
     }
   };
 
+  const handleDeletePost = async () => {
+    if (!window.confirm('Are you sure you want to permanently delete this report? This action cannot be undone.')) return;
+    try {
+      await api.delete(`/posts/${id}`);
+      toast.success('Report deleted successfully.');
+      navigate('/feed');
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Failed to delete report.');
+    }
+  };
+
   if (loading || !data) {
     return (
       <div className="h-[60vh] flex flex-col items-center justify-center space-y-4">
@@ -237,7 +279,7 @@ export default function PostDetail() {
             )}
 
             {/* Feed interaction buttons */}
-            <div className="flex items-center space-x-3 pt-4 border-t border-gray-900 text-sm">
+            <div className="flex items-center space-x-3 pt-4 border-t border-gray-900 text-sm w-full">
               <button
                 onClick={handleLike}
                 className="flex items-center space-x-1.5 px-4 py-2 rounded-lg bg-gray-900 hover:bg-gray-850 text-gray-300 hover:text-rose-400 transition-colors"
@@ -245,6 +287,15 @@ export default function PostDetail() {
                 <Heart size={16} />
                 <span>Affected Too ({post.likeCount || 0})</span>
               </button>
+              {(isOwner || role === 'admin') && (
+                <button
+                  onClick={handleDeletePost}
+                  className="flex items-center space-x-1.5 px-4 py-2 rounded-lg bg-rose-950/40 hover:bg-rose-900/60 border border-rose-900/40 text-rose-300 transition-colors cursor-pointer ml-auto"
+                >
+                  <Trash2 size={16} />
+                  <span>Delete Report</span>
+                </button>
+              )}
             </div>
           </div>
 
@@ -423,6 +474,75 @@ export default function PostDetail() {
                   {updatingStatus ? 'Saving Status...' : 'Apply Status Update'}
                 </button>
               </form>
+            </div>
+          )}
+
+          {/* Forensics and Image Originality Panel */}
+          {post.images && post.images.length > 0 && (
+            <div className="glass-panel p-5 rounded-2xl space-y-4">
+              <div>
+                <h3 className="font-display font-bold text-gray-200">AI Image Forensics</h3>
+                <p className="text-[10px] text-gray-500 uppercase tracking-widest mt-0.5">Digital Footprint Validation</p>
+              </div>
+
+              <div className="space-y-3 text-xs">
+                {/* Originality Status Badge */}
+                <div className="p-3 bg-gray-900/40 rounded-xl border border-gray-900 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] uppercase font-bold text-gray-400">Originality status</span>
+                    <span className={`text-[10px] uppercase font-extrabold px-2 py-0.5 rounded border ${
+                      post.originalityStatus === 'authentic' 
+                        ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' 
+                        : 'bg-rose-500/10 text-rose-400 border-rose-500/20'
+                    }`}>
+                      {post.originalityStatus?.replace('_', ' ') || 'unknown'}
+                    </span>
+                  </div>
+                  {post.originalityAnalysis && (
+                    <p className="text-gray-400 font-sans italic text-[11px] leading-relaxed">
+                      "{post.originalityAnalysis}"
+                    </p>
+                  )}
+                </div>
+
+                {/* Digital Footprint Exif table */}
+                {post.imageMetadata && (
+                  <div className="p-3 bg-gray-900/40 rounded-xl border border-gray-900 space-y-2.5">
+                    <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: 6 }}>
+                      <span className="text-gray-500">Camera Device:</span>
+                      <span className="text-gray-300 font-semibold">{post.imageMetadata.camera || 'Unknown'}</span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: 6 }}>
+                      <span className="text-gray-500">Software / Editor:</span>
+                      <span className="text-gray-300 font-semibold">{post.imageMetadata.software || 'None'}</span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: 6 }}>
+                      <span className="text-gray-500">Date Captured:</span>
+                      <span className="text-gray-300 font-semibold">
+                        {post.imageMetadata.dateTimeOriginal 
+                          ? new Date(post.imageMetadata.dateTimeOriginal).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' }) 
+                          : 'Unknown'}
+                      </span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span className="text-gray-500">GPS Validation:</span>
+                      <span className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded border ${
+                        post.imageMetadata.gpsMatchStatus === 'matched'
+                          ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                          : post.imageMetadata.gpsMatchStatus === 'mismatch'
+                          ? 'bg-rose-500/10 text-rose-400 border-rose-500/20'
+                          : 'bg-gray-800 text-gray-400 border-gray-700'
+                      }`}>
+                        {post.imageMetadata.gpsMatchStatus === 'matched' 
+                          ? '✓ GPS Matched' 
+                          : post.imageMetadata.gpsMatchStatus === 'mismatch' 
+                          ? '✗ GPS Mismatch' 
+                          : 'No GPS tag'}
+                      </span>
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
           )}
 
