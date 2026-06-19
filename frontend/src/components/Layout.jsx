@@ -50,7 +50,7 @@ export default function Layout({ children }) {
             fontFamily: 'var(--font-sans)',
           },
           success: {
-            iconTheme: { primary: 'var(--teal-400)', secondary: 'var(--bg-base)' },
+            iconTheme: { primary: 'var(--teal-500)', secondary: 'var(--bg-base)' },
           },
           error: {
             iconTheme: { primary: '#f43f5e', secondary: 'var(--bg-base)' },
@@ -112,7 +112,7 @@ export default function Layout({ children }) {
           gap: 12,
         }}>
           <p style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-            © 2026 <span style={{ color: 'var(--teal-400)', fontWeight: 600 }}>CivicTN</span> — AI-Powered Smart Infrastructure Management
+            © 2026 <span style={{ color: 'var(--teal-500)', fontWeight: 600 }}>CivicTN</span> — AI-Powered Smart Infrastructure Management
           </p>
           <div style={{ display: 'flex', gap: 20 }}>
             {['Privacy Policy', 'Terms of Service', 'Official Portal'].map(link => (
@@ -120,7 +120,7 @@ export default function Layout({ children }) {
                 key={link}
                 href="#"
                 style={{ fontSize: 12, color: 'var(--text-muted)', textDecoration: 'none', transition: 'color 0.15s' }}
-                onMouseEnter={e => e.target.style.color = 'var(--teal-400)'}
+                onMouseEnter={e => e.target.style.color = 'var(--teal-500)'}
                 onMouseLeave={e => e.target.style.color = 'var(--text-muted)'}
               >
                 {link}

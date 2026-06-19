@@ -95,9 +95,9 @@ export default function Landing() {
           gap: 6,
           padding: '4px 12px',
           borderRadius: 20,
-          border: '1px solid rgba(20,184,166,0.2)',
-          background: 'rgba(20,184,166,0.06)',
-          color: 'var(--teal-400)',
+          border: '1px solid var(--border-strong)',
+          background: 'var(--teal-glow)',
+          color: 'var(--teal-500)',
           fontSize: 11,
           fontWeight: 700,
           textTransform: 'uppercase',
@@ -120,7 +120,7 @@ export default function Landing() {
           Report Civic Issues.
           <span style={{
             display: 'block',
-            background: 'linear-gradient(135deg, var(--teal-400) 0%, #6ee7b7 50%, #34d399 100%)',
+            background: 'linear-gradient(135deg, var(--teal-400) 0%, var(--teal-500) 50%, var(--teal-600) 100%)',
             WebkitBackgroundClip: 'text',
             WebkitTextFillColor: 'transparent',
             backgroundClip: 'text',
@@ -382,12 +382,11 @@ export default function Landing() {
         </div>
       </section>
 
-      {/* ── CTA BOTTOM ── */}
       <section style={{
         textAlign: 'center',
         padding: '40px 24px',
-        background: 'linear-gradient(135deg, rgba(20,184,166,0.06) 0%, rgba(52,211,153,0.04) 100%)',
-        border: '1px solid rgba(20,184,166,0.12)',
+        background: 'linear-gradient(135deg, var(--teal-glow) 0%, rgba(20, 184, 166, 0.02) 100%)',
+        border: '1px solid var(--border-default)',
         borderRadius: 16,
       }}>
         <h2 style={{

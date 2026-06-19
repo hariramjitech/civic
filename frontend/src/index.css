@@ -11,36 +11,36 @@
   --font-display: 'Outfit', system-ui, sans-serif;
 
   /* Background layers - Light Slate (White Theme) by default */
-  --bg-base: #f8fafc;
+  --bg-base: #f5f7fa;
   --bg-surface: #ffffff;
-  --bg-elevated: #f1f5f9;
+  --bg-elevated: #edf1f7;
   --bg-overlay: #e2e8f0;
 
   /* Borders */
-  --border-subtle: rgba(15, 23, 42, 0.05);
-  --border-default: rgba(15, 23, 42, 0.10);
-  --border-strong: rgba(15, 23, 42, 0.18);
+  --border-subtle: rgba(15, 23, 42, 0.04);
+  --border-default: rgba(15, 23, 42, 0.08);
+  --border-strong: rgba(15, 23, 42, 0.14);
 
   /* Brand — Teal */
   --teal-50: #f0fdfa;
   --teal-400: #2dd4bf;
-  --teal-500: #14b8a6;
-  --teal-600: #0d9488;
-  --teal-glow: rgba(20, 184, 166, 0.08);
+  --teal-500: #0d9488;
+  --teal-600: #0f766e;
+  --teal-glow: rgba(13, 148, 136, 0.08);
 
   /* Severity palette (Tuned for readability on white backgrounds) */
   --sev-critical: #e11d48;
-  --sev-critical-bg: rgba(244, 63, 94, 0.06);
-  --sev-critical-border: rgba(244, 63, 94, 0.3);
+  --sev-critical-bg: rgba(244, 63, 94, 0.05);
+  --sev-critical-border: rgba(244, 63, 94, 0.25);
   --sev-high: #ea580c;
-  --sev-high-bg: rgba(249, 115, 22, 0.06);
-  --sev-high-border: rgba(249, 115, 22, 0.3);
+  --sev-high-bg: rgba(249, 115, 22, 0.05);
+  --sev-high-border: rgba(249, 115, 22, 0.25);
   --sev-medium: #ca8a04;
-  --sev-medium-bg: rgba(234, 179, 8, 0.06);
-  --sev-medium-border: rgba(234, 179, 8, 0.3);
+  --sev-medium-bg: rgba(234, 179, 8, 0.05);
+  --sev-medium-border: rgba(234, 179, 8, 0.25);
   --sev-low: #16a34a;
-  --sev-low-bg: rgba(34, 197, 94, 0.06);
-  --sev-low-border: rgba(34, 197, 94, 0.3);
+  --sev-low-bg: rgba(34, 197, 94, 0.05);
+  --sev-low-border: rgba(34, 197, 94, 0.25);
 
   /* Status palette */
   --status-reported: #475569;
@@ -51,17 +51,17 @@
   --status-closed: #475569;
 
   /* Text - High professional contrast slate */
-  --text-primary: #0f172a;
-  --text-secondary: #334155;
-  --text-muted: #64748b;
+  --text-primary: #0f1319;
+  --text-secondary: #3d4a5d;
+  --text-muted: #6b7a90;
 
-  /* Shadows */
-  --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.04);
-  --shadow-md: 0 4px 12px rgba(15, 23, 42, 0.06);
-  --shadow-lg: 0 8px 24px rgba(15, 23, 42, 0.10);
-  --shadow-teal: 0 4px 20px rgba(20, 184, 166, 0.06);
+  /* Shadows - Layered smooth designer shadows */
+  --shadow-sm: 0 1px 3px rgba(15, 23, 42, 0.02), 0 1px 2px rgba(15, 23, 42, 0.01);
+  --shadow-md: 0 8px 24px rgba(15, 23, 42, 0.04), 0 2px 6px rgba(15, 23, 42, 0.02);
+  --shadow-lg: 0 16px 40px rgba(15, 23, 42, 0.06), 0 4px 12px rgba(15, 23, 42, 0.03);
+  --shadow-teal: 0 8px 24px rgba(13, 148, 136, 0.12);
 
-  --bg-translucent: rgba(255, 255, 255, 0.7);
+  --bg-translucent: rgba(255, 255, 255, 0.72);
 }
 
 @theme {
@@ -86,6 +86,11 @@
 
   body {
     background-color: var(--bg-base);
+    background-image: 
+      radial-gradient(at 0% 0%, rgba(20, 184, 166, 0.03) 0px, transparent 50%),
+      radial-gradient(at 100% 0%, rgba(124, 58, 237, 0.03) 0px, transparent 50%),
+      radial-gradient(at 50% 100%, rgba(20, 184, 166, 0.02) 0px, transparent 50%);
+    background-attachment: fixed;
     color: var(--text-primary);
     font-family: var(--font-sans);
     font-size: 14px;
@@ -123,19 +128,21 @@
 .card {
   background: var(--bg-surface);
   border: 1px solid var(--border-subtle);
-  border-radius: 12px;
+  border-radius: 14px;
   box-shadow: var(--shadow-sm);
-  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1), border-color 0.3s ease, box-shadow 0.3s ease;
 }
 
 .card:hover {
-  border-color: var(--border-default);
+  border-color: var(--border-strong);
+  transform: translateY(-4px);
+  box-shadow: var(--shadow-md);
 }
 
 .card-elevated {
   background: var(--bg-elevated);
   border: 1px solid var(--border-default);
-  border-radius: 12px;
+  border-radius: 14px;
   box-shadow: var(--shadow-md);
 }
 
@@ -151,20 +158,21 @@
 .glass-panel {
   background: var(--bg-surface);
   border: 1px solid var(--border-subtle);
-  border-radius: 12px;
+  border-radius: 14px;
   box-shadow: var(--shadow-sm);
 }
 
 .glass-card {
   background: var(--bg-elevated);
   border: 1px solid var(--border-subtle);
-  border-radius: 10px;
-  transition: all 0.2s ease;
+  border-radius: 12px;
+  box-shadow: var(--shadow-sm);
+  transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1), border-color 0.3s ease, box-shadow 0.3s ease;
 }
 
 .glass-card:hover {
   border-color: var(--border-strong);
-  transform: translateY(-1px);
+  transform: translateY(-4px);
   box-shadow: var(--shadow-md);
 }
 
@@ -181,13 +189,14 @@
   background: var(--bg-elevated);
   border: 1px solid var(--border-default);
   color: var(--text-primary);
-  border-radius: 8px;
+  border-radius: 10px;
   padding: 10px 14px;
   font-size: 14px;
   font-family: var(--font-sans);
-  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
   width: 100%;
   outline: none;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.01);
 }
 
 .glass-input::placeholder {
@@ -196,7 +205,8 @@
 
 .glass-input:focus {
   border-color: var(--teal-500);
-  box-shadow: 0 0 0 3px var(--teal-glow);
+  background: var(--bg-surface);
+  box-shadow: 0 0 0 3px var(--teal-glow), 0 4px 12px rgba(13, 148, 136, 0.04);
 }
 
 select.glass-input,
@@ -331,33 +341,40 @@ select {
   font-weight: 600;
   font-family: var(--font-sans);
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: all 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
   border: 1px solid transparent;
   outline: none;
   white-space: nowrap;
 }
 
+.btn:active {
+  transform: translateY(0) scale(0.98);
+}
+
 .btn-primary {
-  background: var(--teal-500);
+  background: linear-gradient(135deg, var(--teal-500), var(--teal-600));
   color: #fff;
-  box-shadow: var(--shadow-teal);
+  box-shadow: 0 4px 14px var(--teal-glow);
 }
 
 .btn-primary:hover {
-  background: var(--teal-400);
-  box-shadow: 0 4px 24px rgba(20, 184, 166, 0.25);
-  transform: translateY(-1px);
+  background: linear-gradient(135deg, var(--teal-400), var(--teal-500));
+  box-shadow: 0 6px 20px rgba(13, 148, 136, 0.25);
+  transform: translateY(-2px);
 }
 
 .btn-secondary {
   background: var(--bg-elevated);
   color: var(--text-secondary);
-  border-color: var(--border-default);
+  border: 1px solid var(--border-default);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02);
 }
 
 .btn-secondary:hover {
+  background: var(--bg-overlay);
   color: var(--text-primary);
   border-color: var(--border-strong);
+  transform: translateY(-2px);
 }
 
 .btn-ghost {
@@ -369,16 +386,18 @@ select {
 .btn-ghost:hover {
   background: var(--bg-elevated);
   color: var(--text-primary);
+  transform: translateY(-1px);
 }
 
 .btn-danger {
-  background: rgba(244, 63, 94, 0.1);
+  background: rgba(244, 63, 94, 0.08);
   color: var(--sev-critical);
-  border-color: rgba(244, 63, 94, 0.2);
+  border: 1px solid rgba(244, 63, 94, 0.15);
 }
 
 .btn-danger:hover {
-  background: rgba(244, 63, 94, 0.2);
+  background: rgba(244, 63, 94, 0.15);
+  transform: translateY(-2px);
 }
 
 .btn:disabled {
@@ -786,8 +805,8 @@ select {
 /*  CUSTOM SCROLLBAR                                       */
 /* ─────────────────────────────────────────────────────── */
 ::-webkit-scrollbar {
-  width: 5px;
-  height: 5px;
+  width: 6px;
+  height: 6px;
 }
 
 ::-webkit-scrollbar-track {
@@ -795,12 +814,12 @@ select {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #3f3f46;
+  background: var(--border-strong);
   border-radius: 99px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #52525b;
+  background: var(--teal-500);
 }
 
 /* ─────────────────────────────────────────────────────── */
@@ -950,7 +969,7 @@ html[data-theme='dark'] .leaflet-tile-pane,
 }
 
 .text-gradient-teal {
-  background: linear-gradient(135deg, var(--teal-400), #6ee7b7);
+  background: linear-gradient(135deg, var(--teal-400), var(--teal-500));
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -972,16 +991,19 @@ html[data-theme='dark'] .leaflet-tile-pane,
 /* 1. Dark Theme Overrides */
 html[data-theme='dark'],
 :root[data-theme='dark'] {
-  --bg-base: #09090b;
-  --bg-surface: #111115;
-  --bg-elevated: #18181c;
-  --bg-overlay: #1f1f25;
+  --bg-base: #030712;
+  --bg-surface: #0b0f19;
+  --bg-elevated: #111827;
+  --bg-overlay: #1f2937;
 
-  --border-subtle: rgba(255, 255, 255, 0.06);
-  --border-default: rgba(255, 255, 255, 0.10);
-  --border-strong: rgba(255, 255, 255, 0.16);
+  --border-subtle: rgba(255, 255, 255, 0.04);
+  --border-default: rgba(255, 255, 255, 0.08);
+  --border-strong: rgba(255, 255, 255, 0.14);
 
-  --teal-glow: rgba(20, 184, 166, 0.15);
+  --teal-400: #2dd4bf;
+  --teal-500: #14b8a6;
+  --teal-600: #0d9488;
+  --teal-glow: rgba(6, 182, 212, 0.15);
 
   --sev-critical: #f43f5e;
   --sev-critical-bg: rgba(244, 63, 94, 0.08);
@@ -1003,16 +1025,24 @@ html[data-theme='dark'],
   --status-resolved: #4ade80;
   --status-closed: #6b7280;
 
-  --text-primary: #f4f4f5;
-  --text-secondary: #a1a1aa;
-  --text-muted: #52525b;
+  --text-primary: #f8fafc;
+  --text-secondary: #cbd5e1;
+  --text-muted: #64748b;
 
-  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.4);
-  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.5);
-  --shadow-lg: 0 8px 28px rgba(0, 0, 0, 0.6);
-  --shadow-teal: 0 4px 20px rgba(20, 184, 166, 0.12);
+  --shadow-sm: 0 2px 4px rgba(0, 0, 0, 0.2);
+  --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.35);
+  --shadow-lg: 0 16px 40px rgba(0, 0, 0, 0.5);
+  --shadow-teal: 0 8px 24px rgba(20, 184, 166, 0.15);
 
-  --bg-translucent: rgba(9, 9, 11, 0.7);
+  --bg-translucent: rgba(3, 7, 18, 0.72);
+}
+
+html[data-theme='dark'] body,
+:root[data-theme='dark'] body {
+  background-image: 
+    radial-gradient(at 0% 0%, rgba(20, 184, 166, 0.06) 0px, transparent 55%),
+    radial-gradient(at 100% 0%, rgba(124, 58, 237, 0.06) 0px, transparent 55%),
+    radial-gradient(at 50% 100%, rgba(20, 184, 166, 0.03) 0px, transparent 55%);
 }
 
 /* 2. High Contrast Theme Override */
@@ -1204,11 +1234,12 @@ html[data-text-size='xlarge'] h3,
   display: grid;
   grid-template-columns: repeat(4, 1fr);
   gap: 1px;
-  background: var(--border-subtle);
-  border: 1px solid var(--border-subtle);
-  border-radius: 12px;
+  background: var(--border-default);
+  border: 1px solid var(--border-default);
+  border-radius: 16px;
   overflow: hidden;
   margin-bottom: 56px;
+  box-shadow: var(--shadow-md);
 }
 
 @media (max-width: 768px) {
