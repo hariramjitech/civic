@@ -5,8 +5,8 @@
  * ============================================================
  */
 
-const express  = require('express');
-const router   = express.Router();
+const express = require('express');
+const router = express.Router();
 
 const { User, Post, Comment, Poll, ChatRoom, Message, Contact, AuditLog } = require('../models/models');
 const {
@@ -38,9 +38,9 @@ router.get('/auth/me', requireAuth, attachUser, asyncHandler(async (req, res) =>
     district: user.district,
     // Personal accountability — own history (visible only to self)
     myStats: {
-      postCount:    user.postTokens?.length  || 0,
+      postCount: user.postTokens?.length || 0,
       commentCount: user.commentTokens?.length || 0,
-      likedCount:   user.likedPosts?.length  || 0,
+      likedCount: user.likedPosts?.length || 0,
     },
   });
 }));
@@ -109,10 +109,10 @@ router.get('/posts', requireAuth, attachUser, asyncHandler(async (req, res) => {
   } = req.query;
 
   const query = { isDeleted: false, isDuplicate: false };
-  if (district)  query.district  = district;
-  if (category)  query.category  = category;
-  if (severity)  query.severity  = severity;
-  if (status)    query.status    = status;
+  if (district) query.district = district;
+  if (category) query.category = category;
+  if (severity) query.severity = severity;
+  if (status) query.status = status;
 
   // Geo-filter: posts within radius (meters) of given coordinates
   if (lat && lng) {
@@ -125,9 +125,9 @@ router.get('/posts', requireAuth, attachUser, asyncHandler(async (req, res) => {
   }
 
   const sortMap = {
-    latest:    { createdAt: -1 },
+    latest: { createdAt: -1 },
     intensity: { intensityScore: -1 },
-    severity:  { severity: -1, createdAt: -1 },
+    severity: { severity: -1, createdAt: -1 },
   };
 
   const posts = await Post.find(query)
@@ -189,7 +189,7 @@ router.post('/posts',
     let aiResult = { category: manualCategory || 'other', severity: 'medium', tags: [], confidence: 0, summary: description };
     if (req.files?.length) {
       const base64 = req.files[0].buffer.toString('base64');
-      const mime   = req.files[0].mimetype;
+      const mime = req.files[0].mimetype;
       aiResult = await classifyIssue(base64, mime, description);
     }
 
@@ -224,24 +224,24 @@ router.post('/posts',
 
     // Create post
     const post = await Post.create({
-      anonToken:   req.anonToken,
+      anonToken: req.anonToken,
       title,
       description,
-      images:      imageUrls,
+      images: imageUrls,
       location: lat && lng ? {
         type: 'Point',
         coordinates: [parseFloat(lng), parseFloat(lat)],
       } : undefined,
-      district:         locationData.district,
-      address:          locationData.address,
-      category:         aiResult.category,
-      severity:         aiResult.severity,
-      aiTags:           aiResult.tags,
-      aiConfidence:     aiResult.confidence,
+      district: locationData.district,
+      address: locationData.address,
+      category: aiResult.category,
+      severity: aiResult.severity,
+      aiTags: aiResult.tags,
+      aiConfidence: aiResult.confidence,
       attachedContacts: contactIds,
-      isDuplicate:      duplicateInfo.isDuplicate,
-      duplicateOf:      duplicateInfo.duplicatePostId || undefined,
-      statusHistory:    [{ status: 'reported', note: 'Post created' }],
+      isDuplicate: duplicateInfo.isDuplicate,
+      duplicateOf: duplicateInfo.duplicatePostId || undefined,
+      statusHistory: [{ status: 'reported', note: 'Post created' }],
     });
 
     // Track anon token on user (for ownership claim, visible only to them)
@@ -354,10 +354,10 @@ router.post('/posts/:id/comments', requireAuth, attachUser, asyncHandler(async (
   if (!mod.safe) return res.status(400).json({ error: `Comment flagged: ${mod.reason}` });
 
   const comment = await Comment.create({
-    postId:    req.params.id,
+    postId: req.params.id,
     anonToken: req.anonToken,
-    text:      text.trim(),
-    parentId:  parentId || null,
+    text: text.trim(),
+    parentId: parentId || null,
   });
 
   await Post.findByIdAndUpdate(req.params.id, { $inc: { commentCount: 1 } });
@@ -379,9 +379,9 @@ router.post('/posts/:id/polls', requireAuth, attachUser, asyncHandler(async (req
   }
 
   const poll = await Poll.create({
-    postId:   req.params.id,
+    postId: req.params.id,
     question,
-    options:  options.map(text => ({ text, voteCount: 0 })),
+    options: options.map(text => ({ text, voteCount: 0 })),
     expiresAt: new Date(Date.now() + expiresInHours * 3600 * 1000),
   });
 
@@ -422,7 +422,7 @@ router.post('/polls/:pollId/vote', requireAuth, attachUser, asyncHandler(async (
 router.get('/rooms', requireAuth, asyncHandler(async (req, res) => {
   const { type, district } = req.query;
   const query = { isActive: true };
-  if (type)     query.type     = type;
+  if (type) query.type = type;
   if (district) query.district = district;
 
   const rooms = await ChatRoom.find(query)
@@ -481,8 +481,8 @@ router.post('/rooms/:id/join', requireAuth, attachUser, asyncHandler(async (req,
 
 // POST /api/rooms/:id/leave — leave a room (ephemeral: delete user's messages)
 router.post('/rooms/:id/leave', requireAuth, attachUser, asyncHandler(async (req, res) => {
-  const clerkId  = req.auth.userId;
-  const alias    = generateChatAlias(clerkId, req.params.id);
+  const clerkId = req.auth.userId;
+  const alias = generateChatAlias(clerkId, req.params.id);
 
   // Delete user's messages from this room (ephemeral policy)
   await Message.updateMany(
@@ -493,7 +493,7 @@ router.post('/rooms/:id/leave', requireAuth, attachUser, asyncHandler(async (req
   // Remove from members
   await ChatRoom.findByIdAndUpdate(req.params.id, {
     $pull: { members: clerkId },
-    $inc:  { memberCount: -1 },
+    $inc: { memberCount: -1 },
   });
 
   await User.findByIdAndUpdate(req.user._id, { $pull: { joinedRooms: req.params.id } });
@@ -506,7 +506,7 @@ router.delete('/rooms/:id', requireAuth, attachUser, asyncHandler(async (req, re
   if (!room) return res.status(404).json({ error: 'Room not found' });
 
   const isCreator = room.createdBy === req.auth.userId;
-  const isAdmin   = req.user.role === 'admin';
+  const isAdmin = req.user.role === 'admin';
   if (!isCreator && !isAdmin) return res.status(403).json({ error: 'Permission denied' });
 
   // Delete all messages (ephemeral)
@@ -547,12 +547,22 @@ router.post('/ai/predict-risk', requireAuth, attachUser, requireRole('admin', 'd
   asyncHandler(async (req, res) => {
     const historicalData = await Post.aggregate([
       { $match: { isDeleted: false } },
-      { $group: { _id: { district: '$district', category: '$category' }, count: { $sum: 1 }, avgSeverity: { $avg: { $switch: { branches: [
-        { case: { $eq: ['$severity', 'critical'] }, then: 4 },
-        { case: { $eq: ['$severity', 'high'] }, then: 3 },
-        { case: { $eq: ['$severity', 'medium'] }, then: 2 },
-        { case: { $eq: ['$severity', 'low'] }, then: 1 },
-      ], default: 1 } } } } }
+      {
+        $group: {
+          _id: { district: '$district', category: '$category' }, count: { $sum: 1 }, avgSeverity: {
+            $avg: {
+              $switch: {
+                branches: [
+                  { case: { $eq: ['$severity', 'critical'] }, then: 4 },
+                  { case: { $eq: ['$severity', 'high'] }, then: 3 },
+                  { case: { $eq: ['$severity', 'medium'] }, then: 2 },
+                  { case: { $eq: ['$severity', 'low'] }, then: 1 },
+                ], default: 1
+              }
+            }
+          }
+        }
+      }
     ]);
     const predictions = await predictRiskZones(historicalData);
     res.json({ predictions });
@@ -574,7 +584,7 @@ router.get('/ai/gov-data/:district', requireAuth, asyncHandler(async (req, res) 
 router.get('/contacts', requireAuth, asyncHandler(async (req, res) => {
   const { district, department } = req.query;
   const query = {};
-  if (district)   query.district   = district;
+  if (district) query.district = district;
   if (department) query.department = department;
 
   const contacts = await Contact.find(query).lean();
@@ -683,8 +693,10 @@ router.patch('/admin/users/:id/role', requireAuth, attachUser, requireRole('admi
   if (!validRoles.includes(role)) return res.status(400).json({ error: 'Invalid role' });
 
   const user = await User.findByIdAndUpdate(req.params.id, { role }, { new: true });
-  await AuditLog.create({ action: 'role_change', targetType: 'user', targetId: user._id,
-    performedBy: req.auth.userId, details: { newRole: role } });
+  await AuditLog.create({
+    action: 'role_change', targetType: 'user', targetId: user._id,
+    performedBy: req.auth.userId, details: { newRole: role }
+  });
 
   res.json({ success: true, user });
 }));
@@ -692,8 +704,10 @@ router.patch('/admin/users/:id/role', requireAuth, attachUser, requireRole('admi
 // DELETE /api/admin/posts/:id — hard delete (admin)
 router.delete('/admin/posts/:id', requireAuth, attachUser, requireRole('admin'), asyncHandler(async (req, res) => {
   await Post.findByIdAndDelete(req.params.id);
-  await AuditLog.create({ action: 'post_deleted', targetType: 'post', targetId: req.params.id,
-    performedBy: req.auth.userId });
+  await AuditLog.create({
+    action: 'post_deleted', targetType: 'post', targetId: req.params.id,
+    performedBy: req.auth.userId
+  });
   res.json({ success: true });
 }));
 

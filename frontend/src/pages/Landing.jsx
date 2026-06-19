@@ -1,135 +1,429 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { SignInButton, SignedIn, SignedOut } from '@clerk/clerk-react';
 import { Link } from 'react-router-dom';
-import { ShieldCheck, EyeOff, Radio, Users, MapPin, ArrowRight } from 'lucide-react';
+import {
+  ShieldCheck, EyeOff, Sparkles, Users, MapPin, ArrowRight,
+  Camera, Cpu, PhoneCall, BarChart2, TrendingUp, Clock
+} from 'lucide-react';
+import api from '../lib/api';
+
+const FEATURES = [
+  {
+    icon: EyeOff,
+    title: '100% Anonymous',
+    desc: 'Your identity is protected cryptographically. No names or accounts linked to public posts.',
+    color: 'var(--teal-400)',
+    bg: 'rgba(20,184,166,0.06)',
+    border: 'rgba(20,184,166,0.15)',
+  },
+  {
+    icon: Sparkles,
+    title: 'Gemini AI Analysis',
+    desc: 'Automatic issue classification, severity scoring, and duplicate detection on every upload.',
+    color: '#a78bfa',
+    bg: 'rgba(167,139,250,0.06)',
+    border: 'rgba(167,139,250,0.15)',
+  },
+  {
+    icon: MapPin,
+    title: 'Auto-Attached Contacts',
+    desc: 'GPS coordinates resolve your district and attach the right TN officer details automatically.',
+    color: '#34d399',
+    bg: 'rgba(52,211,153,0.06)',
+    border: 'rgba(52,211,153,0.15)',
+  },
+  {
+    icon: Users,
+    title: 'Strike Rooms',
+    desc: 'High-severity issues auto-open Strike Rooms. Join to escalate directly to commissioners.',
+    color: '#f87171',
+    bg: 'rgba(248,113,113,0.06)',
+    border: 'rgba(248,113,113,0.15)',
+  },
+];
+
+const HOW_IT_WORKS = [
+  {
+    step: '01',
+    icon: Camera,
+    title: 'Report with Evidence',
+    desc: 'Upload a photo of the civic issue, drop a pin on the map, and describe what you see.',
+    color: 'var(--teal-400)',
+  },
+  {
+    step: '02',
+    icon: Cpu,
+    title: 'AI Classifies & Routes',
+    desc: 'Gemini AI analyzes the image, assigns severity, detects duplicates, and routes to the right department.',
+    color: '#a78bfa',
+  },
+  {
+    step: '03',
+    icon: PhoneCall,
+    title: 'Authority Gets Notified',
+    desc: 'The relevant officer receives the complaint with full evidence. Community support escalates urgency.',
+    color: '#34d399',
+  },
+];
+
+const METRICS = [
+  { label: 'Districts Covered', value: '25+', color: 'var(--teal-400)' },
+  { label: 'Anonymous by Design', value: '100%', color: '#34d399' },
+  { label: 'AI-Powered', value: 'Real-time', color: '#a78bfa' },
+  { label: 'Escalation Levels', value: '3-Tier', color: '#f87171' },
+];
 
 export default function Landing() {
-  const features = [
-    {
-      title: '100% Anonymous Reporting',
-      description: 'Your identity is protected using advanced cryptography. No names or accounts are linked to your posts.',
-      icon: EyeOff,
-      color: 'text-teal-400 border-teal-500/20 bg-teal-500/5',
-    },
-    {
-      title: 'Smart AI Classification',
-      description: 'Gemini AI automatically reads your image to identify the issue category, severity, and tags instantly.',
-      icon: Radio,
-      color: 'text-amber-400 border-amber-500/20 bg-amber-500/5',
-    },
-    {
-      title: 'Auto-Attached TN Contacts',
-      description: 'Location coordinates automatically resolve your Tamil Nadu district to attach phone/email contacts for action.',
-      icon: MapPin,
-      color: 'text-emerald-400 border-emerald-500/20 bg-emerald-500/5',
-    },
-    {
-      title: 'Collective Strike Rooms',
-      description: 'High-severity issues open Strike Rooms. Join to build collective support, automatically escalating to officials.',
-      icon: Users,
-      color: 'text-rose-400 border-rose-500/20 bg-rose-500/5',
-    },
-  ];
+  const [liveStats, setLiveStats] = useState(null);
+
+  useEffect(() => {
+    // Try to load public stats
+    api.get('/analytics/public-stats')
+      .then(res => setLiveStats(res.data))
+      .catch(() => { }); // Graceful fail if endpoint not ready
+  }, []);
 
   return (
-    <div className="relative min-h-[80vh] flex flex-col justify-center py-6 sm:py-12">
-      {/* Graphic elements */}
-      <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[350px] sm:w-[500px] h-[350px] sm:h-[500px] bg-gradient-to-tr from-teal-500/10 to-amber-500/10 rounded-full blur-[100px] pointer-events-none" />
+    <div style={{ maxWidth: 960, margin: '0 auto', paddingBottom: 60 }}>
 
-      {/* Hero Header */}
-      <div className="text-center space-y-6 max-w-4xl mx-auto z-10">
-        <div className="inline-flex items-center space-x-2 px-3 py-1 rounded-full border border-teal-500/20 bg-teal-500/10 text-teal-400 text-xs font-semibold uppercase tracking-wider">
-          <ShieldCheck size={14} />
-          <span>Secured Civic Platform of Tamil Nadu</span>
+      {/* ── HERO ── */}
+      <section style={{ textAlign: 'center', padding: '60px 0 48px' }} className="animate-slideInUp">
+        {/* Platform badge */}
+        <div style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: 6,
+          padding: '4px 12px',
+          borderRadius: 20,
+          border: '1px solid rgba(20,184,166,0.2)',
+          background: 'rgba(20,184,166,0.06)',
+          color: 'var(--teal-400)',
+          fontSize: 11,
+          fontWeight: 700,
+          textTransform: 'uppercase',
+          letterSpacing: '0.07em',
+          marginBottom: 24,
+        }}>
+          <ShieldCheck size={12} />
+          Tamil Nadu Civic Platform
         </div>
-        
-        <h1 className="text-4xl sm:text-6xl font-extrabold tracking-tight leading-none font-display">
+
+        <h1 style={{
+          fontFamily: 'var(--font-display)',
+          fontSize: 'clamp(32px, 6vw, 58px)',
+          fontWeight: 900,
+          lineHeight: 1.08,
+          letterSpacing: '-0.03em',
+          color: 'var(--text-primary)',
+          marginBottom: 20,
+        }}>
           Report Civic Issues.
-          <span className="block mt-2 bg-gradient-to-r from-teal-400 via-emerald-400 to-amber-400 bg-clip-text text-transparent">
+          <span style={{
+            display: 'block',
+            background: 'linear-gradient(135deg, var(--teal-400) 0%, #6ee7b7 50%, #34d399 100%)',
+            WebkitBackgroundClip: 'text',
+            WebkitTextFillColor: 'transparent',
+            backgroundClip: 'text',
+          }}>
             Anonymously. Instantly.
           </span>
         </h1>
-        
-        <p className="text-gray-400 text-base sm:text-xl max-w-2xl mx-auto font-sans leading-relaxed">
-          CivicTN connects citizens directly to local officials without exposing personal identities. 
-          Upload an image, let Gemini AI analyze it, and mobilize community support to resolve infrastructure failures.
+
+        <p style={{
+          fontSize: 16,
+          color: 'var(--text-secondary)',
+          maxWidth: 560,
+          margin: '0 auto 32px',
+          lineHeight: 1.7,
+        }}>
+          CivicTN bridges citizens and government without exposing identities.
+          Upload evidence, let AI classify it, and mobilize community support to resolve
+          infrastructure failures across Tamil Nadu.
         </p>
 
-        {/* Action Buttons */}
-        <div className="flex flex-col sm:flex-row items-center justify-center gap-4 pt-4">
+        {/* CTA Buttons */}
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, justifyContent: 'center' }}>
           <SignedIn>
-            <Link 
-              to="/feed" 
-              className="w-full sm:w-auto flex items-center justify-center space-x-2 px-8 py-3.5 rounded-xl font-bold bg-gradient-to-r from-teal-500 to-emerald-600 hover:from-teal-400 hover:to-emerald-500 text-gray-900 shadow-xl shadow-teal-500/10 hover:shadow-teal-400/25 transition-all"
-            >
-              <span>Explore Social Feed</span>
-              <ArrowRight size={18} />
+            <Link to="/feed" className="btn btn-primary btn-lg">
+              Explore Feed <ArrowRight size={16} />
             </Link>
           </SignedIn>
           <SignedOut>
             <SignInButton mode="modal">
-              <button className="w-full sm:w-auto flex items-center justify-center space-x-2 px-8 py-3.5 rounded-xl font-bold bg-gradient-to-r from-teal-500 to-emerald-600 hover:from-teal-400 hover:to-emerald-500 text-gray-900 shadow-xl shadow-teal-500/10 hover:shadow-teal-400/25 transition-all select-none cursor-pointer">
-                <span>Sign In / Sign Up</span>
-                <ArrowRight size={18} />
+              <button className="btn btn-primary btn-lg">
+                Get Started Free <ArrowRight size={16} />
               </button>
             </SignInButton>
           </SignedOut>
-          
-          <Link 
-            to="/map" 
-            className="w-full sm:w-auto px-8 py-3.5 rounded-xl font-semibold border border-gray-800 bg-gray-950/40 hover:bg-gray-900/60 hover:text-white transition-all text-center"
-          >
-            View Infrastructure Map
+          <Link to="/map" className="btn btn-secondary btn-lg">
+            <MapPin size={16} />
+            View Civic Map
           </Link>
         </div>
-      </div>
+      </section>
 
-      {/* Grid Features */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-5xl mx-auto mt-16 sm:mt-24 z-10 px-4">
-        {features.map((feature, idx) => {
-          const Icon = feature.icon;
-          return (
-            <div 
-              key={idx} 
-              className="glass-panel p-6 sm:p-8 rounded-2xl flex flex-col sm:flex-row items-start gap-4 hover:border-gray-700 transition-all group"
-            >
-              <div className={`p-3 rounded-xl border ${feature.color} flex-shrink-0`}>
-                <Icon size={24} className="group-hover:scale-110 transition-transform duration-300" />
-              </div>
-              <div className="space-y-2">
-                <h3 className="text-lg sm:text-xl font-bold text-gray-100 font-display">
-                  {feature.title}
+      {/* ── METRICS STRIP ── */}
+      <section style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(4, 1fr)',
+        gap: 1,
+        background: 'var(--border-subtle)',
+        border: '1px solid var(--border-subtle)',
+        borderRadius: 12,
+        overflow: 'hidden',
+        marginBottom: 56,
+      }}>
+        {METRICS.map((m, i) => (
+          <div key={i} style={{
+            background: 'var(--bg-surface)',
+            padding: '20px 16px',
+            textAlign: 'center',
+          }}>
+            <div style={{
+              fontFamily: 'var(--font-display)',
+              fontSize: 26,
+              fontWeight: 800,
+              color: m.color,
+              lineHeight: 1,
+              marginBottom: 6,
+            }}>
+              {liveStats && i === 0 ? `${liveStats.districts || 25}+` : m.value}
+            </div>
+            <div className="section-label">{m.label}</div>
+          </div>
+        ))}
+      </section>
+
+      {/* ── HOW IT WORKS ── */}
+      <section style={{ marginBottom: 56 }}>
+        <div style={{ textAlign: 'center', marginBottom: 32 }}>
+          <div className="section-label" style={{ marginBottom: 8 }}>Process</div>
+          <h2 style={{
+            fontFamily: 'var(--font-display)',
+            fontSize: 28,
+            fontWeight: 800,
+            color: 'var(--text-primary)',
+          }}>
+            How CivicTN Works
+          </h2>
+        </div>
+
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
+          gap: 16,
+        }}>
+          {HOW_IT_WORKS.map((step, idx) => {
+            const Icon = step.icon;
+            return (
+              <div key={idx} className="card" style={{ padding: 24, position: 'relative', overflow: 'hidden' }}>
+                {/* Step number watermark */}
+                <div style={{
+                  position: 'absolute',
+                  top: 12,
+                  right: 16,
+                  fontFamily: 'var(--font-display)',
+                  fontSize: 48,
+                  fontWeight: 900,
+                  color: 'rgba(255,255,255,0.03)',
+                  lineHeight: 1,
+                }}>
+                  {step.step}
+                </div>
+
+                <div style={{
+                  width: 40,
+                  height: 40,
+                  borderRadius: 10,
+                  background: `${step.color}15`,
+                  border: `1px solid ${step.color}30`,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  marginBottom: 16,
+                }}>
+                  <Icon size={20} style={{ color: step.color }} />
+                </div>
+
+                <h3 style={{
+                  fontFamily: 'var(--font-display)',
+                  fontSize: 16,
+                  fontWeight: 700,
+                  color: 'var(--text-primary)',
+                  marginBottom: 8,
+                }}>
+                  {step.title}
                 </h3>
-                <p className="text-gray-400 text-sm leading-relaxed">
-                  {feature.description}
+                <p style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.65 }}>
+                  {step.desc}
                 </p>
               </div>
-            </div>
-          );
-        })}
-      </div>
+            );
+          })}
+        </div>
+      </section>
 
-      {/* Basic Metrics Display */}
-      <div className="mt-16 sm:mt-24 py-8 border-t border-gray-900 max-w-4xl mx-auto text-center z-10">
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-6 sm:gap-4">
-          <div>
-            <div className="text-3xl sm:text-4xl font-extrabold text-teal-400 font-display">25+</div>
-            <div className="text-xs sm:text-sm text-gray-500 uppercase font-semibold mt-1">Districts Seeded</div>
+      {/* ── FEATURE GRID ── */}
+      <section style={{ marginBottom: 56 }}>
+        <div style={{ textAlign: 'center', marginBottom: 32 }}>
+          <div className="section-label" style={{ marginBottom: 8 }}>Platform Capabilities</div>
+          <h2 style={{
+            fontFamily: 'var(--font-display)',
+            fontSize: 28,
+            fontWeight: 800,
+            color: 'var(--text-primary)',
+          }}>
+            Built for Impact
+          </h2>
+        </div>
+
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
+          gap: 12,
+        }}>
+          {FEATURES.map((f, idx) => {
+            const Icon = f.icon;
+            return (
+              <div
+                key={idx}
+                className="card"
+                style={{
+                  padding: 20,
+                  display: 'flex',
+                  gap: 16,
+                  alignItems: 'flex-start',
+                  borderLeft: `3px solid ${f.border}`,
+                  transition: 'all 0.2s ease',
+                }}
+                onMouseEnter={e => {
+                  e.currentTarget.style.borderLeftColor = f.color;
+                  e.currentTarget.style.background = f.bg;
+                }}
+                onMouseLeave={e => {
+                  e.currentTarget.style.borderLeftColor = f.border;
+                  e.currentTarget.style.background = 'var(--bg-surface)';
+                }}
+              >
+                <div style={{
+                  width: 36,
+                  height: 36,
+                  borderRadius: 8,
+                  background: f.bg,
+                  border: `1px solid ${f.border}`,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flexShrink: 0,
+                }}>
+                  <Icon size={18} style={{ color: f.color }} />
+                </div>
+                <div>
+                  <h3 style={{
+                    fontFamily: 'var(--font-display)',
+                    fontSize: 15,
+                    fontWeight: 700,
+                    color: 'var(--text-primary)',
+                    marginBottom: 5,
+                  }}>
+                    {f.title}
+                  </h3>
+                  <p style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.6 }}>
+                    {f.desc}
+                  </p>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </section>
+
+      {/* ── ESCALATION LEVELS INFO ── */}
+      <section style={{ marginBottom: 40 }}>
+        <div className="card" style={{ padding: 28 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 20 }}>
+            <TrendingUp size={18} style={{ color: 'var(--teal-400)' }} />
+            <h2 style={{
+              fontFamily: 'var(--font-display)',
+              fontSize: 18,
+              fontWeight: 700,
+              color: 'var(--text-primary)',
+            }}>
+              Auto-Escalation Engine
+            </h2>
           </div>
-          <div>
-            <div className="text-3xl sm:text-4xl font-extrabold text-emerald-400 font-display">100%</div>
-            <div className="text-xs sm:text-sm text-gray-500 uppercase font-semibold mt-1">Hashed Anonymity</div>
-          </div>
-          <div>
-            <div className="text-3xl sm:text-4xl font-extrabold text-amber-400 font-display">Realtime</div>
-            <div className="text-xs sm:text-sm text-gray-500 uppercase font-semibold mt-1">Chat & Strikes</div>
-          </div>
-          <div>
-            <div className="text-3xl sm:text-4xl font-extrabold text-rose-400 font-display">Gemini AI</div>
-            <div className="text-xs sm:text-sm text-gray-500 uppercase font-semibold mt-1">Moderated Platform</div>
+          <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 20, lineHeight: 1.65 }}>
+            Community support votes automatically escalate complaints to higher authorities when thresholds are reached.
+          </p>
+
+          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+            {[
+              { count: '50+', label: 'Community Support', next: '→ Assistant Engineer', color: '#f97316' },
+              { count: '100+', label: 'Community Support', next: '→ Executive Engineer', color: '#f43f5e' },
+              { count: '200+', label: 'Community Support', next: '→ Municipal Commissioner', color: '#a855f7' },
+            ].map((tier, i) => (
+              <div key={i} style={{
+                flex: 1,
+                minWidth: 160,
+                padding: '14px 16px',
+                borderRadius: 10,
+                background: `${tier.color}08`,
+                border: `1px solid ${tier.color}20`,
+              }}>
+                <div style={{
+                  fontFamily: 'var(--font-display)',
+                  fontSize: 22,
+                  fontWeight: 800,
+                  color: tier.color,
+                  marginBottom: 2,
+                }}>
+                  {tier.count}
+                </div>
+                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 6 }}>
+                  {tier.label}
+                </div>
+                <div style={{ fontSize: 12, fontWeight: 600, color: tier.color }}>
+                  {tier.next}
+                </div>
+              </div>
+            ))}
           </div>
         </div>
-      </div>
+      </section>
+
+      {/* ── CTA BOTTOM ── */}
+      <section style={{
+        textAlign: 'center',
+        padding: '40px 24px',
+        background: 'linear-gradient(135deg, rgba(20,184,166,0.06) 0%, rgba(52,211,153,0.04) 100%)',
+        border: '1px solid rgba(20,184,166,0.12)',
+        borderRadius: 16,
+      }}>
+        <h2 style={{
+          fontFamily: 'var(--font-display)',
+          fontSize: 24,
+          fontWeight: 800,
+          color: 'var(--text-primary)',
+          marginBottom: 10,
+        }}>
+          Ready to Make Your City Better?
+        </h2>
+        <p style={{ fontSize: 14, color: 'var(--text-secondary)', marginBottom: 24 }}>
+          Join thousands of citizens holding authorities accountable — anonymously.
+        </p>
+        <SignedOut>
+          <SignInButton mode="modal">
+            <button className="btn btn-primary btn-lg">
+              Start Reporting — It's Free <ArrowRight size={16} />
+            </button>
+          </SignInButton>
+        </SignedOut>
+        <SignedIn>
+          <Link to="/submit" className="btn btn-primary btn-lg">
+            Report a Civic Issue <ArrowRight size={16} />
+          </Link>
+        </SignedIn>
+      </section>
     </div>
   );
 }

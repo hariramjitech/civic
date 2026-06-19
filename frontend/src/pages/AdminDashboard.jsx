@@ -1,69 +1,106 @@
 import React, { useState, useEffect } from 'react';
 import { useCivic } from '../context/CivicContext';
 import api from '../lib/api';
-import { 
-  Shield, Users, BarChart3, AlertCircle, Sparkles, 
-  Trash2, Loader2, Award, Info, RefreshCw 
+import {
+  Shield, Users, BarChart3, AlertCircle, Sparkles,
+  Trash2, Loader2, Award, RefreshCw, Download, TrendingUp,
+  CheckSquare, ArrowUpRight, Activity
 } from 'lucide-react';
 import toast from 'react-hot-toast';
+import SeverityBadge from '../components/SeverityBadge';
+
+const TABS = [
+  { key: 'overview', label: 'Overview', icon: Activity },
+  { key: 'users', label: 'Users', icon: Users, adminOnly: true },
+  { key: 'incidents', label: 'Incidents', icon: AlertCircle },
+  { key: 'ai', label: 'AI Suite', icon: Sparkles },
+];
+
+function StatCard({ label, value, color, icon: Icon, sub }) {
+  return (
+    <div className="card" style={{ padding: 20 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+        <span className="section-label">{label}</span>
+        {Icon && <Icon size={16} style={{ color }} />}
+      </div>
+      <div style={{ fontFamily: 'var(--font-display)', fontSize: 32, fontWeight: 800, color, lineHeight: 1 }}>
+        {value}
+      </div>
+      {sub && <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 6 }}>{sub}</div>}
+    </div>
+  );
+}
+
+function BarRow({ label, count, total, color = 'var(--teal-500)' }) {
+  const pct = total > 0 ? Math.round((count / total) * 100) : 0;
+  return (
+    <div>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: 12, marginBottom: 5 }}>
+        <span style={{ fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'capitalize' }}>{label}</span>
+        <span style={{ color: 'var(--text-muted)' }}>{count} &nbsp;<span style={{ opacity: 0.6 }}>({pct}%)</span></span>
+      </div>
+      <div className="progress-bar">
+        <div className="progress-bar-fill" style={{ width: `${pct}%`, background: color }} />
+      </div>
+    </div>
+  );
+}
 
 export default function AdminDashboard() {
   const { role, isSignedIn } = useCivic();
   const [stats, setStats] = useState(null);
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [activeSubTab, setActiveSubTab] = useState('telemetry');
+  const [activeTab, setActiveTab] = useState('overview');
 
-  // AI analytics reports
+  // AI
   const [aiReport, setAiReport] = useState('');
   const [generatingReport, setGeneratingReport] = useState(false);
   const [aiRiskPredictions, setAiRiskPredictions] = useState(null);
   const [predictingRisk, setPredictingRisk] = useState(false);
 
-  const fetchDashboardData = async () => {
+  const fetchData = async () => {
     if (!isSignedIn) return;
     try {
       setLoading(true);
       const statsRes = await api.get('/analytics/dashboard');
       setStats(statsRes.data);
-
       if (role === 'admin') {
         const usersRes = await api.get('/admin/users');
         setUsers(usersRes.data.users || []);
       }
     } catch (err) {
-      console.error(err);
-      toast.error('Failed to sync administration panel.');
+      toast.error('Failed to load dashboard.');
     } finally {
       setLoading(false);
     }
   };
 
-  useEffect(() => {
-    fetchDashboardData();
-  }, [isSignedIn, role]);
+  useEffect(() => { fetchData(); }, [isSignedIn, role]);
 
   const handleRoleChange = async (userId, newRole) => {
     try {
       await api.patch(`/admin/users/${userId}/role`, { role: newRole });
-      toast.success('User authorization updated successfully!');
-      
-      // Update local cache
+      toast.success('Role updated.');
       setUsers(prev => prev.map(u => u._id === userId ? { ...u, role: newRole } : u));
-    } catch (err) {
-      toast.error('Failed to change authorization role.');
-    }
+    } catch { toast.error('Failed.'); }
   };
 
-  const handlePostHardDelete = async (postId) => {
-    if (!window.confirm('Are you absolutely sure you want to permanently erase this report from database storage?')) return;
+  const handleStatusChange = async (postId, newStatus) => {
+    try {
+      await api.patch(`/posts/${postId}/status`, { status: newStatus });
+      toast.success(`Status updated to ${newStatus.replace('_', ' ')}`);
+      fetchData();
+    } catch { toast.error('Status update failed. Backend endpoint may be needed.'); }
+  };
+
+  const handleDelete = async (postId) => {
+    if (!window.confirm('Permanently delete this report?')) return;
     try {
       await api.delete(`/admin/posts/${postId}`);
-      toast.success('Incident deleted from servers.');
-      fetchDashboardData();
-    } catch (err) {
-      toast.error('Failed to hard delete incident.');
-    }
+      toast.success('Report deleted.');
+      fetchData();
+    } catch { toast.error('Delete failed.'); }
   };
 
   const generateAIReport = async () => {
@@ -71,382 +108,409 @@ export default function AdminDashboard() {
     try {
       setGeneratingReport(true);
       setAiReport('');
-      
       const res = await api.post('/ai/generate-report', {
-        analyticsData: {
-          stats: stats.stats,
-          categoryBreakdown: stats.categoryBreakdown,
-          districtBreakdown: stats.districtBreakdown
-        }
+        analyticsData: { stats: stats.stats, categoryBreakdown: stats.categoryBreakdown, districtBreakdown: stats.districtBreakdown }
       });
-      
-      setAiReport(res.data.report || 'No report returned.');
-      toast.success('AI telemetry summary generated!');
-    } catch (err) {
-      toast.error('Failed to generate report.');
-    } finally {
-      setGeneratingReport(false);
-    }
+      setAiReport(res.data.report || 'No report generated.');
+      toast.success('AI report generated!');
+    } catch { toast.error('Report generation failed.'); } finally { setGeneratingReport(false); }
   };
 
-  const predictInfrastructureRisk = async () => {
+  const downloadReport = () => {
+    if (!aiReport) { toast.error('Generate a report first.'); return; }
+    const content = `CivicTN AI Analytics Report\nGenerated: ${new Date().toLocaleString()}\n\n${aiReport}`;
+    const blob = new Blob([content], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = Object.assign(document.createElement('a'), { href: url, download: `civictn-report-${Date.now()}.txt` });
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const predictRisk = async () => {
     try {
       setPredictingRisk(true);
       setAiRiskPredictions(null);
-      
       const res = await api.post('/ai/predict-risk');
       setAiRiskPredictions(res.data.predictions);
-      toast.success('Spatial risk forecast generated!');
-    } catch (err) {
-      toast.error('Prediction engine failed.');
-    } finally {
-      setPredictingRisk(false);
-    }
+      toast.success('Risk predictions generated!');
+    } catch { toast.error('Prediction failed.'); } finally { setPredictingRisk(false); }
   };
 
-  if (loading) {
-    return (
-      <div className="h-[60vh] flex flex-col items-center justify-center space-y-4">
-        <Loader2 className="w-10 h-10 text-teal-400 animate-spin" />
-        <p className="text-gray-400 font-display">Opening platform console...</p>
-      </div>
-    );
-  }
+  if (loading) return (
+    <div style={{ height: '60vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12 }}>
+      <Loader2 size={32} style={{ color: 'var(--teal-400)', animation: 'spin 0.8s linear infinite' }} />
+      <p style={{ color: 'var(--text-muted)', fontSize: 13 }}>Loading dashboard...</p>
+    </div>
+  );
 
-  // Double check authorization
-  if (role !== 'admin' && role !== 'department' && role !== 'officer') {
-    return (
-      <div className="glass-panel p-8 rounded-2xl text-center max-w-md mx-auto space-y-4 py-16">
-        <AlertCircle className="w-12 h-12 text-rose-500 mx-auto" />
-        <h2 className="text-xl font-bold font-display text-gray-200">Unauthorized Entrance</h2>
-        <p className="text-xs text-gray-500 leading-relaxed">
-          Access to this system administration console is locked to authenticated officers, department engineers, and platform developers.
-        </p>
-      </div>
-    );
-  }
+  if (role !== 'admin' && role !== 'department' && role !== 'officer') return (
+    <div className="card" style={{ padding: 48, textAlign: 'center', maxWidth: 400, margin: '60px auto' }}>
+      <AlertCircle size={40} style={{ color: '#f43f5e', marginBottom: 16 }} />
+      <h2 style={{ fontFamily: 'var(--font-display)', fontSize: 20, fontWeight: 700, marginBottom: 8 }}>Unauthorized</h2>
+      <p style={{ color: 'var(--text-muted)', fontSize: 13 }}>
+        Access is restricted to officers, department heads, and administrators.
+      </p>
+    </div>
+  );
+
+  const allowedTabs = TABS.filter(t => !t.adminOnly || role === 'admin');
 
   return (
-    <div className="space-y-6">
-      {/* Title Header */}
-      <div className="flex items-center justify-between">
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+
+      {/* ── HEADER ── */}
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
         <div>
-          <h1 className="text-3xl font-extrabold tracking-tight font-display bg-gradient-to-r from-teal-400 to-emerald-400 bg-clip-text text-transparent">
-            Platform Security & Analytics Control
+          <h1 style={{
+            fontFamily: 'var(--font-display)', fontSize: 24, fontWeight: 800,
+            background: 'linear-gradient(135deg, var(--teal-400), #6ee7b7)',
+            WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text',
+            marginBottom: 4,
+          }}>
+            Admin Dashboard
           </h1>
-          <p className="text-gray-400 text-sm mt-1">
-            System administration, telemetry, role assignment, and Gemini AI analysis tools.
+          <p style={{ fontSize: 13, color: 'var(--text-muted)' }}>
+            Telemetry, user management, and AI analytics.
           </p>
         </div>
         <button
-          onClick={fetchDashboardData}
-          className="p-2.5 rounded-lg border border-gray-800 bg-gray-950/20 hover:bg-gray-900 hover:text-teal-400 transition-colors"
+          onClick={fetchData}
+          className="btn btn-secondary btn-sm"
+          title="Refresh data"
         >
           <RefreshCw size={14} />
         </button>
       </div>
 
-      {/* Sub Tabs Toggle */}
-      <div className="flex space-x-2 border-b border-gray-900 pb-2">
-        <button
-          onClick={() => setActiveSubTab('telemetry')}
-          className={`px-4 py-2 text-xs font-bold uppercase tracking-wider transition-all border-b-2 ${
-            activeSubTab === 'telemetry'
-              ? 'border-teal-500 text-teal-400 font-extrabold'
-              : 'border-transparent text-gray-500 hover:text-gray-300'
-          }`}
-        >
-          Telemetry Stats
-        </button>
-        {role === 'admin' && (
-          <button
-            onClick={() => setActiveSubTab('users')}
-            className={`px-4 py-2 text-xs font-bold uppercase tracking-wider transition-all border-b-2 ${
-              activeSubTab === 'users'
-                ? 'border-teal-500 text-teal-400 font-extrabold'
-                : 'border-transparent text-gray-500 hover:text-gray-300'
-            }`}
-          >
-            User Management ({users.length})
-          </button>
-        )}
-        <button
-          onClick={() => setActiveSubTab('ai')}
-          className={`px-4 py-2 text-xs font-bold uppercase tracking-wider transition-all border-b-2 ${
-            activeSubTab === 'ai'
-              ? 'border-teal-500 text-teal-400 font-extrabold'
-              : 'border-transparent text-gray-500 hover:text-gray-300'
-          }`}
-        >
-          AI Analytics Suite
-        </button>
+      {/* ── TAB BAR ── */}
+      <div className="tab-bar">
+        {allowedTabs.map(tab => {
+          const Icon = tab.icon;
+          return (
+            <button
+              key={tab.key}
+              className={`tab-item ${activeTab === tab.key ? 'active' : ''}`}
+              onClick={() => setActiveTab(tab.key)}
+            >
+              <Icon size={13} />
+              {tab.label}
+            </button>
+          );
+        })}
       </div>
 
-      {/* Panels content */}
-      <div className="pt-2">
-        {activeSubTab === 'telemetry' && stats && (
-          <div className="space-y-6">
-            {/* telemetry cards grid */}
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-              <div className="glass-panel p-5 rounded-xl border border-gray-900">
-                <span className="text-[10px] text-gray-500 uppercase font-bold tracking-wider">Total Reports</span>
-                <div className="text-3xl font-extrabold text-teal-400 font-display mt-1.5">{stats.stats.totalPosts}</div>
+      {/* ── OVERVIEW TAB ── */}
+      {activeTab === 'overview' && stats && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+
+          {/* Stats grid */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12 }}>
+            <StatCard label="Total Reports" value={stats.stats.totalPosts} color="var(--teal-400)" icon={BarChart3} />
+            <StatCard label="Resolved Cases" value={stats.stats.resolvedPosts} color="#4ade80" icon={CheckSquare} />
+            <StatCard label="Resolution Rate" value={`${stats.stats.resolutionRate}%`} color="#eab308" icon={TrendingUp} sub="of all reports resolved" />
+            <StatCard label="Critical Incidents" value={stats.stats.criticalPosts} color="var(--sev-critical)" icon={AlertCircle} />
+          </div>
+
+          {/* Breakdowns */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16 }}>
+
+            {/* Category breakdown */}
+            <div className="card" style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 14 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                <BarChart3 size={15} style={{ color: 'var(--teal-400)' }} />
+                <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)' }}>By Category</span>
               </div>
-              <div className="glass-panel p-5 rounded-xl border border-gray-900">
-                <span className="text-[10px] text-gray-500 uppercase font-bold tracking-wider">Resolved Cases</span>
-                <div className="text-3xl font-extrabold text-emerald-400 font-display mt-1.5">{stats.stats.resolvedPosts}</div>
-              </div>
-              <div className="glass-panel p-5 rounded-xl border border-gray-900">
-                <span className="text-[10px] text-gray-500 uppercase font-bold tracking-wider">Resolution Rate</span>
-                <div className="text-3xl font-extrabold text-amber-400 font-display mt-1.5">{stats.stats.resolutionRate}%</div>
-              </div>
-              <div className="glass-panel p-5 rounded-xl border border-gray-900">
-                <span className="text-[10px] text-gray-500 uppercase font-bold tracking-wider">Critical Incidents</span>
-                <div className="text-3xl font-extrabold text-rose-400 font-display mt-1.5">{stats.stats.criticalPosts}</div>
-              </div>
+              {stats.categoryBreakdown?.map((cat, i) => (
+                <BarRow key={i} label={cat._id} count={cat.count} total={stats.stats.totalPosts} />
+              ))}
             </div>
 
-            {/* Split Telemetry Breakdowns */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              
-              {/* Category stats breakdown */}
-              <div className="glass-panel p-5 rounded-2xl border border-gray-900 space-y-4">
-                <h3 className="text-sm font-bold font-display text-gray-300 uppercase tracking-wider flex items-center space-x-1.5">
-                  <BarChart3 size={16} className="text-teal-400" />
-                  <span>Category Breakdown</span>
-                </h3>
-                
-                <div className="space-y-3.5 pt-2">
-                  {stats.categoryBreakdown?.map((cat, idx) => {
-                    const pct = Math.round((cat.count / stats.stats.totalPosts) * 100);
-                    return (
-                      <div key={idx} className="space-y-1">
-                        <div className="flex items-center justify-between text-xs">
-                          <span className="font-semibold text-gray-400 capitalize">{cat._id}</span>
-                          <span className="text-gray-550">{cat.count} cases ({pct}%)</span>
-                        </div>
-                        <div className="w-full bg-gray-900 h-2 rounded-full overflow-hidden border border-gray-850">
-                          <div className="bg-teal-500 h-full rounded-full" style={{ width: `${pct}%` }} />
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
+            {/* District breakdown */}
+            <div className="card" style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                <Users size={15} style={{ color: 'var(--teal-400)' }} />
+                <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)' }}>By District</span>
               </div>
-
-              {/* Top District breakdown list */}
-              <div className="glass-panel p-5 rounded-2xl border border-gray-900 space-y-4">
-                <h3 className="text-sm font-bold font-display text-gray-300 uppercase tracking-wider flex items-center space-x-1.5">
-                  <Users size={16} className="text-teal-400" />
-                  <span>District Incident Distribution</span>
-                </h3>
-
-                <div className="space-y-3.5 pt-2">
-                  {stats.districtBreakdown?.map((dist, idx) => {
-                    const rate = dist.count ? Math.round((dist.resolved / dist.count) * 100) : 0;
-                    return (
-                      <div key={idx} className="flex items-center justify-between text-xs py-1.5 border-b border-gray-900/60">
-                        <span className="font-bold text-gray-300">{dist._id}</span>
-                        <div className="flex items-center space-x-4">
-                          <span className="text-gray-400">{dist.count} cases</span>
-                          <span className="bg-emerald-500/10 text-emerald-400 text-[10px] px-2 py-0.5 border border-emerald-500/20 rounded font-bold">
-                            {rate}% Resolved
-                          </span>
-                        </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {stats.districtBreakdown?.map((dist, i) => {
+                  const rate = dist.count ? Math.round((dist.resolved / dist.count) * 100) : 0;
+                  return (
+                    <div key={i} style={{
+                      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                      padding: '8px 0', borderBottom: '1px solid var(--border-subtle)', fontSize: 12,
+                    }}>
+                      <span style={{ fontWeight: 600, color: 'var(--text-secondary)' }}>{dist._id}</span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                        <span style={{ color: 'var(--text-muted)' }}>{dist.count} cases</span>
+                        <span style={{
+                          fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 4,
+                          background: 'rgba(74,222,128,0.08)', color: '#4ade80', border: '1px solid rgba(74,222,128,0.2)',
+                        }}>
+                          {rate}% resolved
+                        </span>
                       </div>
-                    );
-                  })}
-                </div>
-              </div>
-
-            </div>
-
-            {/* Top Intensity reports & removal panel */}
-            <div className="glass-panel p-5 rounded-2xl border border-gray-900 space-y-4">
-              <h3 className="text-sm font-bold font-display text-gray-300 uppercase tracking-wider flex items-center space-x-1.5">
-                <AlertCircle size={16} className="text-rose-500" />
-                <span>Top Active High-Intensity Incident Records</span>
-              </h3>
-
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs border-collapse">
-                  <thead>
-                    <tr className="border-b border-gray-900 text-gray-500 uppercase tracking-wider">
-                      <th className="py-2.5 px-3">Title</th>
-                      <th className="py-2.5 px-3">District</th>
-                      <th className="py-2.5 px-3">Severity</th>
-                      <th className="py-2.5 px-3">Intensity</th>
-                      <th className="py-2.5 px-3">Action</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {stats.topIntensity?.map((post) => (
-                      <tr key={post._id} className="border-b border-gray-900 hover:bg-gray-900/25 transition-colors">
-                        <td className="py-3 px-3 font-semibold text-gray-300 truncate max-w-xs">{post.title}</td>
-                        <td className="py-3 px-3 text-gray-400">{post.district}</td>
-                        <td className="py-3 px-3">
-                          <span className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded border ${
-                            post.severity === 'critical' ? 'bg-rose-500/10 text-rose-400 border-rose-500/20' : 'bg-amber-500/10 text-amber-400 border-amber-500/20'
-                          }`}>
-                            {post.severity}
-                          </span>
-                        </td>
-                        <td className="py-3 px-3 font-bold text-gray-200">{post.intensityScore} 🔥</td>
-                        <td className="py-3 px-3">
-                          <button
-                            onClick={() => handlePostHardDelete(post._id)}
-                            className="p-1.5 hover:bg-rose-500/10 text-rose-500 rounded-lg transition-colors"
-                          >
-                            <Trash2 size={14} />
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           </div>
-        )}
 
-        {/* User permissions role updating */}
-        {activeSubTab === 'users' && role === 'admin' && (
-          <div className="glass-panel p-5 rounded-2xl border border-gray-900 space-y-4">
-            <h3 className="text-sm font-bold font-display text-gray-300 uppercase tracking-wider flex items-center space-x-1.5">
-              <Users size={16} className="text-teal-400" />
-              <span>User Authentication Registry</span>
-            </h3>
+          {/* Escalation thresholds info */}
+          <div className="card" style={{ padding: 20 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 16 }}>
+              <ArrowUpRight size={15} style={{ color: '#f97316' }} />
+              <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)' }}>Escalation Engine Rules</span>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
+              {[
+                { threshold: '50+', to: 'Assistant Engineer', color: '#f97316' },
+                { threshold: '100+', to: 'Executive Engineer', color: '#f43f5e' },
+                { threshold: '200+', to: 'Municipal Commissioner', color: '#a855f7' },
+              ].map((e, i) => (
+                <div key={i} style={{
+                  padding: '12px 14px', borderRadius: 8,
+                  background: `${e.color}08`, border: `1px solid ${e.color}20`,
+                }}>
+                  <div style={{ fontFamily: 'var(--font-display)', fontSize: 20, fontWeight: 800, color: e.color, marginBottom: 4 }}>
+                    {e.threshold}
+                  </div>
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>support votes</div>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: e.color, marginTop: 6 }}>→ {e.to}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
 
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs border-collapse">
-                <thead>
-                  <tr className="border-b border-gray-900 text-gray-500 uppercase tracking-wider">
-                    <th className="py-2.5 px-3">Display Name</th>
-                    <th className="py-2.5 px-3">Clerk ID</th>
-                    <th className="py-2.5 px-3">District Region</th>
-                    <th className="py-2.5 px-3">Platform Role</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {users.map((user) => (
-                    <tr key={user._id} className="border-b border-gray-900">
-                      <td className="py-3 px-3 font-semibold text-gray-200">{user.displayName || 'Citizen Member'}</td>
-                      <td className="py-3 px-3 font-mono text-[10px] text-gray-500">{user.clerkId}</td>
-                      <td className="py-3 px-3 text-gray-400">{user.district || 'Not Configured'}</td>
-                      <td className="py-3 px-3">
-                        <select
-                          value={user.role}
-                          onChange={(e) => handleRoleChange(user._id, e.target.value)}
-                          className="bg-gray-900 border border-gray-800 rounded p-1 text-xs text-gray-300 focus:outline-none focus:border-teal-500"
-                        >
-                          <option value="citizen">Citizen</option>
-                          <option value="officer">Field Officer</option>
-                          <option value="department">Department Head</option>
-                          <option value="admin">Administrator</option>
-                        </select>
-                      </td>
-                    </tr>
+      {/* ── INCIDENTS TAB ── */}
+      {activeTab === 'incidents' && stats && (
+        <div className="card" style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+            <AlertCircle size={15} style={{ color: '#f43f5e' }} />
+            <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)' }}>High-Intensity Incidents</span>
+          </div>
+
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+              <thead>
+                <tr style={{ borderBottom: '1px solid var(--border-subtle)' }}>
+                  {['Title', 'District', 'Severity', 'Intensity', 'Status', 'Actions'].map(h => (
+                    <th key={h} style={{
+                      padding: '8px 12px', textAlign: 'left',
+                      fontSize: 10, fontWeight: 700, textTransform: 'uppercase',
+                      letterSpacing: '0.06em', color: 'var(--text-muted)',
+                    }}>
+                      {h}
+                    </th>
                   ))}
-                </tbody>
-              </table>
-            </div>
+                </tr>
+              </thead>
+              <tbody>
+                {stats.topIntensity?.map(post => (
+                  <tr key={post._id} style={{ borderBottom: '1px solid var(--border-subtle)', transition: 'background 0.1s' }}
+                    onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-elevated)'}
+                    onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                  >
+                    <td style={{ padding: '12px', fontWeight: 600, color: 'var(--text-primary)', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {post.title}
+                    </td>
+                    <td style={{ padding: '12px', color: 'var(--text-secondary)' }}>{post.district}</td>
+                    <td style={{ padding: '12px' }}>
+                      <SeverityBadge severity={post.severity} />
+                    </td>
+                    <td style={{ padding: '12px', fontWeight: 700, color: 'var(--text-primary)' }}>
+                      {post.intensityScore} 🔥
+                    </td>
+                    <td style={{ padding: '12px' }}>
+                      <select
+                        value={post.status || 'reported'}
+                        onChange={e => handleStatusChange(post._id, e.target.value)}
+                        className="glass-input"
+                        style={{ padding: '4px 28px 4px 8px', fontSize: 11, width: 'auto' }}
+                      >
+                        <option value="reported">Reported</option>
+                        <option value="under_review">Under Review</option>
+                        <option value="assigned">Assigned</option>
+                        <option value="in_progress">In Progress</option>
+                        <option value="resolved">Resolved</option>
+                        <option value="closed">Closed</option>
+                      </select>
+                    </td>
+                    <td style={{ padding: '12px' }}>
+                      <button
+                        onClick={() => handleDelete(post._id)}
+                        className="btn btn-danger btn-sm"
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
-        )}
+        </div>
+      )}
 
-        {/* Gemini AI report generation tools */}
-        {activeSubTab === 'ai' && (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            
-            {/* Generate Summary report */}
-            <div className="glass-panel p-5 rounded-2xl border border-gray-900 space-y-4 flex flex-col justify-between">
-              <div className="space-y-2">
-                <h3 className="text-sm font-bold font-display text-gray-300 uppercase tracking-wider flex items-center space-x-1.5">
-                  <Sparkles size={16} className="text-teal-400" />
-                  <span>Gemini AI Telemetry Synthesizer</span>
-                </h3>
-                <p className="text-[11px] text-gray-500 leading-relaxed">
-                  Processes district distributions, category statistics, and unresolved case ratios through Gemini API to compile an executive decision summary report automatically.
-                </p>
+      {/* ── USERS TAB ── */}
+      {activeTab === 'users' && role === 'admin' && (
+        <div className="card" style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+            <Users size={15} style={{ color: 'var(--teal-400)' }} />
+            <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)' }}>
+              User Registry ({users.length})
+            </span>
+          </div>
+
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+              <thead>
+                <tr style={{ borderBottom: '1px solid var(--border-subtle)' }}>
+                  {['User', 'Clerk ID', 'District', 'Role'].map(h => (
+                    <th key={h} style={{ padding: '8px 12px', textAlign: 'left', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-muted)' }}>
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {users.map(user => (
+                  <tr key={user._id} style={{ borderBottom: '1px solid var(--border-subtle)' }}
+                    onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-elevated)'}
+                    onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                  >
+                    <td style={{ padding: '12px', fontWeight: 600, color: 'var(--text-primary)' }}>
+                      {user.displayName || 'Citizen Member'}
+                    </td>
+                    <td style={{ padding: '12px', fontFamily: 'monospace', fontSize: 10, color: 'var(--text-muted)' }}>
+                      {user.clerkId?.slice(0, 16)}...
+                    </td>
+                    <td style={{ padding: '12px', color: 'var(--text-secondary)' }}>
+                      {user.district || '—'}
+                    </td>
+                    <td style={{ padding: '12px' }}>
+                      <select
+                        value={user.role}
+                        onChange={e => handleRoleChange(user._id, e.target.value)}
+                        className="glass-input"
+                        style={{ padding: '4px 28px 4px 8px', fontSize: 11, width: 'auto' }}
+                      >
+                        <option value="citizen">Citizen</option>
+                        <option value="officer">Field Officer</option>
+                        <option value="department">Department Head</option>
+                        <option value="admin">Administrator</option>
+                      </select>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* ── AI TAB ── */}
+      {activeTab === 'ai' && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16 }}>
+
+          {/* Report generator */}
+          <div className="card" style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+              <Sparkles size={15} style={{ color: 'var(--teal-400)' }} />
+              <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)' }}>AI Executive Report</span>
+            </div>
+            <p style={{ fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.6 }}>
+              Gemini AI compiles a structured municipal summary from current platform analytics.
+            </p>
+
+            {aiReport && (
+              <div style={{
+                maxHeight: 200, overflowY: 'auto', padding: '12px 14px',
+                background: 'var(--bg-elevated)', borderRadius: 8, border: '1px solid var(--border-subtle)',
+                fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.65,
+                whiteSpace: 'pre-wrap',
+              }}>
+                {aiReport}
               </div>
+            )}
 
-              {aiReport && (
-                <div className="p-4 rounded-xl bg-gray-950/40 border border-gray-900 font-sans text-xs text-gray-300 leading-relaxed max-h-[30vh] overflow-y-auto whitespace-pre-wrap">
-                  {aiReport}
-                </div>
-              )}
-
+            <div style={{ display: 'flex', gap: 8 }}>
               <button
                 onClick={generateAIReport}
                 disabled={generatingReport}
-                className="w-full flex items-center justify-center space-x-2 py-3 bg-gradient-to-r from-teal-500 to-emerald-600 hover:from-teal-400 hover:to-emerald-500 disabled:from-gray-850 disabled:to-gray-900 text-gray-900 font-bold text-xs rounded-xl shadow-lg transition-all"
+                className="btn btn-primary"
+                style={{ flex: 1 }}
               >
-                {generatingReport ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin text-gray-900" />
-                    <span>Synthesizing Telemetry...</span>
-                  </>
-                ) : (
-                  <>
-                    <Sparkles size={14} />
-                    <span>Compile AI Executive Report</span>
-                  </>
-                )}
+                {generatingReport
+                  ? <><Loader2 size={14} style={{ animation: 'spin 0.8s linear infinite' }} /> Generating...</>
+                  : <><Sparkles size={14} /> Generate Report</>
+                }
               </button>
-            </div>
-
-            {/* Risk prediction engine */}
-            <div className="glass-panel p-5 rounded-2xl border border-gray-900 space-y-4 flex flex-col justify-between">
-              <div className="space-y-2">
-                <h3 className="text-sm font-bold font-display text-gray-300 uppercase tracking-wider flex items-center space-x-1.5">
-                  <Award size={16} className="text-amber-400" />
-                  <span>Spatial Risk Forecast Engine</span>
-                </h3>
-                <p className="text-[11px] text-gray-500 leading-relaxed">
-                  Models historical incident cluster frequencies, average categories severity ratios, and geographical distribution to project top high-risk zones across Tamil Nadu.
-                </p>
-              </div>
-
-              {aiRiskPredictions && (
-                <div className="p-4 rounded-xl bg-gray-950/40 border border-gray-900 text-xs space-y-2 max-h-[30vh] overflow-y-auto">
-                  <div className="text-[10px] text-gray-550 uppercase font-extrabold tracking-wider border-b border-gray-850 pb-1.5 mb-1.5">Model Projections</div>
-                  
-                  {aiRiskPredictions.map((pred, idx) => (
-                    <div key={idx} className="flex items-center justify-between border-b border-gray-900 pb-1.5">
-                      <div>
-                        <div className="font-bold text-gray-300">{pred.district} ({pred.category})</div>
-                        <div className="text-[10px] text-gray-500 mt-0.5">Confidence: {Math.round(pred.confidence * 100)}%</div>
-                      </div>
-                      <span className="text-[10px] uppercase font-bold text-rose-400 bg-rose-500/10 px-2 py-0.5 rounded border border-rose-500/20">
-                        {pred.riskLevel} Risk
-                      </span>
-                    </div>
-                  ))}
-                </div>
+              {aiReport && (
+                <button onClick={downloadReport} className="btn btn-secondary" title="Download as text">
+                  <Download size={14} />
+                </button>
               )}
-
-              <button
-                onClick={predictInfrastructureRisk}
-                disabled={predictingRisk}
-                className="w-full flex items-center justify-center space-x-2 py-3 bg-gradient-to-r from-teal-500 to-emerald-600 hover:from-teal-400 hover:to-emerald-500 disabled:from-gray-850 disabled:to-gray-900 text-gray-900 font-bold text-xs rounded-xl shadow-lg transition-all"
-              >
-                {predictingRisk ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin text-gray-900" />
-                    <span>Modeling Incidents...</span>
-                  </>
-                ) : (
-                  <>
-                    <BarChart3 size={14} />
-                    <span>Run Spatial Risk Model</span>
-                  </>
-                )}
-              </button>
             </div>
-
           </div>
-        )}
-      </div>
 
+          {/* Risk predictor */}
+          <div className="card" style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+              <Award size={15} style={{ color: '#eab308' }} />
+              <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)' }}>Spatial Risk Forecast</span>
+            </div>
+            <p style={{ fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.6 }}>
+              Models historical incident clusters to project high-risk zones across Tamil Nadu.
+            </p>
+
+            {aiRiskPredictions && (
+              <div style={{
+                maxHeight: 220, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 8,
+              }}>
+                {aiRiskPredictions.map((pred, i) => (
+                  <div key={i} style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                    padding: '10px 12px', background: 'var(--bg-elevated)',
+                    borderRadius: 8, border: '1px solid var(--border-subtle)',
+                  }}>
+                    <div>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>
+                        {pred.district}
+                      </div>
+                      <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
+                        {pred.category} · {Math.round(pred.confidence * 100)}% confidence
+                      </div>
+                    </div>
+                    <span style={{
+                      fontSize: 10, fontWeight: 800, textTransform: 'uppercase',
+                      padding: '3px 8px', borderRadius: 4,
+                      background: pred.riskLevel === 'High' ? 'rgba(244,63,94,0.1)' : 'rgba(234,179,8,0.1)',
+                      color: pred.riskLevel === 'High' ? '#f43f5e' : '#eab308',
+                      border: `1px solid ${pred.riskLevel === 'High' ? 'rgba(244,63,94,0.2)' : 'rgba(234,179,8,0.2)'}`,
+                    }}>
+                      {pred.riskLevel} Risk
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <button
+              onClick={predictRisk}
+              disabled={predictingRisk}
+              className="btn btn-primary"
+            >
+              {predictingRisk
+                ? <><Loader2 size={14} style={{ animation: 'spin 0.8s linear infinite' }} /> Modeling...</>
+                : <><BarChart3 size={14} /> Run Risk Model</>
+              }
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

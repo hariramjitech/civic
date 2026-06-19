@@ -1,58 +1,74 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useCivic } from '../context/CivicContext';
 import api from '../lib/api';
 import { Link } from 'react-router-dom';
-import { 
-  Heart, MessageCircle, AlertTriangle, Phone, Mail, Globe,
-  MapPin, SlidersHorizontal, Flame, Search, CheckCircle, 
-  Clock, Share2, ChevronDown, ChevronUp, Sparkles, Navigation
+import {
+  Heart, MessageCircle, Flame, MapPin, Search,
+  CheckCircle, Clock, Share2, ChevronDown, ChevronUp,
+  Sparkles, Navigation, Phone, Mail, PlusCircle, SlidersHorizontal,
+  LayoutGrid, List
 } from 'lucide-react';
 import toast from 'react-hot-toast';
+import SeverityBadge from '../components/SeverityBadge';
+import EscalationBar from '../components/EscalationBar';
+import StatusTimeline from '../components/StatusTimeline';
+
+const CATEGORIES = [
+  { value: '', label: 'All Issues' },
+  { value: 'roads', label: 'Roads' },
+  { value: 'sanitation', label: 'Sanitation' },
+  { value: 'water', label: 'Water' },
+  { value: 'electricity', label: 'Electricity' },
+  { value: 'municipal', label: 'Municipal' },
+  { value: 'other', label: 'Other' },
+];
+
+const DISTRICTS = [
+  'Chennai', 'Coimbatore', 'Madurai', 'Tiruchirappalli', 'Salem',
+  'Tirunelveli', 'Vellore', 'Thoothukudi', 'Erode', 'Thanjavur',
+  'Dindigul', 'Ranipet', 'Tirupathur', 'Tenkasi', 'Chengalpattu',
+  'Kanchipuram', 'Tiruvallur', 'Tiruppur', 'Karur', 'Namakkal',
+  'Nilgiris', 'Cuddalore', 'Villupuram', 'Krishnagiri', 'Dharmapuri',
+];
+
+function getCatAvatarStyle(cat) {
+  const styles = {
+    roads: { background: 'linear-gradient(135deg,#f43f5e,#f97316)' },
+    sanitation: { background: 'linear-gradient(135deg,#22c55e,#14b8a6)' },
+    water: { background: 'linear-gradient(135deg,#06b6d4,#3b82f6)' },
+    electricity: { background: 'linear-gradient(135deg,#eab308,#f97316)' },
+    municipal: { background: 'linear-gradient(135deg,#a855f7,#6366f1)' },
+  };
+  return styles[cat] || { background: 'linear-gradient(135deg,#52525b,#3f3f46)' };
+}
+
+const SEV_BORDER = {
+  critical: 'var(--sev-critical)',
+  high: 'var(--sev-high)',
+  medium: 'var(--sev-medium)',
+  low: 'var(--sev-low)',
+};
 
 export default function Feed() {
   const { isSignedIn, role, userProfile } = useCivic();
   const [posts, setPosts] = useState([]);
   const [loading, setLoading] = useState(true);
-  
-  // Filter states
+  const [myPostIds, setMyPostIds] = useState(new Set());
+  const [expandedContacts, setExpandedContacts] = useState({});
+  const [expandedTimelines, setExpandedTimelines] = useState({});
+  const [likeAnim, setLikeAnim] = useState({});
+
+  // Filters
   const [district, setDistrict] = useState('');
   const [category, setCategory] = useState('');
   const [severity, setSeverity] = useState('');
   const [status, setStatus] = useState('');
   const [sort, setSort] = useState('latest');
   const [searchQuery, setSearchQuery] = useState('');
-  const [showFilters, setShowFilters] = useState(false);
-  
-  // Geolocation states
   const [useGeo, setUseGeo] = useState(false);
   const [coords, setCoords] = useState(null);
 
-  // User's own posts list to detect ownership
-  const [myPostIds, setMyPostIds] = useState(new Set());
-
-  // Expandable state for contact details on individual cards
-  const [expandedContacts, setExpandedContacts] = useState({});
-  // Double-tap heart animation trigger list
-  const [likeHeartAnim, setLikeHeartAnim] = useState({});
-
-  const categories = [
-    { value: 'roads', label: 'Roads & Potholes' },
-    { value: 'sanitation', label: 'Sanitation & Garbage' },
-    { value: 'water', label: 'Water & Sewage' },
-    { value: 'electricity', label: 'Electricity & Lights' },
-    { value: 'municipal', label: 'Municipal Control' },
-    { value: 'other', label: 'Other Issues' }
-  ];
-
-  const districts = [
-    'Chennai', 'Coimbatore', 'Madurai', 'Tiruchirappalli', 'Salem', 
-    'Tirunelveli', 'Vellore', 'Thoothukudi', 'Erode', 'Thanjavur', 
-    'Dindigul', 'Ranipet', 'Tirupathur', 'Tenkasi', 'Chengalpattu', 
-    'Kanchipuram', 'Tiruvallur', 'Tiruppur', 'Karur', 'Namakkal', 
-    'Nilgiris', 'Cuddalore', 'Villupuram', 'Krishnagiri', 'Dharmapuri'
-  ];
-
-  const fetchPosts = async () => {
+  const fetchPosts = useCallback(async () => {
     try {
       setLoading(true);
       const params = { sort };
@@ -60,506 +76,501 @@ export default function Feed() {
       if (category) params.category = category;
       if (severity) params.severity = severity;
       if (status) params.status = status;
-      
-      if (useGeo && coords) {
-        params.lat = coords.lat;
-        params.lng = coords.lng;
-        params.radius = 5000;
-      }
-
+      if (useGeo && coords) { params.lat = coords.lat; params.lng = coords.lng; params.radius = 5000; }
       const res = await api.get('/posts', { params });
       setPosts(res.data.posts);
     } catch (err) {
-      console.error('Failed to load posts:', err);
       toast.error('Failed to load feed.');
     } finally {
       setLoading(false);
     }
-  };
-
-  const fetchMyPosts = async () => {
-    if (!isSignedIn) return;
-    try {
-      const res = await api.get('/auth/my-posts');
-      const ids = new Set(res.data.posts.map(p => p._id));
-      setMyPostIds(ids);
-    } catch (err) {
-      console.error('Error fetching user post ownership:', err);
-    }
-  };
-
-  useEffect(() => {
-    fetchPosts();
   }, [district, category, severity, status, sort, useGeo, coords]);
 
+  useEffect(() => { fetchPosts(); }, [fetchPosts]);
+
   useEffect(() => {
-    fetchMyPosts();
+    if (!isSignedIn) return;
+    api.get('/auth/my-posts')
+      .then(res => setMyPostIds(new Set(res.data.posts.map(p => p._id))))
+      .catch(() => { });
   }, [isSignedIn]);
 
   const handleGeoToggle = () => {
     if (!useGeo) {
-      if ('geolocation' in navigator) {
-        navigator.geolocation.getCurrentPosition(
-          (pos) => {
-            setCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude });
-            setUseGeo(true);
-            toast.success('Location locked. Filtering within 5km radius.');
-          },
-          (err) => {
-            console.error(err);
-            toast.error('Location permission denied.');
-            setUseGeo(false);
-          }
-        );
-      } else {
-        toast.error('Geolocation not supported.');
-      }
+      navigator.geolocation?.getCurrentPosition(
+        pos => { setCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude }); setUseGeo(true); toast.success('Filtering within 5km.'); },
+        () => { toast.error('Location denied.'); }
+      );
     } else {
-      setUseGeo(false);
-      setCoords(null);
+      setUseGeo(false); setCoords(null);
     }
   };
 
   const handleLike = async (postId) => {
     try {
       const res = await api.post(`/posts/${postId}/like`);
-      setPosts(prev => prev.map(p => {
-        if (p._id === postId) {
-          const liked = res.data.liked;
-          return { 
-            ...p, 
-            likeCount: res.data.likeCount,
-            intensityScore: p.intensityScore + (liked ? 1 : -1),
-            likedByUser: liked
-          };
-        }
-        return p;
-      }));
-      toast.success(res.data.liked ? 'Added to affected list' : 'Removed from affected list');
-    } catch (err) {
-      toast.error('Could not log interaction.');
-    }
+      setPosts(prev => prev.map(p => p._id === postId
+        ? { ...p, likeCount: res.data.likeCount, likedByUser: res.data.liked }
+        : p
+      ));
+      // Heart animation
+      setLikeAnim(prev => ({ ...prev, [postId]: true }));
+      setTimeout(() => setLikeAnim(prev => ({ ...prev, [postId]: false })), 700);
+    } catch { toast.error('Could not update.'); }
   };
 
-  // Instagram Double Tap to Like
-  const handleImageDoubleTap = (postId) => {
-    setLikeHeartAnim(prev => ({ ...prev, [postId]: true }));
-    handleLike(postId);
-    setTimeout(() => {
-      setLikeHeartAnim(prev => ({ ...prev, [postId]: false }));
-    }, 800);
-  };
-
-  const handleSupportReport = async (postId) => {
+  const handleSupport = async (postId) => {
     try {
       const res = await api.post(`/posts/${postId}/support`);
-      setPosts(prev => prev.map(p => {
-        if (p._id === postId) {
-          return { 
-            ...p, 
-            supportCount: res.data.supportCount, 
-            intensityScore: res.data.intensityScore 
-          };
-        }
-        return p;
-      }));
-      toast.success('Amplified post intensity score!');
-    } catch (err) {
-      toast.error('Could not amplify report.');
-    }
+      setPosts(prev => prev.map(p => p._id === postId
+        ? { ...p, supportCount: res.data.supportCount, intensityScore: res.data.intensityScore }
+        : p
+      ));
+      toast.success('Support added!');
+    } catch { toast.error('Could not amplify.'); }
   };
 
-  const toggleContactExpansion = (postId) => {
-    setExpandedContacts(prev => ({ ...prev, [postId]: !prev[postId] }));
+  const copyLink = (id) => {
+    navigator.clipboard.writeText(`${window.location.origin}/posts/${id}`);
+    toast.success('Link copied!');
   };
 
-  const getCategoryAvatarStyles = (cat) => {
-    switch(cat) {
-      case 'roads': return 'bg-gradient-to-tr from-rose-500 to-orange-500 text-white';
-      case 'sanitation': return 'bg-gradient-to-tr from-emerald-500 to-teal-500 text-white';
-      case 'water': return 'bg-gradient-to-tr from-cyan-500 to-blue-500 text-white';
-      case 'electricity': return 'bg-gradient-to-tr from-amber-400 to-yellow-500 text-gray-900';
-      case 'municipal': return 'bg-gradient-to-tr from-purple-500 to-indigo-500 text-white';
-      default: return 'bg-gradient-to-tr from-gray-650 to-gray-800 text-white';
-    }
-  };
-
-  const getSeverityColor = (sev) => {
-    switch(sev) {
-      case 'critical': return 'text-rose-500';
-      case 'high': return 'text-orange-500';
-      case 'medium': return 'text-amber-500';
-      default: return 'text-teal-400';
-    }
-  };
-
-  const getStatusStyle = (status) => {
-    switch(status) {
-      case 'resolved': return 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20';
-      case 'in_progress': return 'bg-amber-500/10 text-amber-400 border-amber-500/20';
-      case 'closed': return 'bg-gray-500/10 text-gray-400 border-gray-500/20';
-      default: return 'bg-teal-500/10 text-teal-400 border-teal-500/20';
-    }
-  };
-
-  const copyShareLink = (postId) => {
-    const url = `${window.location.origin}/posts/${postId}`;
-    navigator.clipboard.writeText(url);
-    toast.success('Incident link copied to clipboard!');
-  };
-
-  const filteredPosts = posts.filter(post => 
-    post.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    post.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    (post.address && post.address.toLowerCase().includes(searchQuery.toLowerCase()))
+  const activeFilters = [district, category, severity, status, useGeo].filter(Boolean).length;
+  const filteredPosts = posts.filter(p =>
+    !searchQuery || [p.title, p.description, p.address || ''].some(t =>
+      t.toLowerCase().includes(searchQuery.toLowerCase())
+    )
   );
 
   return (
-    <div className="max-w-xl mx-auto space-y-6">
-      
-      {/* Sleek Feed Header */}
-      <div className="flex items-center justify-between border-b border-gray-900 pb-4">
+    <div style={{ maxWidth: 680, margin: '0 auto' }}>
+
+      {/* ── PAGE HEADER ── */}
+      <div style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        marginBottom: 20, paddingBottom: 16,
+        borderBottom: '1px solid var(--border-subtle)',
+      }}>
         <div>
-          <h1 className="text-2xl font-extrabold font-display bg-gradient-to-r from-teal-400 to-emerald-400 bg-clip-text text-transparent">
+          <h1 style={{
+            fontFamily: 'var(--font-display)', fontSize: 22, fontWeight: 800,
+            background: 'linear-gradient(135deg, var(--teal-400), #6ee7b7)',
+            WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
+            backgroundClip: 'text', marginBottom: 2,
+          }}>
             Civic Stream
           </h1>
-          <p className="text-[10px] uppercase font-bold tracking-widest text-gray-550">Tamil Nadu Timeline</p>
+          <p className="section-label">Tamil Nadu Live Reports</p>
         </div>
-
-        {/* Action Controls */}
-        <div className="flex items-center space-x-2">
-          <button
-            onClick={() => setShowFilters(!showFilters)}
-            className={`p-2 rounded-lg border transition-all ${
-              showFilters || district || category || severity || status || useGeo
-                ? 'border-teal-500/30 bg-teal-500/5 text-teal-400'
-                : 'border-gray-800 bg-gray-950/40 text-gray-400 hover:text-gray-200'
-            }`}
-          >
-            <SlidersHorizontal size={16} />
-          </button>
-          <Link
-            to="/submit"
-            className="p-2 rounded-lg border border-teal-500/20 bg-teal-500/10 text-teal-400 hover:bg-teal-500/25 transition-all text-xs font-bold"
-          >
-            Report Issue
-          </Link>
-        </div>
+        <Link to="/submit" className="btn btn-primary btn-sm">
+          <PlusCircle size={14} />
+          Report Issue
+        </Link>
       </div>
 
-      {/* Filter drawer */}
-      {showFilters && (
-        <div className="glass-panel p-4 rounded-xl space-y-4 animate-fadeIn">
-          <div className="flex items-center justify-between text-xs text-gray-400 font-bold border-b border-gray-900 pb-2">
-            <span>Filter Timelines</span>
-            {(district || category || severity || status || useGeo) && (
-              <button 
-                onClick={() => {
-                  setDistrict(''); setCategory(''); setSeverity(''); setStatus(''); setUseGeo(false); setCoords(null);
-                }} 
-                className="text-teal-400 text-[10px] uppercase hover:underline"
-              >
-                Reset Filters
-              </button>
-            )}
-          </div>
+      {/* ── SEARCH BAR ── */}
+      <div style={{ position: 'relative', marginBottom: 14 }}>
+        <Search size={14} style={{
+          position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)',
+          color: 'var(--text-muted)', pointerEvents: 'none',
+        }} />
+        <input
+          type="text"
+          placeholder="Search by title, area, description..."
+          value={searchQuery}
+          onChange={e => setSearchQuery(e.target.value)}
+          className="glass-input"
+          style={{ paddingLeft: 36 }}
+        />
+      </div>
 
-          <div className="grid grid-cols-2 gap-3 text-xs">
-            <div>
-              <label className="block text-gray-500 mb-1 font-medium">District</label>
-              <select
-                value={district}
-                onChange={(e) => setDistrict(e.target.value)}
-                className="w-full bg-gray-900 border border-gray-800 rounded-lg p-2 text-xs text-gray-300 focus:outline-none focus:border-teal-500"
-              >
-                <option value="">All Regions</option>
-                {districts.map(d => <option key={d} value={d}>{d}</option>)}
-              </select>
-            </div>
+      {/* ── FILTER PILLS ── */}
+      <div style={{
+        display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 4, marginBottom: 16,
+        msOverflowStyle: 'none', scrollbarWidth: 'none',
+      }}>
+        {CATEGORIES.map(c => (
+          <button
+            key={c.value}
+            onClick={() => setCategory(c.value)}
+            className={`filter-pill ${category === c.value ? 'active' : ''}`}
+          >
+            {c.label}
+          </button>
+        ))}
+        <div style={{ width: 1, background: 'var(--border-subtle)', flexShrink: 0 }} />
+        {['critical', 'high', 'medium', 'low'].map(s => (
+          <button
+            key={s}
+            onClick={() => setSeverity(severity === s ? '' : s)}
+            className={`filter-pill ${severity === s ? 'active' : ''}`}
+            style={{ color: severity === s ? SEV_BORDER[s] : undefined }}
+          >
+            {s.charAt(0).toUpperCase() + s.slice(1)}
+          </button>
+        ))}
+        <div style={{ width: 1, background: 'var(--border-subtle)', flexShrink: 0 }} />
+        <button
+          onClick={() => setSort(sort === 'latest' ? 'intensity' : 'latest')}
+          className={`filter-pill ${sort === 'intensity' ? 'active' : ''}`}
+        >
+          <Flame size={12} />
+          {sort === 'intensity' ? 'By Intensity' : 'Latest'}
+        </button>
+        <button
+          onClick={handleGeoToggle}
+          className={`filter-pill ${useGeo ? 'active' : ''}`}
+        >
+          <MapPin size={12} className={useGeo ? 'animate-bounce' : ''} />
+          {useGeo ? 'Near Me ✓' : 'Near Me'}
+        </button>
 
-            <div>
-              <label className="block text-gray-500 mb-1 font-medium">Category</label>
-              <select
-                value={category}
-                onChange={(e) => setCategory(e.target.value)}
-                className="w-full bg-gray-900 border border-gray-800 rounded-lg p-2 text-xs text-gray-300 focus:outline-none focus:border-teal-500"
-              >
-                <option value="">All Categories</option>
-                {categories.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
-              </select>
-            </div>
+        {/* District selector */}
+        <select
+          value={district}
+          onChange={e => setDistrict(e.target.value)}
+          className="filter-pill"
+          style={{ background: district ? 'var(--teal-glow)' : undefined, borderColor: district ? 'rgba(20,184,166,0.35)' : undefined }}
+        >
+          <option value="">All Districts</option>
+          {DISTRICTS.map(d => <option key={d} value={d}>{d}</option>)}
+        </select>
 
-            <div>
-              <label className="block text-gray-500 mb-1 font-medium">Severity</label>
-              <select
-                value={severity}
-                onChange={(e) => setSeverity(e.target.value)}
-                className="w-full bg-gray-900 border border-gray-800 rounded-lg p-2 text-xs text-gray-300 focus:outline-none focus:border-teal-500"
-              >
-                <option value="">All Severities</option>
-                <option value="critical">🔴 Critical</option>
-                <option value="high">🟠 High</option>
-                <option value="medium">🟡 Medium</option>
-                <option value="low">🟢 Low</option>
-              </select>
-            </div>
+        {activeFilters > 0 && (
+          <button
+            onClick={() => { setDistrict(''); setCategory(''); setSeverity(''); setStatus(''); setUseGeo(false); setCoords(null); }}
+            className="filter-pill"
+            style={{ color: 'var(--sev-critical)', borderColor: 'rgba(244,63,94,0.2)' }}
+          >
+            ✕ Clear ({activeFilters})
+          </button>
+        )}
+      </div>
 
-            <div>
-              <label className="block text-gray-500 mb-1 font-medium">Resolution</label>
-              <select
-                value={status}
-                onChange={(e) => setStatus(e.target.value)}
-                className="w-full bg-gray-900 border border-gray-800 rounded-lg p-2 text-xs text-gray-300 focus:outline-none focus:border-teal-500"
-              >
-                <option value="">All Statuses</option>
-                <option value="reported">Reported</option>
-                <option value="in_progress">In Progress</option>
-                <option value="resolved">Resolved</option>
-                <option value="closed">Closed</option>
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-gray-500 mb-1 font-medium">Sorting</label>
-              <select
-                value={sort}
-                onChange={(e) => setSort(e.target.value)}
-                className="w-full bg-gray-900 border border-gray-800 rounded-lg p-2 text-xs text-gray-300 focus:outline-none focus:border-teal-500"
-              >
-                <option value="latest">Latest first</option>
-                <option value="intensity">🔥 Intensity</option>
-                <option value="severity">Severity level</option>
-              </select>
-            </div>
-
-            <div className="flex items-end">
-              <button
-                onClick={handleGeoToggle}
-                className={`w-full py-2 px-3 text-xs font-bold rounded-lg border transition-all flex items-center justify-center space-x-1.5 ${
-                  useGeo
-                    ? 'bg-teal-500/10 border-teal-500 text-teal-300'
-                    : 'bg-gray-900 border-gray-800 text-gray-400 hover:border-gray-700'
-                }`}
-              >
-                <MapPin size={12} className={useGeo ? 'animate-bounce text-teal-400' : ''} />
-                <span>{useGeo ? 'Geo Search On' : 'Search Near Me'}</span>
-              </button>
-            </div>
-          </div>
-
-          <div className="relative">
-            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-500" size={14} />
-            <input
-              type="text"
-              placeholder="Search descriptions, landmarks, details..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-8 pr-3 py-2 text-xs rounded-lg glass-input focus:ring-1 focus:ring-teal-500"
-            />
-          </div>
-        </div>
-      )}
-
-      {/* Feed list */}
+      {/* ── FEED LIST ── */}
       {loading ? (
-        <div className="space-y-6">
-          {[1, 2].map(n => (
-            <div key={n} className="glass-panel rounded-2xl h-96 animate-pulse border border-gray-900" />
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          {[1, 2, 3].map(n => (
+            <div key={n} className="card" style={{ height: 380 }}>
+              <div className="skeleton" style={{ height: 220, borderRadius: '10px 10px 0 0' }} />
+              <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 10 }}>
+                <div className="skeleton" style={{ height: 16, width: '60%' }} />
+                <div className="skeleton" style={{ height: 12, width: '90%' }} />
+                <div className="skeleton" style={{ height: 12, width: '75%' }} />
+              </div>
+            </div>
           ))}
         </div>
       ) : filteredPosts.length === 0 ? (
-        <div className="glass-panel py-16 rounded-2xl text-center space-y-4">
-          <AlertTriangle className="mx-auto text-amber-500" size={40} />
-          <h2 className="text-base font-bold font-display">No Civic Complaints Mapped</h2>
-          <p className="text-gray-500 max-w-xs mx-auto text-xs">
-            Adjust your geographic filters or report a new issue in your area right now.
+        <div className="card" style={{ padding: '48px 24px', textAlign: 'center' }}>
+          <div style={{ fontSize: 36, marginBottom: 12 }}>🏙️</div>
+          <h2 style={{ fontFamily: 'var(--font-display)', fontSize: 18, fontWeight: 700, marginBottom: 8 }}>
+            No Reports Found
+          </h2>
+          <p style={{ color: 'var(--text-muted)', fontSize: 13, marginBottom: 20 }}>
+            Try adjusting filters or be the first to report an issue in your area.
           </p>
-          <Link to="/submit" className="inline-block px-5 py-2 bg-teal-500 text-gray-900 text-xs font-bold rounded-lg hover:bg-teal-400 transition-colors">
-            Post Anonymous Report
-          </Link>
+          <Link to="/submit" className="btn btn-primary">Report First Issue</Link>
         </div>
       ) : (
-        <div className="space-y-6">
-          {filteredPosts.map((post) => {
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          {filteredPosts.map((post, idx) => {
             const isOwner = myPostIds.has(post._id);
-            const isContactExpanded = expandedContacts[post._id];
-            const hasJoinedStrike = userProfile?.joinedRooms?.includes(post.strikeRoom?._id);
+            const isContactOpen = expandedContacts[post._id];
+            const isTimelineOpen = expandedTimelines[post._id];
             const isLiked = post.likedByUser;
-
-            // Generate clean random username
-            const username = `anon_${post.district.toLowerCase()}_${post._id.slice(-4)}`;
+            const username = `anon_${post.district?.toLowerCase().slice(0, 3)}_${post._id?.slice(-4)}`;
 
             return (
-              <div 
-                key={post._id} 
-                className="glass-panel rounded-xl overflow-hidden border border-gray-900 bg-black/30 flex flex-col justify-between"
+              <div
+                key={post._id}
+                className="card animate-slideInUp card-stagger"
+                style={{
+                  overflow: 'hidden',
+                  borderLeft: `3px solid ${SEV_BORDER[post.severity] || 'var(--border-subtle)'}`,
+                  animationDelay: `${idx * 0.06}s`,
+                }}
               >
-                {/* Header: User Profile and Meta */}
-                <div className="p-3.5 flex items-center justify-between border-b border-gray-950 bg-black/10 flex-shrink-0">
-                  <div className="flex items-center space-x-3">
-                    {/* Circle initials category avatar */}
-                    <div className={`w-9 h-9 rounded-full flex items-center justify-center font-display font-extrabold text-xs tracking-wider border border-white/5 shadow-md ${getCategoryAvatarStyles(post.category)}`}>
-                      {post.category.substring(0, 2).toUpperCase()}
+                {/* ── CARD HEADER ── */}
+                <div className="card-header">
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <div style={{
+                      width: 36, height: 36, borderRadius: '50%',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      fontSize: 11, fontWeight: 800, color: '#fff', flexShrink: 0,
+                      ...getCatAvatarStyle(post.category),
+                    }}>
+                      {post.category?.substring(0, 2).toUpperCase()}
                     </div>
-
                     <div>
-                      <div className="flex items-center space-x-1">
-                        <span className="text-xs font-bold text-gray-200 font-sans">@{username}</span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-primary)' }}>
+                          @{username}
+                        </span>
                         {isOwner && (
-                          <span className="text-[8px] bg-teal-500/10 text-teal-400 border border-teal-500/15 px-1 rounded font-extrabold">My</span>
+                          <span style={{
+                            fontSize: 9, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em',
+                            background: 'rgba(20,184,166,0.1)', color: 'var(--teal-400)',
+                            border: '1px solid rgba(20,184,166,0.2)', padding: '1px 5px', borderRadius: 4,
+                          }}>
+                            Mine
+                          </span>
                         )}
                       </div>
-                      <div className="flex items-center space-x-1 text-[10px] text-gray-500">
-                        <span className="font-semibold text-gray-400">{post.district}</span>
-                        <span>•</span>
+                      <div style={{ fontSize: 11, color: 'var(--text-muted)', display: 'flex', gap: 4 }}>
+                        <span style={{ fontWeight: 600, color: 'var(--text-secondary)' }}>{post.district}</span>
+                        <span>·</span>
                         <span>{new Date(post.createdAt).toLocaleDateString([], { month: 'short', day: 'numeric' })}</span>
                       </div>
                     </div>
                   </div>
 
-                  {/* Right Header: Status & Severity indicator */}
-                  <div className="flex items-center space-x-2">
-                    <span className={`text-[9px] uppercase font-extrabold tracking-wider border px-2 py-0.5 rounded-full ${getStatusStyle(post.status)}`}>
-                      {post.status.replace('_', ' ')}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <SeverityBadge severity={post.severity} />
+                    <span className={`status-pill status-${(post.status || 'reported').replace('_', '-').replace('under-review', 'review')}`}>
+                      {post.status?.replace('_', ' ') || 'reported'}
                     </span>
                   </div>
                 </div>
 
-                {/* Main Image Area: Double click to like! */}
-                <div 
-                  className="relative aspect-square bg-gray-950 w-full overflow-hidden flex items-center justify-center cursor-pointer select-none group border-b border-gray-950"
-                  onDoubleClick={() => handleImageDoubleTap(post._id)}
+                {/* ── IMAGE ── */}
+                <div style={{
+                  position: 'relative',
+                  aspectRatio: '4/3',
+                  background: 'var(--bg-elevated)',
+                  overflow: 'hidden',
+                  cursor: 'pointer',
+                }}
+                  onDoubleClick={() => handleLike(post._id)}
                 >
-                  {post.images && post.images.length > 0 ? (
-                    <img 
-                      src={post.images[0]} 
-                      alt={post.title} 
-                      className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-102"
+                  {post.images?.length > 0 ? (
+                    <img
+                      src={post.images[0]}
+                      alt={post.title}
+                      style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
                     />
                   ) : (
-                    <div className="text-gray-700 flex flex-col items-center justify-center p-8 text-center space-y-2">
-                      <AlertTriangle size={32} />
-                      <span className="text-[10px] tracking-widest uppercase font-bold text-gray-650">Evidence Image Empty</span>
+                    <div style={{
+                      width: '100%', height: '100%', display: 'flex', flexDirection: 'column',
+                      alignItems: 'center', justifyContent: 'center', gap: 8, color: 'var(--text-muted)',
+                    }}>
+                      <span style={{ fontSize: 32 }}>📍</span>
+                      <span style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                        No Image
+                      </span>
                     </div>
                   )}
 
-                  {/* Float heart animation bubble */}
-                  {likeHeartAnim[post._id] && (
-                    <div className="absolute inset-0 flex items-center justify-center z-10 animate-scaleUp">
-                      <Heart size={80} className="text-rose-500 fill-rose-500 drop-shadow-[0_0_20px_rgba(239,68,68,0.6)]" />
+                  {/* Heart animation overlay */}
+                  {likeAnim[post._id] && (
+                    <div className="animate-scaleUp" style={{
+                      position: 'absolute', inset: 0, display: 'flex',
+                      alignItems: 'center', justifyContent: 'center', pointerEvents: 'none',
+                    }}>
+                      <Heart size={72} fill="#f43f5e" stroke="#f43f5e" style={{ filter: 'drop-shadow(0 0 20px #f43f5e80)' }} />
                     </div>
                   )}
 
-                  {/* Level Tag Overlay */}
-                  <div className="absolute top-3 right-3 pointer-events-none">
-                    <span className="text-[9px] uppercase font-bold tracking-wider px-2 py-0.5 rounded bg-gray-950/80 text-gray-300 border border-gray-900 backdrop-blur">
-                      AI Confidence: {Math.round(post.aiConfidence * 100)}%
-                    </span>
-                  </div>
+                  {/* AI Confidence chip */}
+                  {post.aiConfidence != null && (
+                    <div style={{
+                      position: 'absolute', top: 10, right: 10,
+                      display: 'flex', alignItems: 'center', gap: 4,
+                      background: 'rgba(9,9,11,0.75)', backdropFilter: 'blur(6px)',
+                      border: '1px solid var(--border-subtle)', borderRadius: 6,
+                      padding: '3px 8px', fontSize: 10, fontWeight: 600, color: 'var(--text-secondary)',
+                    }}>
+                      <Sparkles size={10} style={{ color: 'var(--teal-400)' }} />
+                      AI {Math.round(post.aiConfidence * 100)}%
+                    </div>
+                  )}
                 </div>
 
-                {/* Card Action bar */}
-                <div className="p-3 flex items-center justify-between flex-shrink-0">
-                  <div className="flex items-center space-x-4">
-                    {/* Heart Button */}
+                {/* ── ACTION BAR ── */}
+                <div style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                  padding: '10px 14px',
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
                     <button
                       onClick={() => handleLike(post._id)}
-                      className={`transition-all hover:scale-110 active:scale-95 ${isLiked ? 'text-rose-500' : 'text-gray-400 hover:text-gray-200'}`}
+                      style={{
+                        background: 'none', border: 'none', cursor: 'pointer', padding: '2px',
+                        display: 'flex', alignItems: 'center', gap: 5,
+                        color: isLiked ? '#f43f5e' : 'var(--text-muted)',
+                        transition: 'transform 0.1s ease, color 0.1s ease',
+                        fontSize: 12, fontWeight: 600,
+                      }}
+                      onMouseEnter={e => e.currentTarget.style.transform = 'scale(1.1)'}
+                      onMouseLeave={e => e.currentTarget.style.transform = 'scale(1)'}
                     >
-                      <Heart size={20} className={isLiked ? 'fill-rose-500' : ''} />
+                      <Heart size={19} fill={isLiked ? '#f43f5e' : 'none'} strokeWidth={isLiked ? 0 : 1.5} />
+                      <span>{post.likeCount || 0}</span>
                     </button>
 
-                    {/* Comment redirect */}
-                    <Link to={`/posts/${post._id}#comments`} className="text-gray-400 hover:text-gray-200">
-                      <MessageCircle size={20} />
+                    <Link
+                      to={`/posts/${post._id}#comments`}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: 5, color: 'var(--text-muted)',
+                        fontSize: 12, fontWeight: 600, textDecoration: 'none',
+                        transition: 'color 0.15s',
+                      }}
+                      onMouseEnter={e => e.currentTarget.style.color = 'var(--text-primary)'}
+                      onMouseLeave={e => e.currentTarget.style.color = 'var(--text-muted)'}
+                    >
+                      <MessageCircle size={19} strokeWidth={1.5} />
+                      <span>{post.commentCount || 0}</span>
                     </Link>
 
-                    {/* Amplify support button */}
                     <button
-                      onClick={() => handleSupportReport(post._id)}
-                      className="text-gray-400 hover:text-rose-400 transition-colors flex items-center space-x-1"
+                      onClick={() => handleSupport(post._id)}
+                      style={{
+                        background: 'none', border: 'none', cursor: 'pointer', padding: '2px',
+                        display: 'flex', alignItems: 'center', gap: 5,
+                        color: 'var(--text-muted)', fontSize: 12, fontWeight: 600,
+                        transition: 'color 0.15s',
+                      }}
+                      onMouseEnter={e => e.currentTarget.style.color = '#f97316'}
+                      onMouseLeave={e => e.currentTarget.style.color = 'var(--text-muted)'}
+                      title="I'm affected too — amplify this issue"
                     >
-                      <Flame size={20} />
-                      <span className="text-[10px] font-bold">{post.supportCount || 0}</span>
+                      <Flame size={19} strokeWidth={1.5} />
+                      <span>{post.supportCount || 0}</span>
                     </button>
                   </div>
 
                   <button
-                    onClick={() => copyShareLink(post._id)}
-                    className="text-gray-400 hover:text-gray-200"
+                    onClick={() => copyLink(post._id)}
+                    style={{
+                      background: 'none', border: 'none', cursor: 'pointer', padding: '2px',
+                      color: 'var(--text-muted)', transition: 'color 0.15s',
+                    }}
+                    onMouseEnter={e => e.currentTarget.style.color = 'var(--text-primary)'}
+                    onMouseLeave={e => e.currentTarget.style.color = 'var(--text-muted)'}
                   >
-                    <Share2 size={18} />
+                    <Share2 size={17} strokeWidth={1.5} />
                   </button>
                 </div>
 
-                {/* Metrics Stats Banner */}
-                <div className="px-3.5 pb-1 text-xs text-gray-200 font-semibold space-y-0.5">
-                  <p>{post.likeCount || 0} citizen support metrics</p>
-                  <p className="text-[10px] text-gray-500 font-bold">Total Intensity: {post.intensityScore || 0} 🔥</p>
-                </div>
-
-                {/* Post description block */}
-                <div className="px-3.5 pb-3 text-xs leading-normal font-sans space-y-1">
-                  <p>
-                    <span className="font-bold text-gray-200 mr-2">@{username}</span>
-                    <span className="font-bold text-teal-400 mr-2 capitalize">[{post.title}]</span>
-                    <span className="text-gray-300">{post.description}</span>
+                {/* ── CONTENT ── */}
+                <div style={{ padding: '0 14px 12px' }}>
+                  <p style={{ fontSize: 13, lineHeight: 1.55, color: 'var(--text-secondary)' }}>
+                    <Link
+                      to={`/posts/${post._id}`}
+                      style={{ fontWeight: 700, color: 'var(--text-primary)', marginRight: 6, textDecoration: 'none' }}
+                    >
+                      {post.title}
+                    </Link>
+                    {post.description}
                   </p>
 
-                  {/* AI detected hashtags */}
-                  {post.aiTags && post.aiTags.length > 0 && (
-                    <div className="flex flex-wrap gap-1 pt-1.5">
-                      {post.aiTags.slice(0, 3).map((tag, idx) => (
-                        <span key={idx} className="text-teal-400 text-[10px] hover:underline mr-1 font-medium">
+                  {/* Tags */}
+                  {post.aiTags?.length > 0 && (
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8 }}>
+                      {post.aiTags.slice(0, 4).map((tag, i) => (
+                        <span key={i} style={{ fontSize: 11, color: 'var(--teal-400)', fontWeight: 500 }}>
                           #{tag}
                         </span>
                       ))}
                     </div>
                   )}
 
-                  {/* Address pinning info */}
+                  {/* Address */}
                   {post.address && (
-                    <div className="flex items-center space-x-1 text-[10px] text-gray-550 pt-2 font-mono">
-                      <MapPin size={10} className="text-gray-600 flex-shrink-0" />
-                      <span className="truncate">{post.address}</span>
+                    <div style={{
+                      display: 'flex', alignItems: 'center', gap: 5,
+                      marginTop: 8, color: 'var(--text-muted)', fontSize: 11,
+                    }}>
+                      <MapPin size={10} />
+                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {post.address}
+                      </span>
                     </div>
                   )}
                 </div>
 
-                {/* Official Contact Accordion Selector */}
-                {post.attachedContacts && post.attachedContacts.length > 0 && (
-                  <div className="border-t border-gray-950 bg-black/10">
+                {/* ── ESCALATION BAR ── */}
+                <div style={{ padding: '0 14px 12px' }}>
+                  <EscalationBar supportCount={post.supportCount || 0} />
+                </div>
+
+                {/* ── STATUS TIMELINE (collapsible) ── */}
+                <div style={{ borderTop: '1px solid var(--border-subtle)' }}>
+                  <button
+                    onClick={() => setExpandedTimelines(prev => ({ ...prev, [post._id]: !prev[post._id] }))}
+                    style={{
+                      width: '100%', padding: '8px 14px',
+                      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                      background: 'none', border: 'none', cursor: 'pointer',
+                      color: 'var(--text-muted)', fontSize: 11, fontWeight: 600,
+                      textTransform: 'uppercase', letterSpacing: '0.05em',
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                      <Clock size={10} />
+                      Status Progress
+                    </div>
+                    {isTimelineOpen ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                  </button>
+
+                  {isTimelineOpen && (
+                    <div className="animate-fadeIn" style={{ padding: '0 14px 14px' }}>
+                      <StatusTimeline status={post.status || 'reported'} />
+                    </div>
+                  )}
+                </div>
+
+                {/* ── OFFICIAL CONTACTS (collapsible) ── */}
+                {post.attachedContacts?.length > 0 && (
+                  <div style={{ borderTop: '1px solid var(--border-subtle)' }}>
                     <button
-                      onClick={() => toggleContactExpansion(post._id)}
-                      className="w-full px-3.5 py-2.5 flex items-center justify-between text-[10px] text-gray-400 hover:text-gray-200 transition-colors uppercase font-bold tracking-wider"
+                      onClick={() => setExpandedContacts(prev => ({ ...prev, [post._id]: !prev[post._id] }))}
+                      style={{
+                        width: '100%', padding: '8px 14px',
+                        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                        background: 'none', border: 'none', cursor: 'pointer',
+                        color: 'var(--text-muted)', fontSize: 11, fontWeight: 600,
+                        textTransform: 'uppercase', letterSpacing: '0.05em',
+                      }}
                     >
-                      <span className="flex items-center space-x-1.5">
-                        <Navigation size={10} className="text-emerald-400" />
-                        <span>Actionable Official Contact Details</span>
-                      </span>
-                      {isContactExpanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                        <Navigation size={10} style={{ color: '#34d399' }} />
+                        Official Contact
+                      </div>
+                      {isContactOpen ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
                     </button>
 
-                    {isContactExpanded && (
-                      <div className="px-3.5 pb-3 pt-1 text-xs space-y-2 border-t border-gray-900 bg-black/15 animate-fadeIn">
-                        <div className="flex items-center justify-between">
-                          <span className="font-bold text-gray-300">{post.attachedContacts[0].officerName}</span>
-                          <span className="text-[9px] bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 px-1.5 py-0.2 rounded font-bold uppercase tracking-wider">
+                    {isContactOpen && (
+                      <div className="animate-fadeIn" style={{
+                        padding: '0 14px 14px',
+                        display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
+                      }}>
+                        <div>
+                          <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>
+                            {post.attachedContacts[0].officerName}
+                          </div>
+                          <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
                             {post.attachedContacts[0].department}
-                          </span>
+                          </div>
                         </div>
-
-                        <div className="flex items-center space-x-4 pt-1">
+                        <div style={{ display: 'flex', gap: 8 }}>
                           {post.attachedContacts[0].phone && (
-                            <a href={`tel:${post.attachedContacts[0].phone}`} className="flex items-center space-x-1 text-teal-400 hover:underline text-[10px] font-semibold">
-                              <Phone size={10} />
-                              <span>Call {post.attachedContacts[0].phone}</span>
+                            <a
+                              href={`tel:${post.attachedContacts[0].phone}`}
+                              className="btn btn-secondary btn-sm"
+                              style={{ gap: 5 }}
+                            >
+                              <Phone size={12} />
+                              Call
                             </a>
                           )}
                           {post.attachedContacts[0].email && (
-                            <a href={`mailto:${post.attachedContacts[0].email}`} className="flex items-center space-x-1 text-teal-400 hover:underline text-[10px] font-semibold truncate max-w-xs">
-                              <Mail size={10} />
-                              <span>Email Officer</span>
+                            <a
+                              href={`mailto:${post.attachedContacts[0].email}`}
+                              className="btn btn-secondary btn-sm"
+                            >
+                              <Mail size={12} />
+                              Email
                             </a>
                           )}
                         </div>
@@ -568,20 +579,24 @@ export default function Feed() {
                   </div>
                 )}
 
-                {/* Protest link if Active strike */}
-                {post.intensityScore >= 100 && (
-                  <div className="border-t border-rose-950/20 bg-rose-950/5 p-2 px-3.5">
-                    <Link
-                      to="/strikes"
-                      className="w-full flex items-center justify-between text-[10px] text-rose-400 hover:text-rose-300 font-extrabold tracking-wider uppercase transition-colors"
-                    >
-                      <span className="flex items-center space-x-1.5">
-                        <Flame size={12} className="text-rose-500 animate-pulse" />
-                        <span>Protest Strike mobilized. Join digital campaign</span>
-                      </span>
-                      <ChevronDown size={12} className="-rotate-90" />
-                    </Link>
-                  </div>
+                {/* ── STRIKE BANNER ── */}
+                {(post.supportCount || 0) >= 100 && (
+                  <Link
+                    to="/strikes"
+                    style={{
+                      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                      padding: '10px 14px',
+                      background: 'rgba(244,63,94,0.05)',
+                      borderTop: '1px solid rgba(244,63,94,0.1)',
+                      textDecoration: 'none',
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#f43f5e', fontSize: 11, fontWeight: 700 }}>
+                      <Flame size={12} style={{ animation: 'pulse-glow 1.5s ease infinite' }} />
+                      Strike Room Active — Join the Campaign
+                    </div>
+                    <ChevronDown size={12} style={{ color: '#f43f5e', transform: 'rotate(-90deg)' }} />
+                  </Link>
                 )}
               </div>
             );

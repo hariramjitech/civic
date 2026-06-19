@@ -5,19 +5,19 @@
  * ============================================================
  */
 
-const crypto   = require('crypto');
+const crypto = require('crypto');
 const { requireAuth, clerkClient, getAuth } = require('@clerk/express');
 const rateLimit = require('express-rate-limit');
-const multer    = require('multer');
+const multer = require('multer');
 const cloudinary = require('cloudinary').v2;
-const { User }  = require('../models/models');
+const { User } = require('../models/models');
 
 // ─────────────────────────────────────────────
 // CLOUDINARY
 // ─────────────────────────────────────────────
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-  api_key:    process.env.CLOUDINARY_API_KEY,
+  api_key: process.env.CLOUDINARY_API_KEY,
   api_secret: process.env.CLOUDINARY_API_SECRET,
 });
 
@@ -26,7 +26,7 @@ cloudinary.config({
 // ─────────────────────────────────────────────
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits:  { fileSize: 10 * 1024 * 1024 }, // 10 MB
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10 MB
   fileFilter: (req, file, cb) => {
     const allowed = ['image/jpeg', 'image/png', 'image/webp', 'image/jpg'];
     allowed.includes(file.mimetype)
@@ -87,7 +87,7 @@ const attachUser = async (req, res, next) => {
     let user = await User.findOne({ clerkId });
     if (!user) {
       const clerkUser = await clerkClient.users.getUser(clerkId);
-      const email     = clerkUser.emailAddresses?.[0]?.emailAddress || '';
+      const email = clerkUser.emailAddresses?.[0]?.emailAddress || '';
       user = await User.create({
         clerkId,
         email,
@@ -96,7 +96,7 @@ const attachUser = async (req, res, next) => {
       });
     }
 
-    req.user      = user;
+    req.user = user;
     req.anonToken = generateAnonToken(clerkId);
     next();
   } catch (err) {

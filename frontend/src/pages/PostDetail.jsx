@@ -2,10 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useCivic } from '../context/CivicContext';
 import api from '../lib/api';
-import { 
-  Heart, MessageSquare, Phone, Mail, Globe, MapPin, 
-  AlertTriangle, ArrowLeft, Send, Plus, Flame, Clock, 
-  CheckCircle, Loader2 
+import {
+  Heart, MessageSquare, Phone, Mail, Globe, MapPin,
+  AlertTriangle, ArrowLeft, Send, Plus, Flame, Clock,
+  CheckCircle, Loader2
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -18,7 +18,7 @@ export default function PostDetail() {
   const [commentText, setCommentText] = useState('');
   const [replyText, setReplyText] = useState({});
   const [showReplyForm, setShowReplyForm] = useState({});
-  
+
   // Status edit state (for owners/admin/officers)
   const [updatingStatus, setUpdatingStatus] = useState(false);
   const [statusForm, setStatusForm] = useState({ status: '', note: '' });
@@ -42,7 +42,7 @@ export default function PostDetail() {
         status: res.data.post.status,
         note: ''
       });
-      
+
       // Fetch comments
       const commentRes = await api.get(`/posts/${id}/comments`);
       setComments(commentRes.data.comments);
@@ -98,7 +98,7 @@ export default function PostDetail() {
       });
 
       toast.success('Comment posted anonymously.');
-      
+
       if (parentId) {
         setReplyText(prev => ({ ...prev, [parentId]: '' }));
         setShowReplyForm(prev => ({ ...prev, [parentId]: false }));
@@ -199,7 +199,7 @@ export default function PostDetail() {
                   {post.severity} severity
                 </span>
               </div>
-              
+
               <div className="inline-flex items-center space-x-1.5 px-3 py-1 rounded-full bg-gray-950/80 border border-gray-900 text-xs font-extrabold uppercase text-gray-300">
                 <span className={`w-2 h-2 rounded-full ${post.status === 'resolved' ? 'bg-emerald-400' : post.status === 'in_progress' ? 'bg-amber-400' : 'bg-teal-500'}`} />
                 <span>{post.status.replace('_', ' ')}</span>
@@ -254,14 +254,13 @@ export default function PostDetail() {
               <Clock size={18} className="text-teal-400" />
               <span>Resolution Timeline & Audit Log</span>
             </h3>
-            
+
             <div className="relative pl-6 space-y-6 border-l-2 border-gray-900">
               {post.statusHistory?.map((h, i) => (
                 <div key={i} className="relative">
                   {/* Point */}
-                  <span className={`absolute -left-[31px] top-1 w-4.5 h-4.5 rounded-full border-2 bg-gray-950 flex items-center justify-center ${
-                    h.status === 'resolved' ? 'border-emerald-500' : h.status === 'in_progress' ? 'border-amber-500' : 'border-teal-500'
-                  }`}>
+                  <span className={`absolute -left-[31px] top-1 w-4.5 h-4.5 rounded-full border-2 bg-gray-950 flex items-center justify-center ${h.status === 'resolved' ? 'border-emerald-500' : h.status === 'in_progress' ? 'border-amber-500' : 'border-teal-500'
+                    }`}>
                     {h.status === 'resolved' ? <CheckCircle size={10} className="text-emerald-400" /> : <div className="w-1.5 h-1.5 rounded-full bg-teal-400" />}
                   </span>
 
@@ -318,10 +317,10 @@ export default function PostDetail() {
                     <span>{new Date(c.createdAt).toLocaleDateString()}</span>
                   </div>
                   <p className="text-gray-300 text-xs leading-relaxed">{c.text}</p>
-                  
+
                   {/* Reply trigger button */}
                   <div className="flex items-center justify-between pt-1 text-[10px]">
-                    <button 
+                    <button
                       onClick={() => setShowReplyForm(prev => ({ ...prev, [c._id]: !prev[c._id] }))}
                       className="text-teal-400 font-bold hover:underline"
                     >
@@ -363,7 +362,7 @@ export default function PostDetail() {
 
         {/* Right Column - Status Panel, Official Contacts & Polls */}
         <div className="space-y-6">
-          
+
           {/* Strike Banner */}
           {strikeRoom && (
             <div className="glass-panel p-5 rounded-2xl border-rose-500/30 bg-rose-950/10 text-center space-y-3">
@@ -389,7 +388,7 @@ export default function PostDetail() {
                   {isOwner ? 'Citizen Ownership Portal' : 'Official Officer Portal'}
                 </p>
               </div>
-              
+
               <form onSubmit={handleStatusUpdate} className="space-y-3">
                 <div>
                   <label className="block text-[10px] text-gray-500 uppercase tracking-wider mb-1">Update Status</label>
@@ -443,9 +442,9 @@ export default function PostDetail() {
                         {c.department}
                       </span>
                     </div>
-                    
+
                     <div className="text-xs font-bold text-gray-300">{c.officerName}</div>
-                    
+
                     <div className="space-y-1.5 pt-1 text-[11px]">
                       {c.phone && (
                         <a href={`tel:${c.phone}`} className="flex items-center space-x-1.5 text-teal-400 hover:underline">
@@ -482,8 +481,8 @@ export default function PostDetail() {
                 <p className="text-[10px] text-gray-500 uppercase tracking-widest mt-0.5">Aggregate Intensity</p>
               </div>
               {!showPollForm && (
-                <button 
-                  onClick={() => setShowPollForm(true)} 
+                <button
+                  onClick={() => setShowPollForm(true)}
                   className="p-1 hover:bg-gray-800 text-teal-400 rounded-lg"
                 >
                   <Plus size={16} />
@@ -526,17 +525,17 @@ export default function PostDetail() {
                   onChange={(e) => setPollForm(prev => ({ ...prev, option3: e.target.value }))}
                   className="w-full p-2 text-xs rounded-lg glass-input focus:ring-1 focus:ring-teal-500"
                 />
-                
+
                 <div className="flex items-center space-x-2 justify-end">
-                  <button 
-                    type="button" 
-                    onClick={() => setShowPollForm(false)} 
+                  <button
+                    type="button"
+                    onClick={() => setShowPollForm(false)}
                     className="px-2.5 py-1.5 text-xs text-gray-400 hover:text-gray-200"
                   >
                     Cancel
                   </button>
-                  <button 
-                    type="submit" 
+                  <button
+                    type="submit"
                     className="px-3 py-1.5 text-xs bg-teal-500 hover:bg-teal-400 text-gray-900 font-bold rounded-lg"
                   >
                     Launch
@@ -551,7 +550,7 @@ export default function PostDetail() {
                 {polls.map((poll) => (
                   <div key={poll._id} className="p-3 bg-gray-900/40 rounded-xl border border-gray-900/60 space-y-3">
                     <div className="text-xs font-bold text-gray-200">{poll.question}</div>
-                    
+
                     <div className="space-y-2">
                       {poll.options.map((opt, oIdx) => {
                         const pct = poll.totalVotes ? Math.round((opt.voteCount / poll.totalVotes) * 100) : 0;
@@ -562,11 +561,11 @@ export default function PostDetail() {
                             className="w-full text-left relative overflow-hidden p-2 text-xs rounded-lg border border-gray-900 bg-gray-950/20 hover:border-teal-500/30 group transition-all"
                           >
                             {/* Bar display */}
-                            <div 
-                              className="absolute top-0 bottom-0 left-0 bg-teal-500/5 group-hover:bg-teal-500/10 transition-all" 
-                              style={{ width: `${pct}%` }} 
+                            <div
+                              className="absolute top-0 bottom-0 left-0 bg-teal-500/5 group-hover:bg-teal-500/10 transition-all"
+                              style={{ width: `${pct}%` }}
                             />
-                            
+
                             <div className="relative z-10 flex items-center justify-between text-gray-300">
                               <span>{opt.text}</span>
                               <span className="text-[10px] text-gray-500 font-semibold">{pct}% ({opt.voteCount})</span>

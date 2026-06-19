@@ -1,148 +1,316 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { UserButton, SignedIn, SignedOut, SignInButton } from '@clerk/clerk-react';
-import { 
-  Megaphone, Map, MessageSquare, Flame, 
-  PlusCircle, User, Shield, Menu, X 
+import {
+  Megaphone, Map, MessageSquare, Flame,
+  PlusCircle, User, Shield, Menu, X, Bell
 } from 'lucide-react';
 
 export default function Navbar({ role }) {
   const location = useLocation();
   const [isOpen, setIsOpen] = useState(false);
+  const [scrolled, setScrolled] = useState(false);
 
   const isActive = (path) => location.pathname === path;
+
+  // Close mobile menu on route change
+  useEffect(() => { setIsOpen(false); }, [location.pathname]);
+
+  // Add shadow on scroll
+  useEffect(() => {
+    const fn = () => setScrolled(window.scrollY > 4);
+    window.addEventListener('scroll', fn, { passive: true });
+    return () => window.removeEventListener('scroll', fn);
+  }, []);
 
   const links = [
     { path: '/feed', label: 'Feed', icon: Megaphone },
     { path: '/map', label: 'Civic Map', icon: Map },
-    { path: '/chat', label: 'Discussion Rooms', icon: MessageSquare },
-    { path: '/strikes', label: 'Strike Rooms', icon: Flame },
-    { path: '/submit', label: 'Report Issue', icon: PlusCircle },
-    { path: '/my-account', label: 'My Activity', icon: User },
+    { path: '/chat', label: 'Discussion', icon: MessageSquare },
+    { path: '/strikes', label: 'Strikes', icon: Flame },
+    { path: '/submit', label: 'Report', icon: PlusCircle },
+    { path: '/my-account', label: 'Account', icon: User },
   ];
 
-  // Admin and Department/Officer links
   if (role === 'admin' || role === 'department' || role === 'officer') {
-    links.push({ path: '/admin', label: 'Admin Panel', icon: Shield });
+    links.push({ path: '/admin', label: 'Admin', icon: Shield });
   }
 
   return (
-    <nav className="sticky top-0 z-50 glass-panel border-b border-gray-800 px-4 sm:px-8 py-3">
-      <div className="max-w-7xl mx-auto flex items-center justify-between">
-        {/* Logo */}
-        <Link to="/" className="flex items-center space-x-2 select-none group">
-          <span className="text-2xl sm:text-3xl font-display font-extrabold tracking-tight bg-gradient-to-r from-teal-400 via-emerald-400 to-amber-500 bg-clip-text text-transparent group-hover:from-teal-300 group-hover:to-amber-400 transition-all">
-            CivicTN
-          </span>
-          <span className="text-xl sm:text-2xl" role="img" aria-label="city">🏙️</span>
-        </Link>
-
-        {/* Desktop Links */}
-        <div className="hidden lg:flex items-center space-x-1 sm:space-x-2">
-          {links.map((link) => {
-            const Icon = link.icon;
-            const active = isActive(link.path);
-            return (
-              <Link
-                key={link.path}
-                to={link.path}
-                className={`flex items-center space-x-1.5 px-3.5 py-2 rounded-lg text-sm font-medium transition-all duration-250 ${
-                  active
-                    ? 'bg-gradient-to-r from-teal-500/20 to-emerald-500/10 text-teal-300 border border-teal-500/30 font-semibold'
-                    : 'text-gray-400 hover:text-gray-200 hover:bg-gray-800/40 border border-transparent'
-                }`}
-              >
-                <Icon size={16} className={active ? 'text-teal-400 animate-pulse' : 'text-gray-500'} />
-                <span>{link.label}</span>
-              </Link>
-            );
-          })}
-        </div>
-
-        {/* User Auth Buttons */}
-        <div className="hidden lg:flex items-center space-x-4">
-          <SignedIn>
-            <div className="flex items-center space-x-3 bg-gray-900/50 px-3 py-1.5 rounded-full border border-gray-800">
-              {role && (
-                <span className="text-xs uppercase px-2 py-0.5 rounded font-extrabold tracking-wider bg-teal-500/10 text-teal-400 border border-teal-500/20">
-                  {role}
-                </span>
-              )}
-              <UserButton 
-                appearance={{
-                  elements: {
-                    userButtonAvatarBox: 'w-8 h-8 border border-teal-500/50 hover:scale-105 transition-transform'
-                  }
-                }}
-              />
-            </div>
-          </SignedIn>
-          <SignedOut>
-            <SignInButton mode="modal">
-              <button className="px-4 py-2 text-sm font-bold rounded-lg bg-gradient-to-r from-teal-500 to-emerald-600 hover:from-teal-400 hover:to-emerald-500 text-gray-900 shadow-lg shadow-teal-500/20 hover:shadow-teal-400/30 transition-all select-none duration-200">
-                Join Platform
-              </button>
-            </SignInButton>
-          </SignedOut>
-        </div>
-
-        {/* Mobile menu button */}
-        <div className="flex lg:hidden items-center space-x-3">
-          <SignedIn>
-            <UserButton 
-              appearance={{
-                elements: {
-                  userButtonAvatarBox: 'w-8 h-8 border border-teal-500/30'
-                }
-              }}
-            />
-          </SignedIn>
-          <button
-            onClick={() => setIsOpen(!isOpen)}
-            className="p-2 text-gray-400 hover:text-gray-200 hover:bg-gray-800/50 rounded-lg focus:outline-none transition-colors"
+    <>
+      <nav
+        style={{
+          position: 'sticky',
+          top: 0,
+          zIndex: 50,
+          background: scrolled ? 'rgba(9,9,11,0.95)' : 'rgba(9,9,11,0.85)',
+          backdropFilter: 'blur(16px)',
+          WebkitBackdropFilter: 'blur(16px)',
+          borderBottom: '1px solid var(--border-subtle)',
+          boxShadow: scrolled ? '0 2px 12px rgba(0,0,0,0.4)' : 'none',
+          transition: 'all 0.2s ease',
+        }}
+      >
+        <div style={{
+          maxWidth: 1280,
+          margin: '0 auto',
+          padding: '0 20px',
+          height: 56,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: 16,
+        }}>
+          {/* Logo */}
+          <Link
+            to="/"
+            style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0, textDecoration: 'none' }}
           >
-            {isOpen ? <X size={24} /> : <Menu size={24} />}
-          </button>
-        </div>
-      </div>
+            <span style={{
+              fontFamily: 'var(--font-display)',
+              fontWeight: 800,
+              fontSize: 20,
+              background: 'linear-gradient(135deg, var(--teal-400), #6ee7b7)',
+              WebkitBackgroundClip: 'text',
+              WebkitTextFillColor: 'transparent',
+              backgroundClip: 'text',
+              letterSpacing: '-0.02em',
+            }}>
+              CivicTN
+            </span>
+            <span style={{
+              fontSize: 11,
+              fontWeight: 600,
+              color: 'var(--text-muted)',
+              background: 'var(--bg-elevated)',
+              border: '1px solid var(--border-subtle)',
+              padding: '1px 6px',
+              borderRadius: 4,
+              letterSpacing: '0.04em',
+              textTransform: 'uppercase',
+            }}>
+              TN
+            </span>
+          </Link>
 
-      {/* Mobile Menu */}
-      {isOpen && (
-        <div className="lg:hidden mt-3 px-2 pt-2 pb-4 space-y-1 rounded-xl border border-gray-850 bg-gray-950/95 backdrop-blur-lg animate-fadeIn">
-          {links.map((link) => {
-            const Icon = link.icon;
-            const active = isActive(link.path);
-            return (
-              <Link
-                key={link.path}
-                to={link.path}
-                onClick={() => setIsOpen(false)}
-                className={`flex items-center space-x-3 px-4 py-3 rounded-lg text-base font-medium transition-all ${
-                  active
-                    ? 'bg-teal-500/10 text-teal-300 border-l-4 border-teal-500'
-                    : 'text-gray-400 hover:text-gray-200 hover:bg-gray-900/50'
-                }`}
-              >
-                <Icon size={18} className={active ? 'text-teal-400' : 'text-gray-500'} />
-                <span>{link.label}</span>
-              </Link>
-            );
-          })}
-          
-          <SignedOut>
-            <div className="pt-4 px-2">
-              <SignInButton mode="modal">
-                <button 
-                  onClick={() => setIsOpen(false)}
-                  className="w-full py-2.5 text-center text-sm font-bold rounded-lg bg-gradient-to-r from-teal-500 to-emerald-600 text-gray-900 shadow-md transition-all"
+          {/* Desktop Nav Links */}
+          <div style={{
+            display: 'none',
+            alignItems: 'center',
+            gap: 2,
+            flex: 1,
+            justifyContent: 'center',
+          }}
+            className="lg-flex"
+          >
+            {links.map((link) => {
+              const Icon = link.icon;
+              const active = isActive(link.path);
+              return (
+                <Link
+                  key={link.path}
+                  to={link.path}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 5,
+                    padding: '6px 12px',
+                    borderRadius: 8,
+                    fontSize: 13,
+                    fontWeight: active ? 600 : 500,
+                    color: active ? 'var(--teal-400)' : 'var(--text-secondary)',
+                    background: active ? 'rgba(20,184,166,0.08)' : 'transparent',
+                    border: `1px solid ${active ? 'rgba(20,184,166,0.2)' : 'transparent'}`,
+                    textDecoration: 'none',
+                    transition: 'all 0.15s ease',
+                    whiteSpace: 'nowrap',
+                  }}
+                  onMouseEnter={e => {
+                    if (!active) {
+                      e.currentTarget.style.color = 'var(--text-primary)';
+                      e.currentTarget.style.background = 'var(--bg-elevated)';
+                    }
+                  }}
+                  onMouseLeave={e => {
+                    if (!active) {
+                      e.currentTarget.style.color = 'var(--text-secondary)';
+                      e.currentTarget.style.background = 'transparent';
+                    }
+                  }}
                 >
+                  <Icon size={14} />
+                  <span>{link.label}</span>
+                </Link>
+              );
+            })}
+          </div>
+
+          {/* Right Side — Auth */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
+            <SignedIn>
+              {/* Notification bell — UI only */}
+              <div style={{ position: 'relative', display: 'none' }} className="lg-block">
+                <button style={{
+                  background: 'var(--bg-elevated)',
+                  border: '1px solid var(--border-subtle)',
+                  borderRadius: 8,
+                  padding: '6px 8px',
+                  color: 'var(--text-secondary)',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                }}>
+                  <Bell size={15} />
+                </button>
+              </div>
+
+              {/* Role chip + avatar */}
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                background: 'var(--bg-elevated)',
+                border: '1px solid var(--border-subtle)',
+                borderRadius: 24,
+                padding: '4px 10px 4px 4px',
+              }}
+                className="lg-only"
+              >
+                {role && role !== 'citizen' && (
+                  <span style={{
+                    fontSize: 10,
+                    fontWeight: 700,
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.06em',
+                    color: 'var(--teal-400)',
+                    background: 'rgba(20,184,166,0.1)',
+                    border: '1px solid rgba(20,184,166,0.2)',
+                    padding: '1px 7px',
+                    borderRadius: 4,
+                  }}>
+                    {role}
+                  </span>
+                )}
+                <UserButton
+                  appearance={{
+                    elements: {
+                      userButtonAvatarBox: 'w-7 h-7 border border-teal-500/40',
+                    }
+                  }}
+                />
+              </div>
+
+              {/* Mobile: just avatar */}
+              <div className="lg-hidden">
+                <UserButton
+                  appearance={{
+                    elements: {
+                      userButtonAvatarBox: 'w-7 h-7 border border-teal-500/40',
+                    }
+                  }}
+                />
+              </div>
+            </SignedIn>
+
+            <SignedOut>
+              <SignInButton mode="modal">
+                <button className="btn btn-primary btn-sm" style={{ display: 'none' }} id="join-btn-desktop">
                   Join Platform
                 </button>
               </SignInButton>
-            </div>
-          </SignedOut>
+              <SignInButton mode="modal">
+                <button className="btn btn-primary btn-sm">
+                  Sign In
+                </button>
+              </SignInButton>
+            </SignedOut>
+
+            {/* Mobile hamburger */}
+            <button
+              onClick={() => setIsOpen(!isOpen)}
+              style={{
+                background: 'var(--bg-elevated)',
+                border: '1px solid var(--border-subtle)',
+                borderRadius: 8,
+                padding: '7px 8px',
+                color: 'var(--text-secondary)',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+              }}
+              className="lg-hidden-btn"
+              aria-label="Toggle navigation"
+            >
+              {isOpen ? <X size={18} /> : <Menu size={18} />}
+            </button>
+          </div>
         </div>
-      )}
-    </nav>
+
+        {/* Mobile Menu */}
+        {isOpen && (
+          <div
+            className="animate-slideInDown"
+            style={{
+              borderTop: '1px solid var(--border-subtle)',
+              background: 'rgba(9,9,11,0.98)',
+              padding: '8px 16px 16px',
+            }}
+          >
+            {links.map((link) => {
+              const Icon = link.icon;
+              const active = isActive(link.path);
+              return (
+                <Link
+                  key={link.path}
+                  to={link.path}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 10,
+                    padding: '11px 12px',
+                    borderRadius: 8,
+                    fontSize: 14,
+                    fontWeight: active ? 600 : 500,
+                    color: active ? 'var(--teal-400)' : 'var(--text-secondary)',
+                    background: active ? 'rgba(20,184,166,0.07)' : 'transparent',
+                    textDecoration: 'none',
+                    borderLeft: active ? '2px solid var(--teal-500)' : '2px solid transparent',
+                    marginBottom: 2,
+                  }}
+                >
+                  <Icon size={16} />
+                  <span>{link.label}</span>
+                </Link>
+              );
+            })}
+
+            <SignedOut>
+              <div style={{ paddingTop: 12, borderTop: '1px solid var(--border-subtle)', marginTop: 8 }}>
+                <SignInButton mode="modal">
+                  <button className="btn btn-primary" style={{ width: '100%' }}>
+                    Join Platform
+                  </button>
+                </SignInButton>
+              </div>
+            </SignedOut>
+          </div>
+        )}
+      </nav>
+
+      {/* Responsive style helper — avoids Tailwind dependency for lg: breakpoints */}
+      <style>{`
+        @media (min-width: 1024px) {
+          .lg-flex { display: flex !important; }
+          .lg-block { display: block !important; }
+          .lg-only { display: flex !important; }
+          .lg-hidden { display: none !important; }
+          .lg-hidden-btn { display: none !important; }
+          #join-btn-desktop { display: inline-flex !important; }
+        }
+        @media (max-width: 1023px) {
+          .lg-only { display: none !important; }
+        }
+      `}</style>
+    </>
   );
 }

@@ -8,56 +8,122 @@ export default function Layout({ children }) {
   const { role, loadingProfile, isSignedIn } = useCivic();
 
   return (
-    <div className="min-h-screen flex flex-col bg-[#07080b] text-gray-100 selection:bg-teal-500 selection:text-gray-900">
-      {/* Dynamic Ambient Background Gradients */}
-      <div className="fixed inset-0 z-0 overflow-hidden pointer-events-none">
-        <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] rounded-full bg-teal-500/5 blur-[120px]" />
-        <div className="absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] rounded-full bg-emerald-500/5 blur-[120px]" />
-        <div className="absolute top-[30%] right-[20%] w-[35%] h-[35%] rounded-full bg-amber-500/3 blur-[100px]" />
+    <div style={{
+      minHeight: '100vh',
+      display: 'flex',
+      flexDirection: 'column',
+      background: 'var(--bg-base)',
+      color: 'var(--text-primary)',
+    }}>
+      {/* Subtle ambient gradient — single, not 3 */}
+      <div style={{
+        position: 'fixed',
+        inset: 0,
+        zIndex: 0,
+        pointerEvents: 'none',
+        overflow: 'hidden',
+      }}>
+        <div style={{
+          position: 'absolute',
+          top: '-20%',
+          left: '30%',
+          width: '600px',
+          height: '600px',
+          borderRadius: '50%',
+          background: 'radial-gradient(circle, rgba(20,184,166,0.04) 0%, transparent 70%)',
+        }} />
       </div>
 
-      {/* Toast Notifications */}
+      {/* Toast config */}
       <Toaster
         position="top-right"
+        gutter={8}
         toastOptions={{
-          className: 'glass-panel text-gray-200 border border-gray-800',
           style: {
-            background: 'rgba(17, 24, 39, 0.9)',
-            color: '#f3f4f6',
-            border: '1px solid rgba(255, 255, 255, 0.08)',
+            background: 'var(--bg-elevated)',
+            color: 'var(--text-primary)',
+            border: '1px solid var(--border-default)',
+            boxShadow: 'var(--shadow-lg)',
+            borderRadius: '10px',
+            fontSize: '13px',
+            fontFamily: 'var(--font-sans)',
           },
           success: {
-            iconTheme: {
-              primary: '#14b8a6',
-              secondary: '#111827',
-            },
+            iconTheme: { primary: 'var(--teal-400)', secondary: 'var(--bg-base)' },
+          },
+          error: {
+            iconTheme: { primary: '#f43f5e', secondary: 'var(--bg-base)' },
           },
         }}
       />
 
-      {/* Main Navbar */}
+      {/* Navbar */}
       <Navbar role={isSignedIn ? role : null} />
 
-      {/* Main Page Area */}
-      <main className="flex-1 relative z-10 w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
+      {/* Main content */}
+      <main style={{
+        flex: 1,
+        position: 'relative',
+        zIndex: 10,
+        width: '100%',
+        maxWidth: 1280,
+        margin: '0 auto',
+        padding: '24px 20px 40px',
+      }}>
         {loadingProfile && isSignedIn ? (
-          <div className="h-[60vh] flex flex-col items-center justify-center space-y-4">
-            <Loader2 className="w-10 h-10 text-teal-400 animate-spin" />
-            <p className="text-gray-400 font-medium font-display tracking-wide animate-pulse">Syncing Civic Profile...</p>
+          <div style={{
+            height: '60vh',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 12,
+          }}>
+            <Loader2
+              size={32}
+              style={{ color: 'var(--teal-500)', animation: 'spin 0.8s linear infinite' }}
+            />
+            <p style={{ color: 'var(--text-muted)', fontSize: 13, fontWeight: 500 }}>
+              Syncing civic profile...
+            </p>
           </div>
         ) : (
           children
         )}
       </main>
 
-      {/* Minimal Sleek Footer */}
-      <footer className="relative z-10 border-t border-gray-900/60 bg-gray-950/20 py-6 text-center text-xs text-gray-500">
-        <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-4">
-          <p>© 2026 CivicTN. Empowering citizens through secure anonymous reporting.</p>
-          <div className="flex space-x-4">
-            <a href="#" className="hover:text-teal-400 transition-colors">Privacy Policy</a>
-            <a href="#" className="hover:text-teal-400 transition-colors">Terms of Service</a>
-            <a href="#" className="hover:text-teal-400 transition-colors">Official Portal</a>
+      {/* Footer */}
+      <footer style={{
+        position: 'relative',
+        zIndex: 10,
+        borderTop: '1px solid var(--border-subtle)',
+        padding: '20px',
+        background: 'rgba(9,9,11,0.6)',
+      }}>
+        <div style={{
+          maxWidth: 1280,
+          margin: '0 auto',
+          display: 'flex',
+          flexWrap: 'wrap',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: 12,
+        }}>
+          <p style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+            © 2026 <span style={{ color: 'var(--teal-400)', fontWeight: 600 }}>CivicTN</span> — AI-Powered Smart Infrastructure Management
+          </p>
+          <div style={{ display: 'flex', gap: 20 }}>
+            {['Privacy Policy', 'Terms of Service', 'Official Portal'].map(link => (
+              <a
+                key={link}
+                href="#"
+                style={{ fontSize: 12, color: 'var(--text-muted)', textDecoration: 'none', transition: 'color 0.15s' }}
+                onMouseEnter={e => e.target.style.color = 'var(--teal-400)'}
+                onMouseLeave={e => e.target.style.color = 'var(--text-muted)'}
+              >
+                {link}
+              </a>
+            ))}
           </div>
         </div>
       </footer>
