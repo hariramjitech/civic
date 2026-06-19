@@ -28,12 +28,19 @@ const { generalLimiter, errorHandler } = require('./middleware/middleware');
 const app    = express();
 const server = http.createServer(app);
 
-// Dynamic CORS Origin Helper
-const allowedOrigins = [process.env.FRONTEND_URL || 'http://localhost:5173'];
+// Dynamic CORS Origin Helper - supports comma-separated URLs in FRONTEND_URL env var
+const allowedOrigins = (process.env.FRONTEND_URL || 'http://localhost:5173')
+  .split(',')
+  .map(url => url.trim());
+
 const corsOptions = {
   origin: function (origin, callback) {
     if (!origin) return callback(null, true); // Allow server-to-server or postman
-    if (origin.startsWith('http://localhost:') || origin.startsWith('http://127.0.0.1:')) {
+    if (
+      origin.startsWith('http://localhost:') ||
+      origin.startsWith('http://127.0.0.1:') ||
+      origin.endsWith('.vercel.app')
+    ) {
       return callback(null, true);
     }
     if (allowedOrigins.includes(origin)) {
@@ -50,7 +57,13 @@ const corsOptions = {
 const io = new Server(server, {
   cors: {
     origin: (origin, callback) => {
-      if (!origin || origin.startsWith('http://localhost:') || origin.startsWith('http://127.0.0.1:')) {
+      if (
+        !origin ||
+        origin.startsWith('http://localhost:') ||
+        origin.startsWith('http://127.0.0.1:') ||
+        origin.endsWith('.vercel.app') ||
+        allowedOrigins.includes(origin)
+      ) {
         callback(null, true);
       } else {
         callback(null, false);
