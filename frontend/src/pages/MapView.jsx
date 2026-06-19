@@ -115,11 +115,7 @@ export default function MapView() {
       </div>
 
       {/* ── MAIN SPLIT LAYOUT ── */}
-      <div style={{
-        flex: 1, display: 'grid',
-        gridTemplateColumns: '260px 1fr',
-        gap: 12, minHeight: 0,
-      }}>
+      <div className="map-split-layout">
 
         {/* ── LEFT SIDEBAR ── */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12, minHeight: 0, overflow: 'hidden' }}>
@@ -220,7 +216,7 @@ export default function MapView() {
           {loading && (
             <div style={{
               position: 'absolute', inset: 0, zIndex: 1000,
-              background: 'rgba(9,9,11,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center',
+              background: 'var(--bg-translucent)', display: 'flex', alignItems: 'center', justifyContent: 'center',
             }}>
               <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>Loading map data...</span>
             </div>
@@ -255,8 +251,8 @@ export default function MapView() {
           {!loading && (
             <div style={{
               position: 'absolute', top: 12, right: 12, zIndex: 500,
-              background: 'rgba(9,9,11,0.85)', backdropFilter: 'blur(8px)',
-              border: '1px solid var(--border-subtle)', borderRadius: 8,
+              background: 'var(--bg-surface)', backdropFilter: 'blur(8px)',
+              border: '1px solid var(--border-default)', borderRadius: 8,
               padding: '6px 12px', display: 'flex', gap: 12,
             }}>
               {Object.entries(SEV_COLORS).map(([sev, color]) => {

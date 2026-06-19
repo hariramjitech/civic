@@ -3,6 +3,7 @@ import Navbar from './Navbar';
 import { useCivic } from '../context/CivicContext';
 import { Toaster } from 'react-hot-toast';
 import { Loader2 } from 'lucide-react';
+import AccessibilityWidget from './AccessibilityWidget';
 
 export default function Layout({ children }) {
   const { role, loadingProfile, isSignedIn } = useCivic();
@@ -98,7 +99,8 @@ export default function Layout({ children }) {
         zIndex: 10,
         borderTop: '1px solid var(--border-subtle)',
         padding: '20px',
-        background: 'rgba(9,9,11,0.6)',
+        background: 'var(--bg-translucent)',
+        backdropFilter: 'blur(10px)',
       }}>
         <div style={{
           maxWidth: 1280,
@@ -127,6 +129,8 @@ export default function Layout({ children }) {
           </div>
         </div>
       </footer>
+      {/* Floating Accessibility Settings Panel */}
+      <AccessibilityWidget />
     </div>
   );
 }

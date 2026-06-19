@@ -262,7 +262,7 @@ export default function AdminDashboard() {
               <ArrowUpRight size={15} style={{ color: '#f97316' }} />
               <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)' }}>Escalation Engine Rules</span>
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
+            <div className="category-grid">
               {[
                 { threshold: '50+', to: 'Assistant Engineer', color: '#f97316' },
                 { threshold: '100+', to: 'Executive Engineer', color: '#f43f5e' },

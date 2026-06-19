@@ -39,11 +39,11 @@ export default function Navbar({ role }) {
           position: 'sticky',
           top: 0,
           zIndex: 50,
-          background: scrolled ? 'rgba(9,9,11,0.95)' : 'rgba(9,9,11,0.85)',
+          background: 'var(--bg-translucent)',
           backdropFilter: 'blur(16px)',
           WebkitBackdropFilter: 'blur(16px)',
           borderBottom: '1px solid var(--border-subtle)',
-          boxShadow: scrolled ? '0 2px 12px rgba(0,0,0,0.4)' : 'none',
+          boxShadow: scrolled ? '0 2px 12px rgba(0,0,0,0.05)' : 'none',
           transition: 'all 0.2s ease',
         }}
       >
@@ -248,7 +248,7 @@ export default function Navbar({ role }) {
             className="animate-slideInDown"
             style={{
               borderTop: '1px solid var(--border-subtle)',
-              background: 'rgba(9,9,11,0.98)',
+              background: 'var(--bg-surface)',
               padding: '8px 16px 16px',
             }}
           >

@@ -304,7 +304,7 @@ export default function SubmitPost() {
                 color: 'var(--text-secondary)',
                 lineHeight: 1.6,
                 padding: '10px 12px',
-                background: 'rgba(9,9,11,0.4)',
+                background: 'var(--bg-overlay)',
                 border: '1px solid var(--border-subtle)',
                 borderRadius: 8,
                 whiteSpace: 'pre-wrap'
@@ -343,7 +343,7 @@ export default function SubmitPost() {
           <label style={{ display: 'block', fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-muted)', marginBottom: 12 }}>
             Issue Category
           </label>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
+          <div className="category-grid">
             {CATEGORIES.map(cat => (
               <button
                 key={cat.value}
@@ -462,16 +462,16 @@ export default function SubmitPost() {
                   onClick={() => removeImage(idx)}
                   style={{
                     position: 'absolute', top: 5, right: 5,
-                    background: 'rgba(9,9,11,0.8)', border: '1px solid var(--border-subtle)',
+                    background: 'var(--bg-overlay)', border: '1px solid var(--border-subtle)',
                     borderRadius: '50%', width: 22, height: 22, cursor: 'pointer',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-primary)',
                   }}
                 >
                   <X size={12} />
                 </button>
                 {idx === 0 && (
                   <div style={{
-                    position: 'absolute', bottom: 5, left: 5, background: 'rgba(9,9,11,0.75)',
+                    position: 'absolute', bottom: 5, left: 5, background: 'var(--bg-base)',
                     borderRadius: 4, padding: '2px 6px', fontSize: 9, fontWeight: 700, color: 'var(--teal-400)',
                   }}>
                     PRIMARY
@@ -518,7 +518,7 @@ export default function SubmitPost() {
                 </div>
                 
                 {aiResult.originalityStatus && (
-                  <div style={{ gridColumn: '1/-1', display: 'flex', flexDirection: 'column', gap: 6, padding: '12px 14px', borderRadius: 8, background: 'rgba(9,9,11,0.3)', border: '1px solid var(--border-subtle)', marginTop: 4 }}>
+                  <div style={{ gridColumn: '1/-1', display: 'flex', flexDirection: 'column', gap: 6, padding: '12px 14px', borderRadius: 8, background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', marginTop: 4 }}>
                     <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-primary)', textTransform: 'uppercase', letterSpacing: '0.06em', display: 'flex', alignItems: 'center', gap: 6 }}>
                       <span>🕵️‍♂️</span>
                       <span>Forensic Originality Check</span>

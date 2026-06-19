@@ -407,7 +407,7 @@ export default function Feed() {
                     <div style={{
                       position: 'absolute', top: 10, right: 10,
                       display: 'flex', alignItems: 'center', gap: 4,
-                      background: 'rgba(9,9,11,0.75)', backdropFilter: 'blur(6px)',
+                      background: 'var(--bg-translucent)', backdropFilter: 'blur(6px)',
                       border: '1px solid var(--border-subtle)', borderRadius: 6,
                       padding: '3px 8px', fontSize: 10, fontWeight: 600, color: 'var(--text-secondary)',
                     }}>

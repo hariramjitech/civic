@@ -163,16 +163,7 @@ export default function Landing() {
       </section>
 
       {/* ── METRICS STRIP ── */}
-      <section style={{
-        display: 'grid',
-        gridTemplateColumns: 'repeat(4, 1fr)',
-        gap: 1,
-        background: 'var(--border-subtle)',
-        border: '1px solid var(--border-subtle)',
-        borderRadius: 12,
-        overflow: 'hidden',
-        marginBottom: 56,
-      }}>
+      <section className="metrics-grid">
         {METRICS.map((m, i) => (
           <div key={i} style={{
             background: 'var(--bg-surface)',

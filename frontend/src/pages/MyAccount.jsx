@@ -157,7 +157,7 @@ export default function MyAccount() {
       </div>
 
       {/* ── STATS ── */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10 }}>
+      <div className="stats-grid">
         {[
           { label: 'Reports Filed', value: myPosts.length, color: 'var(--teal-400)', icon: FileText },
           { label: 'Comments', value: myComments.length, color: '#a78bfa', icon: MessageSquare },
