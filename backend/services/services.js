@@ -14,20 +14,55 @@ const { Post, ChatRoom } = require('../models/models');
 // ─────────────────────────────────────────────
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
+// Helper for sleeping
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// Helper to try generateContent with retry and timeout configuration
+const generateWithRetry = async (modelName, contents, maxRetries = 2, initialDelay = 1000) => {
+  let delay = initialDelay;
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      // Set a timeout of 30s so we don't abort slow/multimodal requests prematurely
+      const modelInstance = genAI.getGenerativeModel({ model: modelName }, { timeout: 30000 });
+      const result = await modelInstance.generateContent(contents);
+      if (result && result.response) {
+        return result;
+      }
+    } catch (err) {
+      const status = err.status || (err.message && err.message.match(/\[(\d+)\]/)?.[1]);
+      const isNotFound = status === 404 || err.message?.includes('404') || err.message?.toLowerCase().includes('not found');
+      
+      // If the model does not exist/is not found, fail fast and do not retry
+      if (isNotFound) {
+        throw err;
+      }
+      
+      // If we've reached the maximum retries, throw the error to try the next model
+      if (attempt === maxRetries) {
+        throw err;
+      }
+      
+      console.warn(`⚠️ [Gemini AI] Model ${modelName} failed on attempt ${attempt + 1}/${maxRetries + 1} (Reason: ${err.message}). Retrying in ${delay}ms...`);
+      await sleep(delay);
+      delay *= 2; // exponential backoff
+    }
+  }
+};
+
 // High IQ Fallback Handler to try multiple models sequentially when free-tier/temporary service spikes occur
 const generateContentWithFallback = async (contents) => {
+  // Ordered by stability and availability in 2026
   const models = [
-    'gemini-3.5-flash',
     'gemini-2.5-flash',
-    'gemini-2.0-flash',
-    'gemini-flash-latest' // fallback alias
+    'gemini-flash-latest',
+    'gemini-3.5-flash',
+    'gemini-2.0-flash'
   ];
   let lastError = null;
   for (const modelName of models) {
     try {
       console.log(`🤖 [Gemini AI] Trying model: ${modelName}`);
-      const modelInstance = genAI.getGenerativeModel({ model: modelName });
-      const result = await modelInstance.generateContent(contents);
+      const result = await generateWithRetry(modelName, contents);
       if (result && result.response) {
         console.log(`✅ [Gemini AI] Model ${modelName} succeeded!`);
         return result;
@@ -239,7 +274,13 @@ const updateIntensityScore = async (postId) => {
   const post = await Post.findById(postId).lean();
   if (!post) return 0;
 
-  const score = Math.round(post.likeCount + (post.commentCount * 1.5) + (post.supportCount * 3));
+  let score = Math.round(post.likeCount + (post.commentCount * 1.5) + (post.supportCount * 3));
+  
+  // Penalize intensity score for stock photos to lower priority
+  if (post.originalityStatus === 'stock_photo_detected') {
+    score = Math.round(score * 0.25);
+  }
+
   await Post.findByIdAndUpdate(postId, { intensityScore: score });
 
   // Strike room escalation check
@@ -261,11 +302,12 @@ const updateIntensityScore = async (postId) => {
 // ─────────────────────────────────────────────
 const rewriteComplaint = async (description = '') => {
   try {
-    const prompt = `You are a professional writing assistant helping citizens in Tamil Nadu, India report civic issues.
-Rewrite the following user complaint to make it highly professional, clear, objective, and easy for municipal corporation or local government authorities to read and act upon.
-Keep all specific details like landmarks, street names, times, dates, and severity intact.
-If the input contains Tamil text, rewrite it in a clear, polite, and professional bilingual format (Tamil and English) or highly polished Tamil, whichever is most appropriate for a formal report.
-Do not add any introductory text, salutations, or concluding remarks. Just respond with the rewritten complaint text.
+    const prompt = `You are an expert writing assistant helping citizens in Tamil Nadu, India format and polish civic complaints for a social/civic platform post.
+Polish the user's complaint to make it grammatically correct, highly professional, structured, and clear. 
+Always output a bilingual post caption containing a polished English version first, followed by a high-quality Tamil (தமிழ்) translation.
+Keep all specific details (landmarks, street names, times, dates, vehicles, severity) intact.
+Structure the caption cleanly with clear spacing and sections (e.g. using bullet points for key details) to make it an excellent post caption for a civic platform.
+Do not include any introductory remarks, salutations, meta-commentary, or conversational fillers. Just output the English and Tamil caption directly.
 
 User complaint:
 "${description}"`;

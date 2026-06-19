@@ -34,9 +34,9 @@ export default function PostDetail() {
     option3: '',
   });
 
-  const fetchPostDetails = async () => {
+  const fetchPostDetails = async (silent = false) => {
     try {
-      setLoading(true);
+      if (!silent) setLoading(true);
       const res = await api.get(`/posts/${id}`);
       setData(res.data);
       setStatusForm({
@@ -51,7 +51,7 @@ export default function PostDetail() {
       console.error(err);
       toast.error('Failed to load post details.');
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   };
 
@@ -109,6 +109,7 @@ export default function PostDetail() {
         post: {
           ...prev.post,
           likeCount: res.data.likeCount,
+          intensityScore: res.data.intensityScore,
         }
       } : null);
       toast.success(res.data.liked ? 'Voted: Affected by this issue too' : 'Removed vote');
@@ -137,9 +138,8 @@ export default function PostDetail() {
         setCommentText('');
       }
 
-      // Reload comments
-      const commentRes = await api.get(`/posts/${id}/comments`);
-      setComments(commentRes.data.comments);
+      // Reload comments and post metadata
+      await fetchPostDetails(true);
     } catch (err) {
       toast.error(err.response?.data?.error || 'Failed to submit comment.');
     }

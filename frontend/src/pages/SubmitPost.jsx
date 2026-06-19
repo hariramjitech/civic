@@ -170,7 +170,7 @@ export default function SubmitPost() {
     return true;
   };
 
-  const handleSubmit = async () => {
+  const handleSubmit = async (allowStock = false) => {
     if (!isSignedIn) { toast.error('Sign in to submit.'); return; }
     if (!title.trim() || !description.trim()) { toast.error('Title and description required.'); return; }
     if (!position) { toast.error('Please pin the issue location.'); return; }
@@ -182,6 +182,9 @@ export default function SubmitPost() {
       fd.append('lat', position.lat);
       fd.append('lng', position.lng);
       fd.append('category', category);
+      if (allowStock) {
+        fd.append('allowStockPhoto', 'true');
+      }
       selectedFiles.forEach(f => fd.append('images', f));
       const res = await api.post('/posts', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
       toast.success('Report submitted anonymously!');
@@ -190,7 +193,17 @@ export default function SubmitPost() {
       }
       navigate('/feed');
     } catch (err) {
-      toast.error(err.response?.data?.error || 'Submission failed.');
+      if (err.response?.data?.code === 'STOCK_PHOTO_DETECTED') {
+        const proceed = window.confirm(
+          `${err.response.data.error}\n\nWould you like to post this anyway? (Note: It will be flagged with a reduced intensity/priority score)`
+        );
+        if (proceed) {
+          await handleSubmit(true);
+          return;
+        }
+      } else {
+        toast.error(err.response?.data?.error || 'Submission failed.');
+      }
     } finally {
       setSubmitting(false);
     }

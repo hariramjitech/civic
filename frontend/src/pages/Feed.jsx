@@ -141,7 +141,7 @@ export default function Feed() {
     try {
       const res = await api.post(`/posts/${postId}/like`);
       setPosts(prev => prev.map(p => p._id === postId
-        ? { ...p, likeCount: res.data.likeCount, likedByUser: res.data.liked }
+        ? { ...p, likeCount: res.data.likeCount, likedByUser: res.data.liked, intensityScore: res.data.intensityScore }
         : p
       ));
       // Heart animation
@@ -466,7 +466,7 @@ export default function Feed() {
                       title="I'm affected too — amplify this issue"
                     >
                       <Flame size={19} strokeWidth={1.5} />
-                      <span>{post.supportCount || 0}</span>
+                      <span>{post.intensityScore || 0}</span>
                     </button>
                   </div>
 

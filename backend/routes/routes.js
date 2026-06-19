@@ -258,6 +258,17 @@ GPS Match Status: ${imageMetadata.gpsMatchStatus}`;
       aiResult = await classifyIssue(base64, mime, description, metadataContext);
     }
 
+    // Block stock photo posts unless allowed by a bypass flag
+    if (aiResult.originalityStatus === 'stock_photo_detected') {
+      const allowStockPhoto = req.body.allowStockPhoto === 'true' || req.body.allowStockPhoto === true;
+      if (!allowStockPhoto) {
+        return res.status(400).json({
+          error: 'Stock photo detected. To maintain platform authenticity, you must upload a genuine, original image taken in-situ.',
+          code: 'STOCK_PHOTO_DETECTED'
+        });
+      }
+    }
+
     // Reverse geocode location
     let locationData = { district: 'Unknown', address: '' };
     if (lat && lng) {
@@ -413,7 +424,7 @@ router.post('/posts/:id/like', requireAuth, attachUser, asyncHandler(async (req,
     io.to(`post:${populated._id}`).emit('post:updated', populated);
   }
 
-  res.json({ liked: !alreadyLiked, likeCount: populated.likeCount });
+  res.json({ liked: !alreadyLiked, likeCount: populated.likeCount, intensityScore: populated.intensityScore });
 }));
 
 // POST /api/posts/:id/support — cross-city support report (bumps intensity)
