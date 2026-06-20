@@ -9,9 +9,8 @@ const getSocketUrl = () => {
     if (hostname === 'localhost' || hostname === '127.0.0.1') {
       return 'http://localhost:5000';
     }
-    return window.location.origin;
   }
-  return 'http://localhost:5000';
+  return 'https://civic-24jv.onrender.com';
 };
 
 const SOCKET_URL = getSocketUrl();

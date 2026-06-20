@@ -9,9 +9,8 @@ const getApiUrl = () => {
     if (hostname === 'localhost' || hostname === '127.0.0.1') {
       return 'http://localhost:5000/api';
     }
-    return `${window.location.origin}/api`;
   }
-  return 'http://localhost:5000/api';
+  return 'https://civic-24jv.onrender.com/api';
 };
 
 const API_URL = getApiUrl();
