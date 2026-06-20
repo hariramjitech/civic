@@ -1,16 +1,7 @@
 import { io } from 'socket.io-client';
 
 const getSocketUrl = () => {
-  if (import.meta.env.VITE_SOCKET_URL) {
-    return import.meta.env.VITE_SOCKET_URL;
-  }
-  if (typeof window !== 'undefined') {
-    const hostname = window.location.hostname;
-    if (hostname === 'localhost' || hostname === '127.0.0.1') {
-      return 'http://localhost:5000';
-    }
-  }
-  return 'https://civic-24jv.onrender.com';
+  return import.meta.env.VITE_SOCKET_URL || 'https://civic-24jv.onrender.com';
 };
 
 const SOCKET_URL = getSocketUrl();
