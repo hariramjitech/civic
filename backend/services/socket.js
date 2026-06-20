@@ -7,7 +7,7 @@
 
 const { Message, ChatRoom } = require('../models/models');
 const { generateChatAlias } = require('../middleware/middleware');
-const { moderateContent }   = require('./services');
+const { moderateContent, censorText }   = require('./services');
 
 const initSocket = (io) => {
   io.on('connection', (socket) => {
@@ -32,13 +32,16 @@ const initSocket = (io) => {
     socket.on('message:send', async ({ roomId, text }) => {
       if (!text?.trim() || text.length > 1000) return;
 
-      const mod = await moderateContent(text);
+      // Censor improper words
+      const censoredText = censorText(text.trim());
+
+      const mod = await moderateContent(censoredText);
       if (!mod.safe) return socket.emit('message:rejected', { reason: mod.reason });
 
       const msg = await Message.create({
         roomId,
         senderAlias: socket.data.alias || generateChatAlias(clerkId, roomId),
-        text: text.trim(),
+        text: censoredText,
         type: 'text',
       });
 

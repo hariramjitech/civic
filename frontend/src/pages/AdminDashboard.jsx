@@ -331,8 +331,6 @@ export default function AdminDashboard() {
                         style={{ padding: '4px 28px 4px 8px', fontSize: 11, width: 'auto' }}
                       >
                         <option value="reported">Reported</option>
-                        <option value="under_review">Under Review</option>
-                        <option value="assigned">Assigned</option>
                         <option value="in_progress">In Progress</option>
                         <option value="resolved">Resolved</option>
                         <option value="closed">Closed</option>

@@ -31,9 +31,16 @@ const generateWithRetry = async (modelName, contents, maxRetries = 2, initialDel
     } catch (err) {
       const status = err.status || (err.message && err.message.match(/\[(\d+)\]/)?.[1]);
       const isNotFound = status === 404 || err.message?.includes('404') || err.message?.toLowerCase().includes('not found');
+      const isQuotaExceeded = status === 429 || err.status === 429 || err.message?.includes('429') || err.message?.toLowerCase().includes('quota') || err.message?.toLowerCase().includes('limit');
       
       // If the model does not exist/is not found, fail fast and do not retry
       if (isNotFound) {
+        throw err;
+      }
+
+      // If quota is exceeded, fail fast immediately to fallback model without waiting/retrying
+      if (isQuotaExceeded) {
+        console.warn(`⚠️ [Gemini AI] Model ${modelName} quota exceeded. Failing fast...`);
         throw err;
       }
       
@@ -53,10 +60,13 @@ const generateWithRetry = async (modelName, contents, maxRetries = 2, initialDel
 const generateContentWithFallback = async (contents) => {
   // Ordered by stability and availability in 2026
   const models = [
+    'gemini-2.5-flash-lite',
+    'gemini-flash-lite-latest',
+    'gemini-3-flash-preview',
     'gemini-2.5-flash',
+    'gemini-2.0-flash',
     'gemini-flash-latest',
-    'gemini-3.5-flash',
-    'gemini-2.0-flash'
+    'gemini-3.5-flash'
   ];
   let lastError = null;
   for (const modelName of models) {
@@ -91,7 +101,7 @@ const classifyIssue = async (images, description = '', metadataContext = '') => 
 Analyze the uploaded infrastructure/civic problem image(s).
 
 1. Classify into ONE category:
-pothole | road_damage | garbage | water_leakage | drainage | streetlight | public_property | electricity | other
+roads | sanitation | water | electricity | municipal | other
 
 2. Determine severity: low | medium | high | critical
 
@@ -364,7 +374,8 @@ User complaint:
     return result.response.text().trim();
   } catch (err) {
     console.error('Error in rewriteComplaint:', err);
-    throw new Error('Failed to rewrite complaint.');
+    // Return the original description as a fallback instead of crashing
+    return description;
   }
 };
 
@@ -386,6 +397,32 @@ const getHaversineDistance = (lat1, lon1, lat2, lon2) => {
   return R * c; // distance in meters
 };
 
+const badWords = [
+  // English
+  'fuck', 'shit', 'ass', 'bitch', 'bastard', 'cunt', 'dick', 'pussy', 'wank', 'crap', 'dumbass', 'idiot',
+  // Tamil Transliterated (Tanglish)
+  'oolu', 'sunni', 'poolu', 'bunda', 'thevidiya', 'koothi', 'soothu', 'ommala', 'omala', 'podangotha', 'oththa', 'poramboke',
+  // Tamil Native
+  'தேவிடியா', 'கூதி', 'சூத்து', 'பூலு', 'சுன்னி', 'போடா', 'போடி'
+];
+
+const censorText = (text) => {
+  if (!text || typeof text !== 'string') return text;
+  let censored = text;
+  for (const word of badWords) {
+    const isTamilScript = /[\u0B80-\u0BFF]/.test(word);
+    const regex = isTamilScript 
+      ? new RegExp(word, 'gi')
+      : new RegExp(`\\b${word}\\b`, 'gi');
+      
+    censored = censored.replace(regex, (match) => {
+      if (match.length <= 1) return '*';
+      return match[0] + '*'.repeat(match.length - 1);
+    });
+  }
+  return censored;
+};
+
 module.exports = {
   classifyIssue,
   checkDuplicate,
@@ -397,4 +434,5 @@ module.exports = {
   updateIntensityScore,
   rewriteComplaint,
   getHaversineDistance,
+  censorText,
 };

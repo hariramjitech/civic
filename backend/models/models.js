@@ -48,8 +48,7 @@ const postSchema = new Schema({
   // AI classification (auto-filled by Gemini)
   category: {
     type: String,
-    enum: ['pothole', 'road_damage', 'garbage', 'water_leakage', 'drainage',
-      'streetlight', 'public_property', 'electricity', 'other'],
+    enum: ['roads', 'sanitation', 'water', 'electricity', 'municipal', 'other'],
     default: 'other'
   },
   severity: { type: String, enum: ['low', 'medium', 'high', 'critical'], default: 'medium' },

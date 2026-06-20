@@ -6,7 +6,7 @@ import {
   Heart, MessageCircle, Flame, MapPin, Search,
   CheckCircle, Clock, Share2, ChevronDown, ChevronUp,
   Sparkles, Navigation, Phone, Mail, PlusCircle, SlidersHorizontal,
-  LayoutGrid, List
+  LayoutGrid, List, Volume2, VolumeX
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import SeverityBadge from '../components/SeverityBadge';
@@ -63,10 +63,40 @@ export default function Feed() {
   const [category, setCategory] = useState('');
   const [severity, setSeverity] = useState('');
   const [status, setStatus] = useState('');
-  const [sort, setSort] = useState('latest');
+  const [sort, setSort] = useState('feed');
   const [searchQuery, setSearchQuery] = useState('');
   const [useGeo, setUseGeo] = useState(false);
   const [coords, setCoords] = useState(null);
+
+  // Accessibility: Speak post details
+  const [speakingId, setSpeakingId] = useState(null);
+
+  const speakPost = (post) => {
+    if (!window.speechSynthesis) {
+      toast.error('Text-to-speech not supported in this browser.');
+      return;
+    }
+    
+    if (speakingId === post._id) {
+      window.speechSynthesis.cancel();
+      setSpeakingId(null);
+      return;
+    }
+
+    window.speechSynthesis.cancel();
+    const narrationText = `Reported civic issue: ${post.title}. Location: ${post.district} district. Category is ${post.category || 'general'}. Severity level is ${post.severity || 'medium'}. Current status: ${post.status?.replace('_', ' ') || 'reported'}. Details: ${post.description}.`;
+    const utterance = new SpeechSynthesisUtterance(narrationText);
+    utterance.onend = () => setSpeakingId(null);
+    utterance.onerror = () => setSpeakingId(null);
+    setSpeakingId(post._id);
+    window.speechSynthesis.speak(utterance);
+  };
+
+  useEffect(() => {
+    return () => {
+      if (window.speechSynthesis) window.speechSynthesis.cancel();
+    };
+  }, []);
 
   const fetchPosts = useCallback(async () => {
     try {
@@ -241,13 +271,17 @@ export default function Feed() {
           </button>
         ))}
         <div style={{ width: 1, background: 'var(--border-subtle)', flexShrink: 0 }} />
-        <button
-          onClick={() => setSort(sort === 'latest' ? 'intensity' : 'latest')}
-          className={`filter-pill ${sort === 'intensity' ? 'active' : ''}`}
+        <select
+          value={sort}
+          onChange={e => setSort(e.target.value)}
+          className="filter-pill"
+          style={{ background: sort === 'feed' ? 'var(--teal-glow)' : undefined, borderColor: sort === 'feed' ? 'rgba(20,184,166,0.35)' : undefined }}
+          aria-label="Sort stream by"
         >
-          <Flame size={12} />
-          {sort === 'intensity' ? 'By Intensity' : 'Latest'}
-        </button>
+          <option value="feed">✨ Recommended Feed</option>
+          <option value="latest">🕒 Latest Reports</option>
+          <option value="intensity">🔥 Popular (Intensity)</option>
+        </select>
         <button
           onClick={handleGeoToggle}
           className={`filter-pill ${useGeo ? 'active' : ''}`}
@@ -356,10 +390,27 @@ export default function Feed() {
                     </div>
                   </div>
 
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
                     <SeverityBadge severity={post.severity} />
                     <span className={`status-pill status-${(post.status || 'reported').replace('_', '-').replace('under-review', 'review')}`}>
                       {post.status?.replace('_', ' ') || 'reported'}
+                    </span>
+                    <span 
+                      style={{
+                        fontSize: 9, 
+                        fontWeight: 800, 
+                        textTransform: 'uppercase', 
+                        letterSpacing: '0.05em',
+                        padding: '2px 6px', 
+                        borderRadius: 6,
+                        border: '1px solid',
+                        background: (post.legitimacyScore || 70) >= 80 ? 'rgba(74,222,128,0.1)' : (post.legitimacyScore || 70) >= 50 ? 'rgba(234,179,8,0.1)' : 'rgba(244,63,94,0.1)',
+                        color: (post.legitimacyScore || 70) >= 80 ? '#4ade80' : (post.legitimacyScore || 70) >= 50 ? '#eab308' : '#f43f5e',
+                        borderColor: (post.legitimacyScore || 70) >= 80 ? 'rgba(74,222,128,0.2)' : (post.legitimacyScore || 70) >= 50 ? 'rgba(234,179,8,0.2)' : 'rgba(244,63,94,0.2)',
+                      }}
+                      title="AI Legitimacy Score"
+                    >
+                      🛡️ {post.legitimacyScore || 70}% Trust
                     </span>
                   </div>
                 </div>
@@ -425,6 +476,7 @@ export default function Feed() {
                   <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
                     <button
                       onClick={() => handleLike(post._id)}
+                      aria-label="Toggle affected vote"
                       style={{
                         background: 'none', border: 'none', cursor: 'pointer', padding: '2px',
                         display: 'flex', alignItems: 'center', gap: 5,
@@ -438,9 +490,10 @@ export default function Feed() {
                       <Heart size={19} fill={isLiked ? '#f43f5e' : 'none'} strokeWidth={isLiked ? 0 : 1.5} />
                       <span>{post.likeCount || 0}</span>
                     </button>
-
+ 
                     <Link
                       to={`/posts/${post._id}#comments`}
+                      aria-label="View comments"
                       style={{
                         display: 'flex', alignItems: 'center', gap: 5, color: 'var(--text-muted)',
                         fontSize: 12, fontWeight: 600, textDecoration: 'none',
@@ -452,9 +505,10 @@ export default function Feed() {
                       <MessageCircle size={19} strokeWidth={1.5} />
                       <span>{post.commentCount || 0}</span>
                     </Link>
-
+ 
                     <button
                       onClick={() => handleSupport(post._id)}
+                      aria-label="Amplify support priority score"
                       style={{
                         background: 'none', border: 'none', cursor: 'pointer', padding: '2px',
                         display: 'flex', alignItems: 'center', gap: 5,
@@ -469,18 +523,35 @@ export default function Feed() {
                       <span>{post.intensityScore || 0}</span>
                     </button>
                   </div>
-
-                  <button
-                    onClick={() => copyLink(post._id)}
-                    style={{
-                      background: 'none', border: 'none', cursor: 'pointer', padding: '2px',
-                      color: 'var(--text-muted)', transition: 'color 0.15s',
-                    }}
-                    onMouseEnter={e => e.currentTarget.style.color = 'var(--text-primary)'}
-                    onMouseLeave={e => e.currentTarget.style.color = 'var(--text-muted)'}
-                  >
-                    <Share2 size={17} strokeWidth={1.5} />
-                  </button>
+ 
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                    <button
+                      onClick={() => speakPost(post)}
+                      aria-label={speakingId === post._id ? "Stop narration" : "Read post aloud"}
+                      style={{
+                        background: 'none', border: 'none', cursor: 'pointer', padding: '2px',
+                        color: speakingId === post._id ? 'var(--teal-400)' : 'var(--text-muted)', transition: 'color 0.15s',
+                        display: 'flex', alignItems: 'center',
+                      }}
+                      title={speakingId === post._id ? "Stop narration" : "Read post aloud"}
+                    >
+                      {speakingId === post._id ? <VolumeX size={17} strokeWidth={2} /> : <Volume2 size={17} strokeWidth={1.5} />}
+                    </button>
+ 
+                    <button
+                      onClick={() => copyLink(post._id)}
+                      aria-label="Copy share link"
+                      style={{
+                        background: 'none', border: 'none', cursor: 'pointer', padding: '2px',
+                        color: 'var(--text-muted)', transition: 'color 0.15s',
+                        display: 'flex', alignItems: 'center',
+                      }}
+                      onMouseEnter={e => e.currentTarget.style.color = 'var(--text-primary)'}
+                      onMouseLeave={e => e.currentTarget.style.color = 'var(--text-muted)'}
+                    >
+                      <Share2 size={17} strokeWidth={1.5} />
+                    </button>
+                  </div>
                 </div>
 
                 {/* ── CONTENT ── */}

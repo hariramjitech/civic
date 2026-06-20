@@ -20,7 +20,7 @@ const { clerkMiddleware } = require('@clerk/express');
 const connectDB   = require('./config/db');
 const routes      = require('./routes/routes');
 const initSocket  = require('./services/socket');
-const { generalLimiter, errorHandler } = require('./middleware/middleware');
+const { generalLimiter, errorHandler, sanitizeInput } = require('./middleware/middleware');
 
 // ─────────────────────────────────────────────
 // APP + HTTP SERVER
@@ -82,6 +82,7 @@ app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' }, contentS
 app.use(cors(corsOptions));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+app.use(sanitizeInput);
 
 // Clerk — MUST come before any requireAuth / getAuth
 app.use(clerkMiddleware());

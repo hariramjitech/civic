@@ -21,7 +21,7 @@ const {
   generateReport, predictRiskZones,
   reverseGeocode, fetchGovRoadData,
   updateIntensityScore, rewriteComplaint,
-  getHaversineDistance,
+  getHaversineDistance, censorText,
 } = require('../services/services');
 
 // ═══════════════════════════════════════════
@@ -110,7 +110,7 @@ router.post('/auth/webhook/clerk', asyncHandler(async (req, res) => {
 router.get('/posts', requireAuth, attachUser, asyncHandler(async (req, res) => {
   const {
     page = 1, limit = 20, district, category, severity, status,
-    sort = 'intensity', lat, lng, radius = 5000
+    sort = 'feed', lat, lng, radius = 5000
   } = req.query;
 
   const query = { isDeleted: false, isDuplicate: false };
@@ -129,21 +129,61 @@ router.get('/posts', requireAuth, attachUser, asyncHandler(async (req, res) => {
     };
   }
 
-  const sortMap = {
-    latest: { createdAt: -1 },
-    intensity: { intensityScore: -1 },
-    severity: { severity: -1, createdAt: -1 },
-  };
+  let posts;
+  let total;
 
-  const posts = await Post.find(query)
-    .sort(sortMap[sort] || sortMap.latest)
-    .skip((page - 1) * limit)
-    .limit(parseInt(limit))
-    .select('-anonToken')
-    .populate('attachedContacts', 'department officerName phone email portalUrl')
-    .lean();
+  if (sort === 'feed') {
+    // Retrieve matching records to perform the algorithm sorting in memory
+    const allPosts = await Post.find(query)
+      .select('-anonToken')
+      .populate('attachedContacts', 'department officerName phone email portalUrl')
+      .lean();
 
-  const total = await Post.countDocuments(query);
+    const now = new Date();
+    const scoredPosts = allPosts.map(post => {
+      const ageHours = (now - new Date(post.createdAt)) / (1000 * 60 * 60);
+      const engagement = 1 + (post.likeCount || 0) * 2 + (post.commentCount || 0) * 3 + (post.supportCount || 0) * 4;
+      const legitimacy = post.legitimacyScore !== undefined ? post.legitimacyScore : 70;
+      const legitimacyMult = legitimacy / 100;
+      
+      let distanceBoost = 1.0;
+      if (lat && lng && post.location?.coordinates) {
+        const postLng = post.location.coordinates[0];
+        const postLat = post.location.coordinates[1];
+        const dist = getHaversineDistance(parseFloat(lat), parseFloat(lng), postLat, postLng);
+        if (dist <= 2000) distanceBoost = 2.0;
+        else if (dist <= 5000) distanceBoost = 1.5;
+        else if (dist <= 10000) distanceBoost = 1.2;
+      }
+      
+      const decay = Math.pow(ageHours + 2, 1.5);
+      const feedScore = (engagement * legitimacyMult * distanceBoost) / decay;
+      
+      return { ...post, feedScore };
+    });
+
+    // Sort by feed ranking descending
+    scoredPosts.sort((a, b) => b.feedScore - a.feedScore);
+
+    total = scoredPosts.length;
+    posts = scoredPosts.slice((parseInt(page) - 1) * parseInt(limit), parseInt(page) * parseInt(limit));
+  } else {
+    const sortMap = {
+      latest: { createdAt: -1 },
+      intensity: { intensityScore: -1 },
+      severity: { severity: -1, createdAt: -1 },
+    };
+
+    posts = await Post.find(query)
+      .sort(sortMap[sort] || sortMap.latest)
+      .skip((parseInt(page) - 1) * parseInt(limit))
+      .limit(parseInt(limit))
+      .select('-anonToken')
+      .populate('attachedContacts', 'department officerName phone email portalUrl')
+      .lean();
+
+    total = await Post.countDocuments(query);
+  }
 
   res.json({ posts, total, page: parseInt(page), pages: Math.ceil(total / limit) });
 }));
@@ -171,9 +211,13 @@ router.post('/posts',
   postLimiter,
   upload.array('images', 5),
   asyncHandler(async (req, res) => {
-    const { title, description, lat, lng, category: manualCategory } = req.body;
+    let { title, description, lat, lng, category: manualCategory } = req.body;
 
     if (!title || !description) return res.status(400).json({ error: 'Title and description required' });
+
+    // Censor improper words
+    title = censorText(title);
+    description = censorText(description);
 
     // Moderation check
     const modResult = await moderateContent(description);
@@ -320,8 +364,26 @@ GPS Match Status: ${imageMetadata.gpsMatchStatus}`;
       locationData = await reverseGeocode(parseFloat(lat), parseFloat(lng));
     }
 
-    // Find auto-attach contacts for this district
-    const contacts = await Contact.find({ district: locationData.district });
+    // Find auto-attach contacts for this district and category
+    const contactQuery = { district: locationData.district };
+    if (aiResult.category && aiResult.category !== 'other') {
+      contactQuery.department = aiResult.category;
+    }
+    let contacts = await Contact.find(contactQuery);
+
+    // If no direct department match, fallback to 'municipal' contact for that district
+    if (contacts.length === 0) {
+      contacts = await Contact.find({
+        district: locationData.district,
+        department: 'municipal'
+      });
+    }
+
+    // If still no contact matches, fallback to all contacts of that district
+    if (contacts.length === 0) {
+      contacts = await Contact.find({ district: locationData.district });
+    }
+
     const contactIds = contacts.map(c => c._id);
 
     // Duplicate detection (nearby posts within 200m, same category)
@@ -342,6 +404,23 @@ GPS Match Status: ${imageMetadata.gpsMatchStatus}`;
         duplicateInfo = await checkDuplicate({ category: aiResult.category, description }, nearby);
       }
     }
+
+    // Calculate legitimacy score
+    const getLegitimacyScore = () => {
+      if (['officer', 'department', 'admin'].includes(req.user.role)) return 100;
+      let s = 100;
+      if (imageMetadata.gpsMatchStatus === 'mismatch') s -= 30;
+      else if (imageMetadata.gpsMatchStatus === 'no_gps_data') s -= 10;
+      
+      if (aiResult.originalityStatus === 'stock_photo_detected') s -= 80;
+      else if (aiResult.originalityStatus === 'suspicious_screenshot') s -= 40;
+      else if (aiResult.originalityStatus === 'manipulated') s -= 70;
+      
+      if (aiResult.allImagesRelevant === false) s -= 90;
+      
+      return Math.max(5, Math.min(100, s));
+    };
+    const legitimacyScore = getLegitimacyScore();
 
     // Create post
     const postAnonToken = crypto.randomBytes(32).toString('hex');
@@ -371,6 +450,7 @@ GPS Match Status: ${imageMetadata.gpsMatchStatus}`;
       isVerified: ['officer', 'department', 'admin'].includes(req.user.role),
       allImagesRelevant: aiResult.allImagesRelevant !== false,
       relevanceExplanation: aiResult.relevanceExplanation || '',
+      legitimacyScore,
     });
 
     // Run priority algorithm to initialize intensity score
@@ -530,8 +610,11 @@ router.get('/posts/:id/comments', requireAuth, asyncHandler(async (req, res) => 
 
 // POST /api/posts/:id/comments — add anonymous comment
 router.post('/posts/:id/comments', requireAuth, attachUser, asyncHandler(async (req, res) => {
-  const { text, parentId } = req.body;
+  let { text, parentId } = req.body;
   if (!text?.trim()) return res.status(400).json({ error: 'Comment text required' });
+
+  // Censor improper words
+  text = censorText(text);
 
   const mod = await moderateContent(text);
   if (!mod.safe) return res.status(400).json({ error: `Comment flagged: ${mod.reason}` });

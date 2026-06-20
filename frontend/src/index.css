@@ -991,14 +991,14 @@ html[data-theme='dark'] .leaflet-tile-pane,
 /* 1. Dark Theme Overrides */
 html[data-theme='dark'],
 :root[data-theme='dark'] {
-  --bg-base: #030712;
-  --bg-surface: #0b0f19;
-  --bg-elevated: #111827;
-  --bg-overlay: #1f2937;
+  --bg-base: #0f172a;
+  --bg-surface: #1e293b;
+  --bg-elevated: #293548;
+  --bg-overlay: #334155;
 
   --border-subtle: rgba(255, 255, 255, 0.04);
   --border-default: rgba(255, 255, 255, 0.08);
-  --border-strong: rgba(255, 255, 255, 0.14);
+  --border-strong: rgba(255, 255, 255, 0.16);
 
   --teal-400: #2dd4bf;
   --teal-500: #14b8a6;
@@ -1034,7 +1034,7 @@ html[data-theme='dark'],
   --shadow-lg: 0 16px 40px rgba(0, 0, 0, 0.5);
   --shadow-teal: 0 8px 24px rgba(20, 184, 166, 0.15);
 
-  --bg-translucent: rgba(3, 7, 18, 0.72);
+  --bg-translucent: rgba(15, 23, 42, 0.75);
 }
 
 html[data-theme='dark'] body,
@@ -1464,6 +1464,94 @@ html:not([data-theme='dark']) .glass-panel,
 html:not([data-theme='dark']) .glass-card,
 [data-theme='light'] .glass-panel,
 [data-theme='light'] .glass-card {
+  background: var(--bg-surface) !important;
+  border-color: var(--border-subtle) !important;
+}
+
+/* ─────────────────────────────────────────────────────── */
+/*  TAILWIND UTILITY OVERRIDES FOR DARK THEME              */
+/* ─────────────────────────────────────────────────────── */
+
+/* Borders */
+html[data-theme='dark'] .border-gray-950,
+html[data-theme='dark'] .border-gray-900,
+html[data-theme='dark'] .border-gray-850,
+html[data-theme='dark'] .border-gray-800,
+:root[data-theme='dark'] .border-gray-950,
+:root[data-theme='dark'] .border-gray-900,
+:root[data-theme='dark'] .border-gray-850,
+:root[data-theme='dark'] .border-gray-800 {
+  border-color: var(--border-default) !important;
+}
+
+/* Backgrounds */
+html[data-theme='dark'] .bg-gray-950,
+:root[data-theme='dark'] .bg-gray-950 {
+  background-color: var(--bg-base) !important;
+}
+
+html[data-theme='dark'] .bg-gray-900,
+:root[data-theme='dark'] .bg-gray-900 {
+  background-color: var(--bg-surface) !important;
+}
+
+html[data-theme='dark'] .bg-gray-850,
+:root[data-theme='dark'] .bg-gray-850 {
+  background-color: var(--bg-elevated) !important;
+}
+
+html[data-theme='dark'] .bg-gray-800,
+:root[data-theme='dark'] .bg-gray-800 {
+  background-color: var(--bg-overlay) !important;
+}
+
+/* Background Opacities */
+html[data-theme='dark'] .bg-gray-950\/15,
+:root[data-theme='dark'] .bg-gray-950\/15 {
+  background-color: rgba(255, 255, 255, 0.03) !important;
+}
+
+html[data-theme='dark'] .bg-gray-950\/20,
+:root[data-theme='dark'] .bg-gray-950\/20 {
+  background-color: rgba(255, 255, 255, 0.05) !important;
+}
+
+html[data-theme='dark'] .bg-gray-950\/40,
+:root[data-theme='dark'] .bg-gray-950\/40 {
+  background-color: rgba(255, 255, 255, 0.08) !important;
+}
+
+html[data-theme='dark'] .bg-gray-950\/80,
+:root[data-theme='dark'] .bg-gray-950\/80 {
+  background-color: rgba(15, 23, 42, 0.8) !important;
+}
+
+/* Text Colors */
+html[data-theme='dark'] .text-gray-500,
+html[data-theme='dark'] .text-gray-650,
+html[data-theme='dark'] .text-gray-600,
+:root[data-theme='dark'] .text-gray-500,
+:root[data-theme='dark'] .text-gray-650,
+:root[data-theme='dark'] .text-gray-600 {
+  color: var(--text-muted) !important;
+}
+
+html[data-theme='dark'] .text-gray-205,
+html[data-theme='dark'] .text-gray-200,
+html[data-theme='dark'] .text-gray-300,
+html[data-theme='dark'] .text-gray-400,
+:root[data-theme='dark'] .text-gray-205,
+:root[data-theme='dark'] .text-gray-200,
+:root[data-theme='dark'] .text-gray-300,
+:root[data-theme='dark'] .text-gray-400 {
+  color: var(--text-secondary) !important;
+}
+
+/* Panels */
+html[data-theme='dark'] .glass-panel,
+html[data-theme='dark'] .glass-card,
+:root[data-theme='dark'] .glass-panel,
+:root[data-theme='dark'] .glass-card {
   background: var(--bg-surface) !important;
   border-color: var(--border-subtle) !important;
 }

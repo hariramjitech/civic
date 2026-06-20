@@ -54,7 +54,7 @@ export const AccessibilityProvider = ({ children }) => {
     };
 
     const handleMouseOver = (e) => {
-      const element = e.target.closest('button, a, h1, h2, h3, h4, h5, h6, select, textarea, input, [data-narrate], .card, .severity-badge, .status-pill, .stat-card');
+      const element = e.target.closest('button, a, h1, h2, h3, h4, h5, h6, select, textarea, input, [data-narrate], .card, .severity-badge, .status-pill, .stat-card, .glass-panel');
       if (!element) return;
 
       if (element === window._lastNarratedElement) return;
@@ -72,8 +72,8 @@ export const AccessibilityProvider = ({ children }) => {
         textToSpeak = `Drop down menu: ${element.options[element.selectedIndex]?.text || ''}`;
       } else if (element.tagName === 'TEXTAREA' || element.tagName === 'INPUT') {
         textToSpeak = `Input field: ${element.placeholder || element.ariaLabel || ''}`;
-      } else if (element.classList.contains('card') || element.classList.contains('stat-card')) {
-        const titleEl = element.querySelector('h3, h2, font-display, a, .stat-value');
+      } else if (element.classList.contains('card') || element.classList.contains('stat-card') || element.classList.contains('glass-panel')) {
+        const titleEl = element.querySelector('h3, h2, .font-display, a, .stat-value');
         const labelEl = element.querySelector('.stat-label, .section-label');
         if (titleEl && labelEl) {
           textToSpeak = `Card details: ${labelEl.innerText}. Value: ${titleEl.innerText}`;
@@ -95,7 +95,14 @@ export const AccessibilityProvider = ({ children }) => {
 
     const handleMouseLeave = (e) => {
       // If leaving narratable container, reset tracking element
-      const element = e.target.closest('button, a, h1, h2, h3, h4, h5, h6, select, textarea, input, [data-narrate], .card, .severity-badge, .status-pill, .stat-card');
+      const element = e.target.closest('button, a, h1, h2, h3, h4, h5, h6, select, textarea, input, [data-narrate], .card, .severity-badge, .status-pill, .stat-card, .glass-panel');
+      if (!element) return;
+
+      // Only reset if moving to an element outside the current narratable container
+      if (e.relatedTarget && element.contains(e.relatedTarget)) {
+        return;
+      }
+
       if (element === window._lastNarratedElement) {
         window._lastNarratedElement = null;
       }

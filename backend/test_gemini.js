@@ -33,12 +33,11 @@ const generateWithRetry = async (modelName, contents, maxRetries = 2, initialDel
     }
   }
 };
-
 const generateContentWithFallback = async (contents) => {
   const models = [
-    'gemini-2.5-flash',
-    'gemini-flash-latest',
-    'gemini-3.5-flash',
+    'gemini-2.5-flash-lite',
+    'gemini-flash-lite-latest',
+    'gemini-3-flash-preview',
     'gemini-2.0-flash'
   ];
   let lastError = null;

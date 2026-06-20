@@ -5,7 +5,7 @@ import api from '../lib/api';
 import {
   Heart, MessageSquare, Phone, Mail, Globe, MapPin,
   AlertTriangle, ArrowLeft, Send, Plus, Flame, Clock,
-  CheckCircle, Loader2, Trash2
+  CheckCircle, Loader2, Trash2, Volume2, VolumeX
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -20,6 +20,36 @@ export default function PostDetail() {
   const [replyText, setReplyText] = useState({});
   const [showReplyForm, setShowReplyForm] = useState({});
   const [activeImg, setActiveImg] = useState(0);
+
+  // Accessibility speech state
+  const [isSpeaking, setIsSpeaking] = useState(false);
+
+  const speakPost = () => {
+    if (!window.speechSynthesis) {
+      toast.error('Text-to-speech not supported in this browser.');
+      return;
+    }
+
+    if (isSpeaking) {
+      window.speechSynthesis.cancel();
+      setIsSpeaking(false);
+      return;
+    }
+
+    window.speechSynthesis.cancel();
+    const narrationText = `Civic report: ${post?.title}. Located in ${post?.district} district, at address: ${post?.address || 'not specified'}. Classified as ${post?.category} with ${post?.severity} severity. Status is ${post?.status?.replace('_', ' ')}. Detail description: ${post?.description}.`;
+    const utterance = new SpeechSynthesisUtterance(narrationText);
+    utterance.onend = () => setIsSpeaking(false);
+    utterance.onerror = () => setIsSpeaking(false);
+    setIsSpeaking(true);
+    window.speechSynthesis.speak(utterance);
+  };
+
+  useEffect(() => {
+    return () => {
+      if (window.speechSynthesis) window.speechSynthesis.cancel();
+    };
+  }, []);
 
   // Status edit state (for owners/admin/officers)
   const [updatingStatus, setUpdatingStatus] = useState(false);
@@ -310,9 +340,23 @@ export default function PostDetail() {
               <button
                 onClick={handleLike}
                 className="flex items-center space-x-1.5 px-4 py-2 rounded-lg bg-gray-900 hover:bg-gray-850 text-gray-300 hover:text-rose-400 transition-colors"
+                aria-label="Toggle affected vote (like)"
               >
                 <Heart size={16} />
                 <span>Affected Too ({post.likeCount || 0})</span>
+              </button>
+
+              <button
+                onClick={speakPost}
+                className={`flex items-center space-x-1.5 px-4 py-2 rounded-lg transition-colors border ${
+                  isSpeaking 
+                    ? 'bg-teal-500/10 text-teal-400 border-teal-500/20' 
+                    : 'bg-gray-900 hover:bg-gray-850 text-gray-300 border-transparent'
+                }`}
+                aria-label={isSpeaking ? "Stop narration" : "Read post aloud"}
+              >
+                {isSpeaking ? <VolumeX size={16} /> : <Volume2 size={16} />}
+                <span>{isSpeaking ? 'Stop Reading' : 'Read Aloud'}</span>
               </button>
               {(isOwner || role === 'admin') && (
                 <button
@@ -469,18 +513,18 @@ export default function PostDetail() {
 
               <form onSubmit={handleStatusUpdate} className="space-y-3">
                 <div>
-                  <label className="block text-[10px] text-gray-500 uppercase tracking-wider mb-1">Update Status</label>
-                  <select
-                    value={statusForm.status}
-                    onChange={(e) => setStatusForm(prev => ({ ...prev, status: e.target.value }))}
-                    className="w-full bg-gray-900 border border-gray-800 rounded-lg p-2.5 text-xs text-gray-200 focus:outline-none focus:border-teal-500"
-                  >
-                    <option value="reported">Reported</option>
-                    <option value="in_progress">In Progress</option>
-                    <option value="resolved">Resolved</option>
-                    <option value="closed">Closed</option>
-                  </select>
-                </div>
+                   <label className="block text-[10px] text-gray-500 uppercase tracking-wider mb-1">Update Status</label>
+                   <select
+                     value={statusForm.status}
+                     onChange={(e) => setStatusForm(prev => ({ ...prev, status: e.target.value }))}
+                     className="w-full bg-gray-900 border border-gray-800 rounded-lg p-2.5 text-xs text-gray-200 focus:outline-none focus:border-teal-500"
+                   >
+                     <option value="reported">Reported</option>
+                     <option value="in_progress">In Progress</option>
+                     <option value="resolved">Resolved</option>
+                     <option value="closed">Closed</option>
+                   </select>
+                 </div>
 
                 <div>
                   <label className="block text-[10px] text-gray-500 uppercase tracking-wider mb-1">Timeline Note</label>
@@ -506,19 +550,7 @@ export default function PostDetail() {
 
           {/* Forensics and Image Originality Panel */}
           {post.images && post.images.length > 0 && (() => {
-            const getTrustScore = () => {
-              if (post.isVerified || ['officer', 'department', 'admin'].includes(post.creatorRole)) return 100;
-              let s = 100;
-              if (post.imageMetadata?.gpsMatchStatus === 'mismatch') s -= 30;
-              else if (post.imageMetadata?.gpsMatchStatus === 'no_gps_data') s -= 10;
-              
-              if (post.originalityStatus === 'stock_photo_detected') s -= 80;
-              else if (post.originalityStatus === 'suspicious_screenshot') s -= 40;
-              else if (post.originalityStatus === 'manipulated') s -= 70;
-              
-              return Math.max(5, Math.min(100, s));
-            };
-            const trustScore = getTrustScore();
+            const trustScore = post.legitimacyScore !== undefined ? post.legitimacyScore : 70;
             
             return (
               <div className="glass-panel p-5 rounded-2xl space-y-4 border border-[var(--border-subtle)] bg-[var(--bg-elevated)] text-[var(--text-primary)] animate-scaleIn">

@@ -156,6 +156,37 @@ const errorHandler = (err, req, res, next) => {
 const asyncHandler = (fn) => (req, res, next) =>
   Promise.resolve(fn(req, res, next)).catch(next);
 
+// Recursively sanitizes string inputs to prevent XSS / HTML injections
+const sanitizeString = (str) => {
+  if (typeof str !== 'string') return str;
+  return str
+    .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '') // Remove script tags
+    .replace(/<[^>]*>?/gm, '') // Remove all HTML tags
+    .replace(/on\w+\s*=\s*"[^"]*"/gi, '') // Remove inline event handlers
+    .replace(/on\w+\s*=\s*'[^']*'/gi, '')
+    .replace(/javascript:/gi, '[removed]'); // Remove javascript: protocol
+};
+
+const sanitizeInput = (req, res, next) => {
+  const sanitizeObject = (obj) => {
+    for (const key in obj) {
+      if (Object.prototype.hasOwnProperty.call(obj, key)) {
+        if (typeof obj[key] === 'string') {
+          obj[key] = sanitizeString(obj[key]);
+        } else if (typeof obj[key] === 'object' && obj[key] !== null) {
+          sanitizeObject(obj[key]);
+        }
+      }
+    }
+  };
+
+  if (req.body) sanitizeObject(req.body);
+  if (req.query) sanitizeObject(req.query);
+  if (req.params) sanitizeObject(req.params);
+
+  next();
+};
+
 module.exports = {
   requireAuth: clerkRequireAuth,
   attachUser,
@@ -167,6 +198,7 @@ module.exports = {
   generalLimiter,
   postLimiter,
   aiLimiter,
+  sanitizeInput,
   errorHandler,
   asyncHandler,
 };

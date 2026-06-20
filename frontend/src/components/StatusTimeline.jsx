@@ -2,9 +2,7 @@ import React from 'react';
 import { Check } from 'lucide-react';
 
 const STEPS = [
-  { key: 'reported',    label: 'Submitted' },
-  { key: 'under_review', label: 'Under Review' },
-  { key: 'assigned',   label: 'Assigned' },
+  { key: 'reported',    label: 'Reported' },
   { key: 'in_progress', label: 'In Progress' },
   { key: 'resolved',   label: 'Resolved' },
 ];
