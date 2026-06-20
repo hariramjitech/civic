@@ -380,6 +380,49 @@ User complaint:
 };
 
 // ─────────────────────────────────────────────
+// AI: Object / Issue Detection with Bounding Boxes
+// ─────────────────────────────────────────────
+const detectObjects = async (imageBase64, category = '') => {
+  try {
+    const prompt = `You are a real-time civic issue detector.
+Analyze the image frame and detect any civic/infrastructure issues.
+Specifically check if there are issues related to: roads (potholes, cracks, road damage), sanitation (garbage, litter, overflow), water (leaks, sewage, flooding), electricity (broken streetlights, loose wiring), or municipal/public property damage.
+
+For each detected civic issue, provide:
+1. "label": A short, clear label (e.g. "Road Damage", "Garbage Accumulation", "Water Leakage", "Broken Streetlight", "Municipal Damage").
+2. "category": The category: "roads" | "sanitation" | "water" | "electricity" | "municipal" | "other".
+3. "box_2d": The normalized bounding box coordinates [ymin, xmin, ymax, xmax] scaled from 0 to 1000. For example, [200, 150, 800, 850].
+4. "confidence": A float from 0.0 to 1.0.
+
+Respond ONLY with valid JSON (no markdown, no backticks, no code blocks):
+{
+  "detections": [
+    {
+      "label": "Road Damage",
+      "category": "roads",
+      "box_2d": [350, 200, 750, 800],
+      "confidence": 0.92
+    }
+  ]
+}
+If no civic issues are found, return:
+{ "detections": [] }`;
+
+    const parts = [
+      prompt,
+      { inlineData: { data: imageBase64, mimeType: 'image/jpeg' } }
+    ];
+
+    const result = await generateContentWithFallback(parts);
+    const json = result.response.text().replace(/```json?/gi, '').replace(/```/g, '').trim();
+    return JSON.parse(json);
+  } catch (err) {
+    console.error('Error in detectObjects:', err);
+    return { detections: [] };
+  }
+};
+
+// ─────────────────────────────────────────────
 // Forensics: Haversine distance calculator
 // ─────────────────────────────────────────────
 const getHaversineDistance = (lat1, lon1, lat2, lon2) => {
@@ -425,6 +468,7 @@ const censorText = (text) => {
 
 module.exports = {
   classifyIssue,
+  detectObjects,
   checkDuplicate,
   moderateContent,
   generateReport,

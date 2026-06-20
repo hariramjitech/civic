@@ -6,7 +6,8 @@ import { MapContainer, TileLayer, Marker, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
 import {
   Camera, MapPin, EyeOff, Sparkles, Upload, Check,
-  Loader2, X, ChevronRight, ChevronLeft, FileText, Eye
+  Loader2, X, ChevronRight, ChevronLeft, FileText, Eye,
+  RefreshCw
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -67,6 +68,20 @@ export default function SubmitPost() {
   const [rewriting, setRewriting] = useState(false);
   const [rewrittenText, setRewrittenText] = useState('');
   const [showRewriteCompare, setShowRewriteCompare] = useState(false);
+
+  // AI Camera Scanner V2 State
+  const [showScanner, setShowScanner] = useState(false);
+  const [scannerLoading, setScannerLoading] = useState(false);
+  const [scannerStream, setScannerStream] = useState(null);
+  const [scannerError, setScannerError] = useState('');
+  const [isAnalyzingFrame, setIsAnalyzingFrame] = useState(false);
+  const [detections, setDetections] = useState([]);
+  const [scannerMessage, setScannerMessage] = useState('');
+  const [isValidated, setIsValidated] = useState(false);
+  const [cameraDevices, setCameraDevices] = useState([]);
+  const [activeCameraId, setActiveCameraId] = useState('');
+
+  const videoRef = useRef(null);
 
   // Submit
   const [submitting, setSubmitting] = useState(false);
@@ -218,6 +233,164 @@ export default function SubmitPost() {
     } finally {
       setSubmitting(false);
     }
+  };
+
+  // ── AI Camera Scanner V2 Helpers
+  const startCamera = async (deviceId = null) => {
+    setScannerLoading(true);
+    setScannerError('');
+    setIsValidated(false);
+    setDetections([]);
+    setScannerMessage('Connecting to camera...');
+    
+    if (scannerStream) {
+      scannerStream.getTracks().forEach(t => t.stop());
+    }
+    
+    try {
+      const constraints = {
+        video: deviceId 
+          ? { deviceId: { exact: deviceId } } 
+          : { facingMode: { ideal: 'environment' } },
+        audio: false
+      };
+      
+      const stream = await navigator.mediaDevices.getUserMedia(constraints);
+      setScannerStream(stream);
+      
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+      }
+      
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const videoInputs = devices.filter(d => d.kind === 'videoinput');
+      setCameraDevices(videoInputs);
+      
+      if (!deviceId && videoInputs.length > 0) {
+        const activeTrack = stream.getVideoTracks()[0];
+        const activeLabel = activeTrack?.label;
+        const matchingDevice = videoInputs.find(d => d.label === activeLabel);
+        if (matchingDevice) {
+          setActiveCameraId(matchingDevice.deviceId);
+        }
+      }
+      
+      setScannerMessage('Scanning for civic issues...');
+    } catch (err) {
+      console.error('Camera access error:', err);
+      setScannerError('Could not access camera. Please check your browser permissions.');
+      setScannerMessage('Camera error occurred.');
+    } finally {
+      setScannerLoading(false);
+    }
+  };
+
+  const closeScanner = () => {
+    if (scannerStream) {
+      scannerStream.getTracks().forEach(t => t.stop());
+      setScannerStream(null);
+    }
+    setShowScanner(false);
+    setScannerLoading(false);
+    setScannerError('');
+    setDetections([]);
+    setIsValidated(false);
+    setScannerMessage('');
+  };
+
+  const switchCamera = () => {
+    if (cameraDevices.length <= 1) return;
+    const currentIndex = cameraDevices.findIndex(d => d.deviceId === activeCameraId);
+    const nextIndex = (currentIndex + 1) % cameraDevices.length;
+    const nextDevice = cameraDevices[nextIndex];
+    setActiveCameraId(nextDevice.deviceId);
+    startCamera(nextDevice.deviceId);
+  };
+
+  const captureFrameAndDetect = async () => {
+    if (!videoRef.current || isAnalyzingFrame) return;
+    
+    const video = videoRef.current;
+    if (video.readyState < 2) return;
+    
+    try {
+      setIsAnalyzingFrame(true);
+      
+      const canvas = document.createElement('canvas');
+      canvas.width = video.videoWidth || 640;
+      canvas.height = video.videoHeight || 480;
+      
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      
+      const base64 = canvas.toDataURL('image/jpeg', 0.65);
+      
+      const res = await api.post('/ai/detect-objects', { image: base64, category });
+      const results = res.data.detections || [];
+      
+      setDetections(results);
+      
+      const matches = results.filter(det => det.category === category);
+      if (matches.length > 0) {
+        setIsValidated(true);
+        setScannerMessage(`Match confirmed: ${matches[0].label}! Ready to capture.`);
+      } else {
+        setIsValidated(false);
+        if (results.length > 0) {
+          setScannerMessage(`AI detected: ${results.map(r => r.label).join(', ')} (Category mismatch)`);
+        } else {
+          setScannerMessage('No civic issues detected. Point camera at the issue.');
+        }
+      }
+    } catch (err) {
+      console.warn('AI frame analysis failed:', err);
+    } finally {
+      setIsAnalyzingFrame(false);
+    }
+  };
+
+  const capturePhoto = () => {
+    const video = videoRef.current;
+    if (!video) return;
+    
+    const canvas = document.createElement('canvas');
+    canvas.width = video.videoWidth || 640;
+    canvas.height = video.videoHeight || 480;
+    
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    
+    canvas.toBlob((blob) => {
+      if (!blob) return;
+      const file = new File([blob], `camera-capture-${Date.now()}.jpg`, { type: 'image/jpeg' });
+      const newFiles = [...selectedFiles, file].slice(0, 5);
+      setSelectedFiles(newFiles);
+      setPreviews(newFiles.map(f => URL.createObjectURL(f)));
+      analyzeImages(newFiles);
+      closeScanner();
+      toast.success('Evidence photo captured and validated!');
+    }, 'image/jpeg', 0.9);
+  };
+
+  useEffect(() => {
+    if (!showScanner || !scannerStream) return;
+    
+    const interval = setInterval(() => {
+      captureFrameAndDetect();
+    }, 3000);
+    
+    return () => clearInterval(interval);
+  }, [showScanner, scannerStream, category]);
+
+  const getClientLegitimacyScore = () => {
+    let score = 100;
+    if (aiResult?.originalityStatus === 'stock_photo_detected') score -= 80;
+    else if (aiResult?.originalityStatus === 'suspicious_screenshot') score -= 40;
+    else if (aiResult?.originalityStatus === 'manipulated') score -= 70;
+    else if (aiResult?.originalityStatus === 'unknown' || !aiResult?.originalityStatus) score -= 10;
+    
+    if (aiResult?.allImagesRelevant === false) score -= 90;
+    return Math.max(5, score);
   };
 
   // ── Render step content
@@ -463,6 +636,36 @@ export default function SubmitPost() {
           />
         </div>
 
+        {/* Camera capture trigger */}
+        <div style={{ marginTop: -4 }}>
+          <button
+            type="button"
+            onClick={() => {
+              setShowScanner(true);
+              startCamera();
+            }}
+            className="btn btn-secondary"
+            style={{
+              width: '100%',
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 8,
+              padding: '12px 16px',
+              border: '1px solid rgba(20, 184, 166, 0.25)',
+              background: 'rgba(20, 184, 166, 0.04)',
+              color: 'var(--teal-400)',
+              borderRadius: 10,
+              fontWeight: 600,
+              boxShadow: '0 4px 12px rgba(20, 184, 166, 0.05)',
+              transition: 'all 0.2s'
+            }}
+          >
+            <Camera size={16} />
+            <span>Capture with AI Camera Scanner</span>
+          </button>
+        </div>
+
         {/* Previews grid */}
         {previews.length > 0 && (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
@@ -615,19 +818,74 @@ export default function SubmitPost() {
           )}
 
           {aiResult && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, borderTop: '1px solid var(--border-subtle)', paddingTop: 10 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--teal-400)' }}>
-                <Sparkles size={12} />
-                AI classified as <strong>{aiResult.category}</strong>, severity <strong>{aiResult.severity}</strong>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10, borderTop: '1px solid var(--border-subtle)', paddingTop: 14 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, fontWeight: 700, color: 'var(--teal-400)' }}>
+                <Sparkles size={14} />
+                AI Validation Breakdown
               </div>
-              {aiResult.originalityStatus && (
-                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 6, fontSize: 12, color: aiResult.originalityStatus === 'authentic' ? '#4ade80' : '#f43f5e', marginTop: 2 }}>
-                  <span style={{ fontSize: 13 }}>🛡️</span>
-                  <span>
-                    Originality: <strong>{aiResult.originalityStatus?.replace('_', ' ').toUpperCase()}</strong>
-                    {aiResult.originalityAnalysis && ` — ${aiResult.originalityAnalysis}`}
+              
+              <div className="legitimacy-meter-container">
+                <div className="legitimacy-ring">
+                  <svg>
+                    <circle cx="30" cy="30" r="25" className="bg-circle" />
+                    <circle
+                      cx="30"
+                      cy="30"
+                      r="25"
+                      className="progress-circle"
+                      strokeDasharray={2 * Math.PI * 25}
+                      strokeDashoffset={2 * Math.PI * 25 * (1 - getClientLegitimacyScore() / 100)}
+                    />
+                  </svg>
+                  <div className="legitimacy-score-text">
+                    {getClientLegitimacyScore()}%
+                  </div>
+                </div>
+                
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>
+                    Report Legitimacy Score
+                  </div>
+                  <div style={{ fontSize: 11, color: 'var(--text-secondary)', lineHeight: 1.4 }}>
+                    {getClientLegitimacyScore() >= 80 ? (
+                      <span style={{ color: '#4ade80', fontWeight: 600 }}>High Credibility: Validated original media.</span>
+                    ) : getClientLegitimacyScore() >= 50 ? (
+                      <span style={{ color: '#fb923c', fontWeight: 600 }}>Medium Credibility: Check details below.</span>
+                    ) : (
+                      <span style={{ color: '#f43f5e', fontWeight: 600 }}>Low Credibility: Flagged by AI forensics.</span>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 4 }}>
+                <div style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-subtle)', padding: '8px 12px', borderRadius: 8 }}>
+                  <span style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Forensic Status</span>
+                  <span style={{ 
+                    fontSize: 12, 
+                    fontWeight: 700, 
+                    color: aiResult.originalityStatus === 'authentic' ? '#4ade80' : '#f43f5e',
+                    textTransform: 'capitalize' 
+                  }}>
+                    {aiResult.originalityStatus?.replace('_', ' ') || 'unknown'}
                   </span>
                 </div>
+                <div style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-subtle)', padding: '8px 12px', borderRadius: 8 }}>
+                  <span style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', textTransform: 'uppercase', letterSpacing: '0.05em' }}>AI Relevance Match</span>
+                  <span style={{ 
+                    fontSize: 12, 
+                    fontWeight: 700, 
+                    color: aiResult.allImagesRelevant !== false ? '#4ade80' : '#f43f5e'
+                  }}>
+                    {aiResult.allImagesRelevant !== false ? '100% Relevant' : 'Irrelevant Media'}
+                  </span>
+                </div>
+              </div>
+
+              {aiResult.originalityAnalysis && (
+                <p style={{ fontSize: 11, color: 'var(--text-secondary)', lineHeight: 1.45, fontStyle: 'italic', background: 'var(--bg-surface)', padding: '8px 12px', borderRadius: 8, border: '1px solid var(--border-subtle)' }}>
+                  "{aiResult.originalityAnalysis}"
+                </p>
               )}
             </div>
           )}
@@ -739,6 +997,166 @@ export default function SubmitPost() {
           </button>
         )}
       </div>
+
+      {/* AI Camera Validity Scanner Overlay */}
+      {showScanner && (
+        <div className="camera-scanner-overlay">
+          <div className="camera-scanner-card animate-fadeIn">
+            <div className="scanner-header">
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <Sparkles size={16} style={{ color: 'var(--teal-400)' }} />
+                <h2 style={{ fontSize: 15, fontWeight: 700, margin: 0, color: 'var(--text-primary)' }}>
+                  AI Civic Issue Scanner
+                </h2>
+              </div>
+              <button
+                type="button"
+                onClick={closeScanner}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className={`scanner-viewport-container ${isValidated ? 'validated' : ''}`}>
+              {/* Live Video Feed */}
+              <video
+                ref={videoRef}
+                autoPlay
+                playsInline
+                className="scanner-video"
+              />
+
+              {/* HUD overlays */}
+              <div className="scanner-overlay">
+                <div className="scanner-laser-line" />
+                <div className="scanner-corners" />
+                <div className="scanner-corners-bottom" />
+              </div>
+
+              {/* Bounding Box Drawing */}
+              {detections.map((det, idx) => {
+                const [ymin, xmin, ymax, xmax] = det.box_2d;
+                const isMatching = det.category === category;
+                
+                const style = {
+                  top: `${ymin / 10}%`,
+                  left: `${xmin / 10}%`,
+                  height: `${(ymax - ymin) / 10}%`,
+                  width: `${(xmax - xmin) / 10}%`,
+                };
+
+                return (
+                  <div
+                    key={idx}
+                    className={`scanner-bbox ${isMatching ? 'matching' : ''}`}
+                    style={style}
+                  >
+                    <div className="scanner-bbox-label">
+                      {det.label} ({Math.round(det.confidence * 100)}%)
+                    </div>
+                  </div>
+                );
+              })}
+
+              {/* Scanner Loading States */}
+              {scannerLoading && (
+                <div style={{ position: 'absolute', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10, color: '#fff', zIndex: 10 }}>
+                  <Loader2 size={36} style={{ animation: 'spin 0.8s linear infinite', color: 'var(--teal-400)' }} />
+                  <div style={{ fontSize: 13, fontWeight: 600 }}>Connecting to Camera...</div>
+                </div>
+              )}
+
+              {/* Camera Error Display */}
+              {scannerError && (
+                <div style={{ position: 'absolute', padding: 20, textAlign: 'center', color: '#ff4d4f', zIndex: 10, background: 'rgba(15, 23, 42, 0.95)', border: '1px solid var(--border-strong)', margin: 20, borderRadius: 12 }}>
+                  <div style={{ fontWeight: 700, marginBottom: 6 }}>Camera Feed Offline</div>
+                  <div style={{ fontSize: 12 }}>{scannerError}</div>
+                </div>
+              )}
+            </div>
+
+            <div className="scanner-controls">
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 600 }}>
+                  Targeting: <span style={{ color: 'var(--teal-400)', textTransform: 'capitalize' }}>
+                    {CATEGORIES.find(c => c.value === category)?.label || category}
+                  </span>
+                </div>
+                {cameraDevices.length > 1 && (
+                  <button
+                    type="button"
+                    onClick={switchCamera}
+                    className="btn btn-secondary btn-sm"
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 10px', fontSize: 11 }}
+                  >
+                    <RefreshCw size={12} /> Switch Camera
+                  </button>
+                )}
+              </div>
+
+              {/* AI Status Banner */}
+              <div style={{
+                padding: '10px 14px',
+                borderRadius: 8,
+                background: isValidated ? 'rgba(74, 222, 128, 0.08)' : 'rgba(255, 255, 255, 0.03)',
+                border: `1px solid ${isValidated ? 'rgba(74, 222, 128, 0.2)' : 'var(--border-subtle)'}`,
+                fontSize: 12,
+                color: isValidated ? '#4ade80' : 'var(--text-secondary)',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                justifyContent: 'center',
+                fontWeight: 600,
+                textAlign: 'center'
+              }}>
+                {isAnalyzingFrame ? (
+                  <>
+                    <Loader2 size={13} style={{ animation: 'spin 0.8s linear infinite', color: 'var(--teal-400)' }} />
+                    <span>AI analyzing scene...</span>
+                  </>
+                ) : isValidated ? (
+                  <>
+                    <Check size={13} strokeWidth={3} />
+                    <span>{scannerMessage}</span>
+                  </>
+                ) : (
+                  <>
+                    <Sparkles size={13} style={{ color: 'var(--teal-400)' }} />
+                    <span>{scannerMessage || 'Scan the scene to validate the issue...'}</span>
+                  </>
+                )}
+              </div>
+
+              <div style={{ display: 'flex', gap: 10 }}>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={closeScanner}
+                  style={{ flex: 1 }}
+                >
+                  Close
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  onClick={capturePhoto}
+                  disabled={scannerLoading || !!scannerError}
+                  style={{
+                    flex: 2,
+                    background: isValidated ? 'linear-gradient(135deg, #10b981, #059669)' : undefined,
+                    boxShadow: isValidated ? '0 0 15px rgba(16, 185, 129, 0.35)' : undefined,
+                    borderColor: isValidated ? '#10b981' : undefined,
+                  }}
+                >
+                  <Camera size={16} />
+                  <span>{isValidated ? 'Capture & Confirm' : 'Force Capture Photo'}</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

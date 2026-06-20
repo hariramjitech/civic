@@ -17,7 +17,7 @@ const {
   generateChatAlias,
 } = require('../middleware/middleware');
 const {
-  classifyIssue, checkDuplicate, moderateContent,
+  classifyIssue, detectObjects, checkDuplicate, moderateContent,
   generateReport, predictRiskZones,
   reverseGeocode, fetchGovRoadData,
   updateIntensityScore, rewriteComplaint,
@@ -806,6 +806,18 @@ router.post('/ai/classify',
       mimeType: file.mimetype
     }));
     const result = await classifyIssue(imagesPayload, req.body.description || '');
+    res.json(result);
+  })
+);
+
+// POST /api/ai/detect-objects — detect civic issues with bounding boxes from live camera frame
+router.post('/ai/detect-objects',
+  requireAuth, attachUser, aiLimiter,
+  asyncHandler(async (req, res) => {
+    const { image, category } = req.body;
+    if (!image) return res.status(400).json({ error: 'Image is required' });
+    const base64Data = image.replace(/^data:image\/\w+;base64,/, "");
+    const result = await detectObjects(base64Data, category || '');
     res.json(result);
   })
 );
