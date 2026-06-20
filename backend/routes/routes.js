@@ -6,6 +6,7 @@
  */
 
 const express = require('express');
+const crypto = require('crypto');
 const router = express.Router();
 
 const { User, Post, Comment, Poll, ChatRoom, Message, Contact, AuditLog } = require('../models/models');
@@ -59,8 +60,7 @@ router.patch('/auth/profile', requireAuth, attachUser, asyncHandler(async (req, 
 
 // Get user's own post history (private — shows their anonToken posts)
 router.get('/auth/my-posts', requireAuth, attachUser, asyncHandler(async (req, res) => {
-  const anonToken = req.anonToken;
-  const posts = await Post.find({ anonToken, isDeleted: false })
+  const posts = await Post.find({ anonToken: { $in: req.user.postTokens || [] }, isDeleted: false })
     .sort({ createdAt: -1 })
     .select('-anonToken')
     .lean();
@@ -69,13 +69,17 @@ router.get('/auth/my-posts', requireAuth, attachUser, asyncHandler(async (req, r
 
 // Get user's own comment history
 router.get('/auth/my-comments', requireAuth, attachUser, asyncHandler(async (req, res) => {
-  const anonToken = req.anonToken;
-  const comments = await Comment.find({ anonToken, isDeleted: false })
+  const comments = await Comment.find({ anonToken: { $in: req.user.commentTokens || [] }, isDeleted: false })
     .sort({ createdAt: -1 })
     .select('-anonToken')
-    .populate('postId', 'title')
+    .populate({
+      path: 'postId',
+      select: 'title isDeleted',
+      match: { isDeleted: false }
+    })
     .lean();
-  res.json({ comments });
+  const filteredComments = comments.filter(c => c.postId);
+  res.json({ comments: filteredComments });
 }));
 
 // Get user's liked posts
@@ -106,7 +110,7 @@ router.post('/auth/webhook/clerk', asyncHandler(async (req, res) => {
 router.get('/posts', requireAuth, attachUser, asyncHandler(async (req, res) => {
   const {
     page = 1, limit = 20, district, category, severity, status,
-    sort = 'latest', lat, lng, radius = 5000
+    sort = 'intensity', lat, lng, radius = 5000
   } = req.query;
 
   const query = { isDeleted: false, isDuplicate: false };
@@ -186,7 +190,7 @@ router.post('/posts',
       }
     }
 
-    // Forensic metadata parsing & validation
+    // Forensic metadata parsing & validation for all uploaded images
     let imageMetadata = {
       camera: 'Unknown',
       dateTimeOriginal: null,
@@ -198,51 +202,79 @@ router.post('/posts',
     let metadataContext = '';
 
     if (req.files?.length) {
-      try {
-        const parser = require('exif-parser').create(req.files[0].buffer);
-        const result = parser.parse();
-        if (result && result.tags) {
-          const tags = result.tags;
-          const make = tags.Make || '';
-          const model = tags.Model || '';
-          imageMetadata.camera = `${make} ${model}`.trim() || 'Unknown';
-          imageMetadata.software = tags.Software || 'None';
+      let cameraModels = [];
+      let softwares = [];
+      let captureDates = [];
+      let gpsLatitudes = [];
+      let gpsLongitudes = [];
+      let matchingStatuses = [];
 
-          if (tags.DateTimeOriginal) {
-            imageMetadata.dateTimeOriginal = new Date(tags.DateTimeOriginal * 1000);
-          } else if (tags.CreateDate) {
-            imageMetadata.dateTimeOriginal = new Date(tags.CreateDate * 1000);
-          }
-
-          if (tags.GPSLatitude !== undefined && tags.GPSLongitude !== undefined) {
-            imageMetadata.hasGPS = true;
-            imageMetadata.exifGPS.lat = tags.GPSLatitude;
-            imageMetadata.exifGPS.lng = tags.GPSLongitude;
-
-            if (lat && lng) {
-              const dist = getHaversineDistance(
-                parseFloat(lat),
-                parseFloat(lng),
-                tags.GPSLatitude,
-                tags.GPSLongitude
-              );
-              imageMetadata.gpsMatchStatus = dist <= 500 ? 'matched' : 'mismatch';
+      for (const file of req.files) {
+        try {
+          const parser = require('exif-parser').create(file.buffer);
+          const result = parser.parse();
+          if (result && result.tags) {
+            const tags = result.tags;
+            const make = tags.Make || '';
+            const model = tags.Model || '';
+            if (make || model) {
+              cameraModels.push(`${make} ${model}`.trim());
+            }
+            if (tags.Software) {
+              softwares.push(tags.Software);
+            }
+            if (tags.DateTimeOriginal) {
+              captureDates.push(new Date(tags.DateTimeOriginal * 1000));
+            } else if (tags.CreateDate) {
+              captureDates.push(new Date(tags.CreateDate * 1000));
+            }
+            if (tags.GPSLatitude !== undefined && tags.GPSLongitude !== undefined) {
+              gpsLatitudes.push(tags.GPSLatitude);
+              gpsLongitudes.push(tags.GPSLongitude);
+              if (lat && lng) {
+                const dist = getHaversineDistance(
+                  parseFloat(lat),
+                  parseFloat(lng),
+                  tags.GPSLatitude,
+                  tags.GPSLongitude
+                );
+                matchingStatuses.push(dist <= 500 ? 'matched' : 'mismatch');
+              }
             }
           }
+        } catch (exifErr) {
+          console.error('EXIF parsing failed for a file:', exifErr.message);
         }
-      } catch (exifErr) {
-        console.error('EXIF parsing failed:', exifErr.message);
+      }
+
+      imageMetadata.camera = cameraModels.length > 0 ? Array.from(new Set(cameraModels)).join(', ') : 'Unknown';
+      imageMetadata.software = softwares.length > 0 ? Array.from(new Set(softwares)).join(', ') : 'None';
+      imageMetadata.dateTimeOriginal = captureDates.length > 0 ? captureDates[0] : null;
+
+      if (gpsLatitudes.length > 0) {
+        imageMetadata.hasGPS = true;
+        imageMetadata.exifGPS.lat = gpsLatitudes[0];
+        imageMetadata.exifGPS.lng = gpsLongitudes[0];
+        
+        if (matchingStatuses.includes('mismatch')) {
+          imageMetadata.gpsMatchStatus = 'mismatch';
+        } else if (matchingStatuses.includes('matched')) {
+          imageMetadata.gpsMatchStatus = 'matched';
+        } else {
+          imageMetadata.gpsMatchStatus = 'no_gps_data';
+        }
       }
 
       metadataContext = `Camera: ${imageMetadata.camera}
 Software/Editor: ${imageMetadata.software}
 Date Captured: ${imageMetadata.dateTimeOriginal ? imageMetadata.dateTimeOriginal.toISOString() : 'Unknown'}
-Photo GPS: ${imageMetadata.hasGPS ? `${imageMetadata.exifGPS.lat}, ${imageMetadata.exifGPS.lng}` : 'No GPS data'}
+Photos Analyzed: ${req.files.length}
+Photo GPS Info: ${imageMetadata.hasGPS ? `Lat: ${imageMetadata.exifGPS.lat}, Lng: ${imageMetadata.exifGPS.lng}` : 'No GPS data'}
 User Pinned GPS: ${lat && lng ? `${lat}, ${lng}` : 'Not provided'}
 GPS Match Status: ${imageMetadata.gpsMatchStatus}`;
     }
 
-    // AI classification from first image (or text only)
+    // AI classification from all uploaded images
     let aiResult = { 
       category: manualCategory || 'other', 
       severity: 'medium', 
@@ -250,12 +282,17 @@ GPS Match Status: ${imageMetadata.gpsMatchStatus}`;
       confidence: 0, 
       summary: description,
       originalityStatus: 'unknown',
-      originalityAnalysis: 'No image uploaded for forensics.'
+      originalityAnalysis: 'No image uploaded for forensics.',
+      allImagesRelevant: true,
+      relevanceExplanation: ''
     };
+
     if (req.files?.length) {
-      const base64 = req.files[0].buffer.toString('base64');
-      const mime = req.files[0].mimetype;
-      aiResult = await classifyIssue(base64, mime, description, metadataContext);
+      const imagesPayload = req.files.map(file => ({
+        base64: file.buffer.toString('base64'),
+        mimeType: file.mimetype
+      }));
+      aiResult = await classifyIssue(imagesPayload, description, metadataContext);
     }
 
     // Block stock photo posts unless allowed by a bypass flag
@@ -267,6 +304,14 @@ GPS Match Status: ${imageMetadata.gpsMatchStatus}`;
           code: 'STOCK_PHOTO_DETECTED'
         });
       }
+    }
+
+    // Verify all images are relevant to the civic issue
+    if (aiResult.allImagesRelevant === false) {
+      return res.status(400).json({
+        error: `Relevance check failed: ${aiResult.relevanceExplanation || 'One or more uploaded images do not appear relevant to the described civic issue.'}`,
+        code: 'IRRELEVANT_IMAGE'
+      });
     }
 
     // Reverse geocode location
@@ -299,8 +344,9 @@ GPS Match Status: ${imageMetadata.gpsMatchStatus}`;
     }
 
     // Create post
+    const postAnonToken = crypto.randomBytes(32).toString('hex');
     const post = await Post.create({
-      anonToken: req.anonToken,
+      anonToken: postAnonToken,
       title,
       description,
       images: imageUrls,
@@ -321,11 +367,18 @@ GPS Match Status: ${imageMetadata.gpsMatchStatus}`;
       imageMetadata,
       originalityStatus: aiResult.originalityStatus || 'unknown',
       originalityAnalysis: aiResult.originalityAnalysis || '',
+      creatorRole: req.user.role || 'citizen',
+      isVerified: ['officer', 'department', 'admin'].includes(req.user.role),
+      allImagesRelevant: aiResult.allImagesRelevant !== false,
+      relevanceExplanation: aiResult.relevanceExplanation || '',
     });
+
+    // Run priority algorithm to initialize intensity score
+    await updateIntensityScore(post._id);
 
     // Track anon token on user (for ownership claim, visible only to them)
     await User.findByIdAndUpdate(req.user._id, {
-      $addToSet: { postTokens: req.anonToken }
+      $addToSet: { postTokens: postAnonToken }
     });
 
     const populated = await Post.findById(post._id)
@@ -349,8 +402,8 @@ router.patch('/posts/:id/status', requireAuth, attachUser, asyncHandler(async (r
   if (!validStatuses.includes(status)) return res.status(400).json({ error: 'Invalid status' });
 
   const post = await Post.findById(req.params.id);
-  if (!post) return res.status(404).json({ error: 'Post not found' });
-  if (post.anonToken !== req.anonToken && req.user.role === 'citizen') {
+  if (!post || post.isDeleted) return res.status(404).json({ error: 'Post not found' });
+  if (!req.user.postTokens?.includes(post.anonToken) && req.user.role === 'citizen') {
     return res.status(403).json({ error: 'You can only update your own posts' });
   }
 
@@ -375,11 +428,12 @@ router.patch('/posts/:id/status', requireAuth, attachUser, asyncHandler(async (r
 // DELETE /api/posts/:id — soft delete (own post only)
 router.delete('/posts/:id', requireAuth, attachUser, asyncHandler(async (req, res) => {
   const post = await Post.findById(req.params.id);
-  if (!post) return res.status(404).json({ error: 'Post not found' });
-  if (post.anonToken !== req.anonToken && !['admin'].includes(req.user.role)) {
+  if (!post || post.isDeleted) return res.status(404).json({ error: 'Post not found' });
+  if (!req.user.postTokens?.includes(post.anonToken) && !['admin'].includes(req.user.role)) {
     return res.status(403).json({ error: 'Permission denied' });
   }
   await Post.findByIdAndUpdate(req.params.id, { isDeleted: true });
+  await Comment.updateMany({ postId: req.params.id }, { isDeleted: true });
 
   const io = req.app.get('io');
   if (io) {
@@ -429,8 +483,8 @@ router.post('/posts/:id/like', requireAuth, attachUser, asyncHandler(async (req,
 
 // POST /api/posts/:id/support — cross-city support report (bumps intensity)
 router.post('/posts/:id/support', requireAuth, attachUser, asyncHandler(async (req, res) => {
-  const post = await Post.findByIdAndUpdate(
-    req.params.id,
+  const post = await Post.findOneAndUpdate(
+    { _id: req.params.id, isDeleted: false },
     { $inc: { supportCount: 1 } },
     { new: true }
   );
@@ -454,6 +508,10 @@ router.post('/posts/:id/support', requireAuth, attachUser, asyncHandler(async (r
 // GET /api/posts/:id/comments — paginated comments
 router.get('/posts/:id/comments', requireAuth, asyncHandler(async (req, res) => {
   const { page = 1, limit = 20 } = req.query;
+  
+  const post = await Post.findOne({ _id: req.params.id, isDeleted: false });
+  if (!post) return res.status(404).json({ error: 'Post not found' });
+
   const comments = await Comment.find({ postId: req.params.id, isDeleted: false, parentId: null })
     .sort({ createdAt: -1 })
     .skip((page - 1) * limit)
@@ -478,19 +536,23 @@ router.post('/posts/:id/comments', requireAuth, attachUser, asyncHandler(async (
   const mod = await moderateContent(text);
   if (!mod.safe) return res.status(400).json({ error: `Comment flagged: ${mod.reason}` });
 
+  const post = await Post.findOne({ _id: req.params.id, isDeleted: false });
+  if (!post) return res.status(404).json({ error: 'Post not found' });
+
+  const commentAnonToken = crypto.randomBytes(32).toString('hex');
   const comment = await Comment.create({
     postId: req.params.id,
-    anonToken: req.anonToken,
+    anonToken: commentAnonToken,
     text: text.trim(),
     parentId: parentId || null,
   });
 
-  await Post.findByIdAndUpdate(req.params.id, { $inc: { commentCount: 1 } });
+  await Post.updateOne({ _id: req.params.id, isDeleted: false }, { $inc: { commentCount: 1 } });
   await updateIntensityScore(req.params.id);
 
   // Track comment token for user's own history
   await User.findByIdAndUpdate(req.user._id, {
-    $addToSet: { commentTokens: req.anonToken }
+    $addToSet: { commentTokens: commentAnonToken }
   });
 
   res.status(201).json({ comment: { ...comment.toObject(), anonToken: undefined } });
@@ -502,6 +564,9 @@ router.post('/posts/:id/polls', requireAuth, attachUser, asyncHandler(async (req
   if (!question || !options?.length || options.length < 2) {
     return res.status(400).json({ error: 'Question and at least 2 options required' });
   }
+
+  const post = await Post.findOne({ _id: req.params.id, isDeleted: false });
+  if (!post) return res.status(404).json({ error: 'Post not found' });
 
   const poll = await Poll.create({
     postId: req.params.id,
@@ -569,7 +634,7 @@ router.post('/rooms', requireAuth, attachUser, asyncHandler(async (req, res) => 
 
   const room = await ChatRoom.create({
     name, description, type, postId, district, category,
-    createdBy: req.auth.userId,
+    createdBy: req.user.clerkId,
   });
   res.status(201).json({ room });
 }));
@@ -589,7 +654,7 @@ router.get('/rooms/:id', requireAuth, attachUser, asyncHandler(async (req, res) 
 
 // POST /api/rooms/:id/join — join a strike room
 router.post('/rooms/:id/join', requireAuth, attachUser, asyncHandler(async (req, res) => {
-  const clerkId = req.auth.userId;
+  const clerkId = req.user.clerkId;
   const room = await ChatRoom.findOneAndUpdate(
     { _id: req.params.id, isActive: true, members: { $ne: clerkId } },
     { $addToSet: { members: clerkId }, $inc: { memberCount: 1 } },
@@ -606,7 +671,7 @@ router.post('/rooms/:id/join', requireAuth, attachUser, asyncHandler(async (req,
 
 // POST /api/rooms/:id/leave — leave a room (ephemeral: delete user's messages)
 router.post('/rooms/:id/leave', requireAuth, attachUser, asyncHandler(async (req, res) => {
-  const clerkId = req.auth.userId;
+  const clerkId = req.user.clerkId;
   const alias = generateChatAlias(clerkId, req.params.id);
 
   // Delete user's messages from this room (ephemeral policy)
@@ -630,7 +695,7 @@ router.delete('/rooms/:id', requireAuth, attachUser, asyncHandler(async (req, re
   const room = await ChatRoom.findById(req.params.id);
   if (!room) return res.status(404).json({ error: 'Room not found' });
 
-  const isCreator = room.createdBy === req.auth.userId;
+  const isCreator = room.createdBy === req.user.clerkId;
   const isAdmin = req.user.role === 'admin';
   if (!isCreator && !isAdmin) return res.status(403).json({ error: 'Permission denied' });
 
@@ -646,14 +711,18 @@ router.delete('/rooms/:id', requireAuth, attachUser, asyncHandler(async (req, re
 // AI ENDPOINTS
 // ═══════════════════════════════════════════
 
-// POST /api/ai/classify — classify image
+// POST /api/ai/classify — classify image(s)
 router.post('/ai/classify',
   requireAuth, attachUser, aiLimiter,
-  upload.single('image'),
+  upload.any(),
   asyncHandler(async (req, res) => {
-    if (!req.file) return res.status(400).json({ error: 'Image required' });
-    const base64 = req.file.buffer.toString('base64');
-    const result = await classifyIssue(base64, req.file.mimetype, req.body.description || '');
+    const files = req.files || [];
+    if (files.length === 0) return res.status(400).json({ error: 'Image(s) required' });
+    const imagesPayload = files.map(file => ({
+      base64: file.buffer.toString('base64'),
+      mimeType: file.mimetype
+    }));
+    const result = await classifyIssue(imagesPayload, req.body.description || '');
     res.json(result);
   })
 );
@@ -831,7 +900,7 @@ router.patch('/admin/users/:id/role', requireAuth, attachUser, requireRole('admi
   const user = await User.findByIdAndUpdate(req.params.id, { role }, { new: true });
   await AuditLog.create({
     action: 'role_change', targetType: 'user', targetId: user._id,
-    performedBy: req.auth.userId, details: { newRole: role }
+    performedBy: req.user.clerkId, details: { newRole: role }
   });
 
   res.json({ success: true, user });
@@ -842,7 +911,7 @@ router.delete('/admin/posts/:id', requireAuth, attachUser, requireRole('admin'),
   await Post.findByIdAndDelete(req.params.id);
   await AuditLog.create({
     action: 'post_deleted', targetType: 'post', targetId: req.params.id,
-    performedBy: req.auth.userId
+    performedBy: req.user.clerkId
   });
   res.json({ success: true });
 }));

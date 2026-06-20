@@ -52,12 +52,7 @@ const generateAnonToken = (userId) =>
 
 // Stable per-user per-room alias, e.g. "Citizen #7F3A"
 const generateChatAlias = (userId, roomId) => {
-  const hash = crypto
-    .createHmac('sha256', process.env.ANON_HMAC_SECRET + roomId)
-    .update(userId)
-    .digest('hex')
-    .substring(0, 4)
-    .toUpperCase();
+  const hash = crypto.randomBytes(2).toString('hex').toUpperCase();
   return `Citizen #${hash}`;
 };
 

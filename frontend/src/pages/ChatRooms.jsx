@@ -420,7 +420,7 @@ export default function ChatRooms() {
       {/* Create Room Modal Popup */}
       {showCreateModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-950/80 backdrop-blur-sm p-4">
-          <div className="glass-panel p-6 rounded-2xl max-w-md w-full space-y-4 animate-scaleUp">
+          <div className="glass-panel p-6 rounded-2xl max-w-md w-full space-y-4 animate-scaleIn">
             <div className="flex items-center justify-between border-b border-gray-900 pb-3">
               <h3 className="font-display font-extrabold text-teal-400 text-base flex items-center space-x-2">
                 <Sparkles size={16} />

@@ -84,79 +84,45 @@ export default function Landing() {
   }, []);
 
   return (
-    <div style={{ maxWidth: 960, margin: '0 auto', paddingBottom: 60 }}>
+    <div className="max-w-5xl mx-auto px-4 pb-16">
 
       {/* ── HERO ── */}
-      <section style={{ textAlign: 'center', padding: '60px 0 48px' }} className="animate-slideInUp">
+      <section className="text-center py-16 md:py-20 animate-slideInUp">
         {/* Platform badge */}
-        <div style={{
-          display: 'inline-flex',
-          alignItems: 'center',
-          gap: 6,
-          padding: '4px 12px',
-          borderRadius: 20,
-          border: '1px solid var(--border-strong)',
-          background: 'var(--teal-glow)',
-          color: 'var(--teal-500)',
-          fontSize: 11,
-          fontWeight: 700,
-          textTransform: 'uppercase',
-          letterSpacing: '0.07em',
-          marginBottom: 24,
-        }}>
-          <ShieldCheck size={12} />
+        <div className="inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full border border-[var(--border-strong)] bg-[var(--teal-glow)] text-[var(--teal-500)] text-xs font-semibold uppercase tracking-wider mb-6">
+          <ShieldCheck size={13} className="text-[var(--teal-500)]" />
           Tamil Nadu Civic Platform
         </div>
 
-        <h1 style={{
-          fontFamily: 'var(--font-display)',
-          fontSize: 'clamp(32px, 6vw, 58px)',
-          fontWeight: 900,
-          lineHeight: 1.08,
-          letterSpacing: '-0.03em',
-          color: 'var(--text-primary)',
-          marginBottom: 20,
-        }}>
+        <h1 className="font-display text-4xl sm:text-5xl md:text-6xl font-black tracking-tight leading-none text-[var(--text-primary)] mb-5">
           Report Civic Issues.
-          <span style={{
-            display: 'block',
-            background: 'linear-gradient(135deg, var(--teal-400) 0%, var(--teal-500) 50%, var(--teal-600) 100%)',
-            WebkitBackgroundClip: 'text',
-            WebkitTextFillColor: 'transparent',
-            backgroundClip: 'text',
-          }}>
+          <span className="block mt-1 bg-gradient-to-r from-[var(--teal-400)] via-[var(--teal-500)] to-[var(--teal-600)] bg-clip-text text-transparent">
             Anonymously. Instantly.
           </span>
         </h1>
 
-        <p style={{
-          fontSize: 16,
-          color: 'var(--text-secondary)',
-          maxWidth: 560,
-          margin: '0 auto 32px',
-          lineHeight: 1.7,
-        }}>
+        <p className="text-sm md:text-base text-[var(--text-secondary)] max-w-xl mx-auto mb-8 leading-relaxed">
           CivicTN bridges citizens and government without exposing identities.
           Upload evidence, let AI classify it, and mobilize community support to resolve
           infrastructure failures across Tamil Nadu.
         </p>
 
         {/* CTA Buttons */}
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, justifyContent: 'center' }}>
+        <div className="flex flex-wrap gap-3 justify-center">
           <SignedIn>
             <Link to="/feed" className="btn btn-primary btn-lg">
-              Explore Feed <ArrowRight size={16} />
+              Explore Feed <ArrowRight size={15} />
             </Link>
           </SignedIn>
           <SignedOut>
             <SignInButton mode="modal">
               <button className="btn btn-primary btn-lg">
-                Get Started Free <ArrowRight size={16} />
+                Get Started Free <ArrowRight size={15} />
               </button>
             </SignInButton>
           </SignedOut>
           <Link to="/map" className="btn btn-secondary btn-lg">
-            <MapPin size={16} />
+            <MapPin size={15} />
             View Civic Map
           </Link>
         </div>
@@ -165,19 +131,11 @@ export default function Landing() {
       {/* ── METRICS STRIP ── */}
       <section className="metrics-grid">
         {METRICS.map((m, i) => (
-          <div key={i} style={{
-            background: 'var(--bg-surface)',
-            padding: '20px 16px',
-            textAlign: 'center',
-          }}>
-            <div style={{
-              fontFamily: 'var(--font-display)',
-              fontSize: 26,
-              fontWeight: 800,
-              color: m.color,
-              lineHeight: 1,
-              marginBottom: 6,
-            }}>
+          <div key={i} className="bg-[var(--bg-surface)] py-6 px-4 text-center border-b md:border-b-0 md:border-r border-[var(--border-default)] last:border-none">
+            <div
+              className="font-display text-2xl sm:text-3xl font-black mb-1"
+              style={{ color: m.color }}
+            >
               {liveStats && i === 0 ? `${liveStats.districts || 25}+` : m.value}
             </div>
             <div className="section-label">{m.label}</div>
@@ -186,66 +144,35 @@ export default function Landing() {
       </section>
 
       {/* ── HOW IT WORKS ── */}
-      <section style={{ marginBottom: 56 }}>
-        <div style={{ textAlign: 'center', marginBottom: 32 }}>
-          <div className="section-label" style={{ marginBottom: 8 }}>Process</div>
-          <h2 style={{
-            fontFamily: 'var(--font-display)',
-            fontSize: 28,
-            fontWeight: 800,
-            color: 'var(--text-primary)',
-          }}>
+      <section className="mb-16">
+        <div className="text-center mb-10">
+          <div className="section-label mb-2">Process</div>
+          <h2 className="font-display text-2xl md:text-3xl font-extrabold text-[var(--text-primary)]">
             How CivicTN Works
           </h2>
         </div>
 
-        <div style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
-          gap: 16,
-        }}>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           {HOW_IT_WORKS.map((step, idx) => {
             const Icon = step.icon;
             return (
-              <div key={idx} className="card" style={{ padding: 24, position: 'relative', overflow: 'hidden' }}>
+              <div key={idx} className="card p-6 relative overflow-hidden group hover:scale-[1.02] transition-all duration-300">
                 {/* Step number watermark */}
-                <div style={{
-                  position: 'absolute',
-                  top: 12,
-                  right: 16,
-                  fontFamily: 'var(--font-display)',
-                  fontSize: 48,
-                  fontWeight: 900,
-                  color: 'rgba(255,255,255,0.03)',
-                  lineHeight: 1,
-                }}>
+                <div className="absolute top-3 right-4 font-display text-5xl font-black text-[var(--text-muted)] opacity-5 select-none leading-none">
                   {step.step}
                 </div>
 
-                <div style={{
-                  width: 40,
-                  height: 40,
-                  borderRadius: 10,
-                  background: `${step.color}15`,
-                  border: `1px solid ${step.color}30`,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  marginBottom: 16,
-                }}>
+                <div
+                  style={{ background: `${step.color}12`, borderColor: `${step.color}25` }}
+                  className="w-10 h-10 rounded-xl border flex items-center justify-center mb-5"
+                >
                   <Icon size={20} style={{ color: step.color }} />
                 </div>
 
-                <h3 style={{
-                  fontFamily: 'var(--font-display)',
-                  fontSize: 16,
-                  fontWeight: 700,
-                  color: 'var(--text-primary)',
-                  marginBottom: 8,
-                }}>
+                <h3 className="font-display text-base font-bold text-[var(--text-primary)] mb-2">
                   {step.title}
                 </h3>
-                <p style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.65 }}>
+                <p className="text-xs text-[var(--text-secondary)] leading-relaxed">
                   {step.desc}
                 </p>
               </div>
@@ -255,37 +182,23 @@ export default function Landing() {
       </section>
 
       {/* ── FEATURE GRID ── */}
-      <section style={{ marginBottom: 56 }}>
-        <div style={{ textAlign: 'center', marginBottom: 32 }}>
-          <div className="section-label" style={{ marginBottom: 8 }}>Platform Capabilities</div>
-          <h2 style={{
-            fontFamily: 'var(--font-display)',
-            fontSize: 28,
-            fontWeight: 800,
-            color: 'var(--text-primary)',
-          }}>
+      <section className="mb-16">
+        <div className="text-center mb-10">
+          <div className="section-label mb-2">Platform Capabilities</div>
+          <h2 className="font-display text-2xl md:text-3xl font-extrabold text-[var(--text-primary)]">
             Built for Impact
           </h2>
         </div>
 
-        <div style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
-          gap: 12,
-        }}>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {FEATURES.map((f, idx) => {
             const Icon = f.icon;
             return (
               <div
                 key={idx}
-                className="card"
+                className="card p-5 flex gap-4 items-start border-l-4 transition-all duration-300 hover:scale-[1.01]"
                 style={{
-                  padding: 20,
-                  display: 'flex',
-                  gap: 16,
-                  alignItems: 'flex-start',
-                  borderLeft: `3px solid ${f.border}`,
-                  transition: 'all 0.2s ease',
+                  borderLeftColor: f.border,
                 }}
                 onMouseEnter={e => {
                   e.currentTarget.style.borderLeftColor = f.color;
@@ -296,30 +209,17 @@ export default function Landing() {
                   e.currentTarget.style.background = 'var(--bg-surface)';
                 }}
               >
-                <div style={{
-                  width: 36,
-                  height: 36,
-                  borderRadius: 8,
-                  background: f.bg,
-                  border: `1px solid ${f.border}`,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  flexShrink: 0,
-                }}>
+                <div
+                  style={{ background: f.bg, borderColor: f.border }}
+                  className="w-9 h-9 rounded-xl border flex items-center justify-center flex-shrink-0"
+                >
                   <Icon size={18} style={{ color: f.color }} />
                 </div>
                 <div>
-                  <h3 style={{
-                    fontFamily: 'var(--font-display)',
-                    fontSize: 15,
-                    fontWeight: 700,
-                    color: 'var(--text-primary)',
-                    marginBottom: 5,
-                  }}>
+                  <h3 className="font-display text-sm font-bold text-[var(--text-primary)] mb-1">
                     {f.title}
                   </h3>
-                  <p style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.6 }}>
+                  <p className="text-xs text-[var(--text-secondary)] leading-relaxed">
                     {f.desc}
                   </p>
                 </div>
@@ -330,50 +230,41 @@ export default function Landing() {
       </section>
 
       {/* ── ESCALATION LEVELS INFO ── */}
-      <section style={{ marginBottom: 40 }}>
-        <div className="card" style={{ padding: 28 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 20 }}>
-            <TrendingUp size={18} style={{ color: 'var(--teal-400)' }} />
-            <h2 style={{
-              fontFamily: 'var(--font-display)',
-              fontSize: 18,
-              fontWeight: 700,
-              color: 'var(--text-primary)',
-            }}>
+      <section className="mb-16">
+        <div className="card p-6 md:p-8">
+          <div className="flex items-center gap-2 mb-4">
+            <TrendingUp size={16} className="text-[var(--teal-500)]" />
+            <h2 className="font-display text-base font-bold text-[var(--text-primary)]">
               Auto-Escalation Engine
             </h2>
           </div>
-          <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 20, lineHeight: 1.65 }}>
+          <p className="text-xs text-[var(--text-secondary)] mb-6 leading-relaxed">
             Community support votes automatically escalate complaints to higher authorities when thresholds are reached.
           </p>
 
-          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             {[
               { count: '50+', label: 'Community Support', next: '→ Assistant Engineer', color: '#f97316' },
               { count: '100+', label: 'Community Support', next: '→ Executive Engineer', color: '#f43f5e' },
               { count: '200+', label: 'Community Support', next: '→ Municipal Commissioner', color: '#a855f7' },
             ].map((tier, i) => (
-              <div key={i} style={{
-                flex: 1,
-                minWidth: 160,
-                padding: '14px 16px',
-                borderRadius: 10,
-                background: `${tier.color}08`,
-                border: `1px solid ${tier.color}20`,
-              }}>
-                <div style={{
-                  fontFamily: 'var(--font-display)',
-                  fontSize: 22,
-                  fontWeight: 800,
-                  color: tier.color,
-                  marginBottom: 2,
-                }}>
-                  {tier.count}
+              <div
+                key={i}
+                style={{ background: `${tier.color}08`, borderColor: `${tier.color}18` }}
+                className="p-4 rounded-xl border flex flex-col justify-between hover:scale-[1.02] transition-transform duration-200"
+              >
+                <div>
+                  <div
+                    style={{ color: tier.color }}
+                    className="font-display text-2xl font-black mb-1"
+                  >
+                    {tier.count}
+                  </div>
+                  <div className="text-[10px] text-[var(--text-muted)] tracking-wider uppercase font-semibold mb-2">
+                    {tier.label}
+                  </div>
                 </div>
-                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 6 }}>
-                  {tier.label}
-                </div>
-                <div style={{ fontSize: 12, fontWeight: 600, color: tier.color }}>
+                <div style={{ color: tier.color }} className="text-xs font-bold">
                   {tier.next}
                 </div>
               </div>
@@ -382,35 +273,23 @@ export default function Landing() {
         </div>
       </section>
 
-      <section style={{
-        textAlign: 'center',
-        padding: '40px 24px',
-        background: 'linear-gradient(135deg, var(--teal-glow) 0%, rgba(20, 184, 166, 0.02) 100%)',
-        border: '1px solid var(--border-default)',
-        borderRadius: 16,
-      }}>
-        <h2 style={{
-          fontFamily: 'var(--font-display)',
-          fontSize: 24,
-          fontWeight: 800,
-          color: 'var(--text-primary)',
-          marginBottom: 10,
-        }}>
+      <section className="text-center py-12 px-6 bg-gradient-to-br from-[var(--teal-glow)] to-transparent border border-[var(--border-default)] rounded-2xl shadow-sm">
+        <h2 className="font-display text-2xl font-extrabold text-[var(--text-primary)] mb-2.5">
           Ready to Make Your City Better?
         </h2>
-        <p style={{ fontSize: 14, color: 'var(--text-secondary)', marginBottom: 24 }}>
+        <p className="text-xs md:text-sm text-[var(--text-secondary)] mb-6">
           Join thousands of citizens holding authorities accountable — anonymously.
         </p>
         <SignedOut>
           <SignInButton mode="modal">
             <button className="btn btn-primary btn-lg">
-              Start Reporting — It's Free <ArrowRight size={16} />
+              Start Reporting — It's Free <ArrowRight size={15} />
             </button>
           </SignInButton>
         </SignedOut>
         <SignedIn>
           <Link to="/submit" className="btn btn-primary btn-lg">
-            Report a Civic Issue <ArrowRight size={16} />
+            Report a Civic Issue <ArrowRight size={15} />
           </Link>
         </SignedIn>
       </section>

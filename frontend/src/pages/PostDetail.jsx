@@ -19,6 +19,7 @@ export default function PostDetail() {
   const [commentText, setCommentText] = useState('');
   const [replyText, setReplyText] = useState({});
   const [showReplyForm, setShowReplyForm] = useState({});
+  const [activeImg, setActiveImg] = useState(0);
 
   // Status edit state (for owners/admin/officers)
   const [updatingStatus, setUpdatingStatus] = useState(false);
@@ -248,10 +249,36 @@ export default function PostDetail() {
               </div>
             </div>
 
-            {/* Images */}
+            {/* Images Gallery */}
             {post.images && post.images.length > 0 && (
-              <div className="w-full aspect-video rounded-xl overflow-hidden border border-gray-900 bg-gray-950">
-                <img src={post.images[0]} alt={post.title} className="w-full h-full object-cover" />
+              <div className="space-y-3">
+                <div className="w-full aspect-video rounded-xl overflow-hidden border border-[var(--border-subtle)] bg-gray-950 relative group">
+                  <img 
+                    src={post.images[activeImg] || post.images[0]} 
+                    alt={post.title} 
+                    className="w-full h-full object-cover transition-all duration-300 group-hover:scale-[1.02]" 
+                  />
+                  {post.images.length > 1 && (
+                    <div className="absolute bottom-3 right-3 bg-gray-950/80 backdrop-blur-md text-[10px] text-gray-400 px-2.5 py-1 rounded-full font-bold uppercase border border-gray-800">
+                      Image {activeImg + 1} of {post.images.length}
+                    </div>
+                  )}
+                </div>
+
+                {/* Thumbnails */}
+                {post.images.length > 1 && (
+                  <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-thin scrollbar-thumb-gray-800">
+                    {post.images.map((img, idx) => (
+                      <button
+                        key={idx}
+                        onClick={() => setActiveImg(idx)}
+                        className={`relative w-20 aspect-video rounded-lg overflow-hidden border-2 transition-all flex-shrink-0 ${activeImg === idx ? 'border-teal-500 scale-95 shadow-lg shadow-teal-500/10' : 'border-transparent hover:border-gray-800'}`}
+                      >
+                        <img src={img} alt={`Thumbnail ${idx + 1}`} className="w-full h-full object-cover" />
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
 
@@ -478,73 +505,109 @@ export default function PostDetail() {
           )}
 
           {/* Forensics and Image Originality Panel */}
-          {post.images && post.images.length > 0 && (
-            <div className="glass-panel p-5 rounded-2xl space-y-4">
-              <div>
-                <h3 className="font-display font-bold text-gray-200">AI Image Forensics</h3>
-                <p className="text-[10px] text-gray-500 uppercase tracking-widest mt-0.5">Digital Footprint Validation</p>
-              </div>
-
-              <div className="space-y-3 text-xs">
-                {/* Originality Status Badge */}
-                <div className="p-3 bg-gray-900/40 rounded-xl border border-gray-900 space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[10px] uppercase font-bold text-gray-400">Originality status</span>
-                    <span className={`text-[10px] uppercase font-extrabold px-2 py-0.5 rounded border ${
-                      post.originalityStatus === 'authentic' 
-                        ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' 
-                        : 'bg-rose-500/10 text-rose-400 border-rose-500/20'
-                    }`}>
-                      {post.originalityStatus?.replace('_', ' ') || 'unknown'}
-                    </span>
-                  </div>
-                  {post.originalityAnalysis && (
-                    <p className="text-gray-400 font-sans italic text-[11px] leading-relaxed">
-                      "{post.originalityAnalysis}"
-                    </p>
-                  )}
+          {post.images && post.images.length > 0 && (() => {
+            const getTrustScore = () => {
+              if (post.isVerified || ['officer', 'department', 'admin'].includes(post.creatorRole)) return 100;
+              let s = 100;
+              if (post.imageMetadata?.gpsMatchStatus === 'mismatch') s -= 30;
+              else if (post.imageMetadata?.gpsMatchStatus === 'no_gps_data') s -= 10;
+              
+              if (post.originalityStatus === 'stock_photo_detected') s -= 80;
+              else if (post.originalityStatus === 'suspicious_screenshot') s -= 40;
+              else if (post.originalityStatus === 'manipulated') s -= 70;
+              
+              return Math.max(5, Math.min(100, s));
+            };
+            const trustScore = getTrustScore();
+            
+            return (
+              <div className="glass-panel p-5 rounded-2xl space-y-4 border border-[var(--border-subtle)] bg-[var(--bg-elevated)] text-[var(--text-primary)] animate-scaleIn">
+                <div>
+                  <h3 className="font-display font-extrabold text-sm text-[var(--text-primary)] flex items-center gap-2">
+                    <span>🛡️</span> AI Trust & Legitimacy Audit
+                  </h3>
+                  <p className="text-[10px] text-[var(--text-secondary)] uppercase tracking-wider mt-0.5">Forensic Verification Report</p>
                 </div>
 
-                {/* Digital Footprint Exif table */}
-                {post.imageMetadata && (
-                  <div className="p-3 bg-gray-900/40 rounded-xl border border-gray-900 space-y-2.5">
-                    <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: 6 }}>
-                      <span className="text-gray-500">Camera Device:</span>
-                      <span className="text-gray-300 font-semibold">{post.imageMetadata.camera || 'Unknown'}</span>
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: 6 }}>
-                      <span className="text-gray-500">Software / Editor:</span>
-                      <span className="text-gray-300 font-semibold">{post.imageMetadata.software || 'None'}</span>
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: 6 }}>
-                      <span className="text-gray-500">Date Captured:</span>
-                      <span className="text-gray-300 font-semibold">
-                        {post.imageMetadata.dateTimeOriginal 
-                          ? new Date(post.imageMetadata.dateTimeOriginal).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' }) 
-                          : 'Unknown'}
-                      </span>
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <span className="text-gray-500">GPS Validation:</span>
-                      <span className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded border ${
-                        post.imageMetadata.gpsMatchStatus === 'matched'
-                          ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
-                          : post.imageMetadata.gpsMatchStatus === 'mismatch'
-                          ? 'bg-rose-500/10 text-rose-400 border-rose-500/20'
-                          : 'bg-gray-800 text-gray-400 border-gray-700'
-                      }`}>
-                        {post.imageMetadata.gpsMatchStatus === 'matched' 
-                          ? '✓ GPS Matched' 
-                          : post.imageMetadata.gpsMatchStatus === 'mismatch' 
-                          ? '✗ GPS Mismatch' 
-                          : 'No GPS tag'}
-                      </span>
-                    </div>
+                {/* Trust Score Progress Bar */}
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between text-xs font-bold">
+                    <span className="text-[var(--text-secondary)]">Legitimacy Trust Index</span>
+                    <span className={trustScore >= 80 ? 'text-emerald-400' : trustScore >= 50 ? 'text-amber-400' : 'text-rose-400'}>
+                      {trustScore}%
+                    </span>
                   </div>
-                )}
+                  <div className="w-full bg-gray-950/80 rounded-full h-2 overflow-hidden border border-gray-900">
+                    <div 
+                      className={`h-full rounded-full transition-all duration-500 ${
+                        trustScore >= 80 ? 'bg-emerald-500' : trustScore >= 50 ? 'bg-amber-500' : 'bg-rose-500'
+                      }`} 
+                      style={{ width: `${trustScore}%` }} 
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-3 text-xs">
+                  {/* Originality Status Badge */}
+                  <div className="p-3.5 bg-gray-950/40 rounded-xl border border-[var(--border-subtle)] space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] uppercase font-bold text-[var(--text-secondary)]">Originality Status</span>
+                      <span className={`text-[10px] uppercase font-extrabold px-2.5 py-0.5 rounded border ${
+                        post.originalityStatus === 'authentic' 
+                          ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' 
+                          : 'bg-rose-500/10 text-rose-400 border-rose-500/20'
+                      }`}>
+                        {post.originalityStatus?.replace('_', ' ') || 'unknown'}
+                      </span>
+                    </div>
+                    {post.originalityAnalysis && (
+                      <p className="text-[var(--text-secondary)] font-sans italic text-[11px] leading-relaxed">
+                        "{post.originalityAnalysis}"
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Digital Footprint Exif table */}
+                  {post.imageMetadata && (
+                    <div className="p-3.5 bg-gray-950/40 rounded-xl border border-[var(--border-subtle)] space-y-2.5">
+                      <div className="flex justify-between border-b border-[var(--border-subtle)] pb-2">
+                        <span className="text-[var(--text-secondary)]">Camera Device:</span>
+                        <span className="text-[var(--text-primary)] font-semibold text-right">{post.imageMetadata.camera || 'Unknown'}</span>
+                      </div>
+                      <div className="flex justify-between border-b border-[var(--border-subtle)] pb-2">
+                        <span className="text-[var(--text-secondary)]">Software / Editor:</span>
+                        <span className="text-[var(--text-primary)] font-semibold text-right">{post.imageMetadata.software || 'None'}</span>
+                      </div>
+                      <div className="flex justify-between border-b border-[var(--border-subtle)] pb-2">
+                        <span className="text-[var(--text-secondary)]">Date Captured:</span>
+                        <span className="text-[var(--text-primary)] font-semibold text-right">
+                          {post.imageMetadata.dateTimeOriginal 
+                            ? new Date(post.imageMetadata.dateTimeOriginal).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' }) 
+                            : 'Unknown'}
+                        </span>
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <span className="text-[var(--text-secondary)]">GPS Validation:</span>
+                        <span className={`text-[10px] uppercase font-bold px-2.5 py-0.5 rounded border ${
+                          post.imageMetadata.gpsMatchStatus === 'matched'
+                            ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                            : post.imageMetadata.gpsMatchStatus === 'mismatch'
+                            ? 'bg-rose-500/10 text-rose-400 border-rose-500/20'
+                            : 'bg-gray-800 text-gray-400 border-gray-700'
+                        }`}>
+                          {post.imageMetadata.gpsMatchStatus === 'matched' 
+                            ? '✓ GPS Matched' 
+                            : post.imageMetadata.gpsMatchStatus === 'mismatch' 
+                            ? '✗ GPS Mismatch' 
+                            : 'No GPS tag'}
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
-            </div>
-          )}
+            );
+          })()}
 
           {/* Official Contacts Info Card */}
           <div className="glass-panel p-5 rounded-2xl space-y-4">

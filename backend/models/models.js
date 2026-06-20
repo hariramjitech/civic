@@ -103,7 +103,14 @@ const postSchema = new Schema({
     default: 'unknown'
   },
   originalityAnalysis: { type: String },
+  
+  // Verification & Relevance metadata
+  creatorRole: { type: String, enum: ['citizen', 'officer', 'department', 'admin'], default: 'citizen' },
+  isVerified: { type: Boolean, default: false },
+  allImagesRelevant: { type: Boolean, default: true },
+  relevanceExplanation: { type: String },
 
+  legitimacyScore: { type: Number, default: 70 },
   isDeleted: { type: Boolean, default: false },
 }, { timestamps: true });
 

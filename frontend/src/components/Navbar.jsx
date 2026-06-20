@@ -35,70 +35,26 @@ export default function Navbar({ role }) {
   return (
     <>
       <nav
-        style={{
-          position: 'sticky',
-          top: 0,
-          zIndex: 50,
-          background: 'var(--bg-translucent)',
-          backdropFilter: 'blur(16px)',
-          WebkitBackdropFilter: 'blur(16px)',
-          borderBottom: '1px solid var(--border-subtle)',
-          boxShadow: scrolled ? 'var(--shadow-md)' : 'none',
-          transition: 'all 0.2s ease',
-        }}
+        className={`sticky top-0 z-50 bg-[var(--bg-translucent)] backdrop-blur-md border-b border-[var(--border-subtle)] transition-all duration-200 ${
+          scrolled ? 'shadow-md' : 'shadow-none'
+        }`}
       >
-        <div style={{
-          maxWidth: 1280,
-          margin: '0 auto',
-          padding: '0 20px',
-          height: 56,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          gap: 16,
-        }}>
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-14 flex items-center justify-between gap-4">
           {/* Logo */}
           <Link
             to="/"
-            style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0, textDecoration: 'none' }}
+            className="flex items-center gap-1.5 flex-shrink-0 no-underline group"
           >
-            <span style={{
-              fontFamily: 'var(--font-display)',
-              fontWeight: 800,
-              fontSize: 20,
-              background: 'linear-gradient(135deg, var(--teal-400), #6ee7b7)',
-              WebkitBackgroundClip: 'text',
-              WebkitTextFillColor: 'transparent',
-              backgroundClip: 'text',
-              letterSpacing: '-0.02em',
-            }}>
+            <span className="font-display font-black text-xl tracking-tight bg-gradient-to-r from-[var(--teal-400)] to-emerald-400 bg-clip-text text-transparent group-hover:opacity-90 transition-opacity">
               CivicTN
             </span>
-            <span style={{
-              fontSize: 11,
-              fontWeight: 600,
-              color: 'var(--text-muted)',
-              background: 'var(--bg-elevated)',
-              border: '1px solid var(--border-subtle)',
-              padding: '1px 6px',
-              borderRadius: 4,
-              letterSpacing: '0.04em',
-              textTransform: 'uppercase',
-            }}>
+            <span className="text-[10px] font-bold text-[var(--text-muted)] bg-[var(--bg-elevated)] border border-[var(--border-subtle)] px-1.5 py-0.5 rounded tracking-wider uppercase">
               TN
             </span>
           </Link>
 
           {/* Desktop Nav Links */}
-          <div style={{
-            display: 'none',
-            alignItems: 'center',
-            gap: 2,
-            flex: 1,
-            justifyContent: 'center',
-          }}
-            className="lg-flex"
-          >
+          <div className="hidden lg:flex items-center gap-1 flex-1 justify-center">
             {links.map((link) => {
               const Icon = link.icon;
               const active = isActive(link.path);
@@ -106,35 +62,13 @@ export default function Navbar({ role }) {
                 <Link
                   key={link.path}
                   to={link.path}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 5,
-                    padding: '6px 12px',
-                    borderRadius: 8,
-                    fontSize: 13,
-                    fontWeight: active ? 600 : 500,
-                    color: active ? 'var(--teal-500)' : 'var(--text-secondary)',
-                    background: active ? 'var(--teal-glow)' : 'transparent',
-                    border: `1px solid ${active ? 'var(--border-default)' : 'transparent'}`,
-                    textDecoration: 'none',
-                    transition: 'all 0.15s ease',
-                    whiteSpace: 'nowrap',
-                  }}
-                  onMouseEnter={e => {
-                    if (!active) {
-                      e.currentTarget.style.color = 'var(--text-primary)';
-                      e.currentTarget.style.background = 'var(--bg-elevated)';
-                    }
-                  }}
-                  onMouseLeave={e => {
-                    if (!active) {
-                      e.currentTarget.style.color = 'var(--text-secondary)';
-                      e.currentTarget.style.background = 'transparent';
-                    }
-                  }}
+                  className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all duration-150 border ${
+                    active
+                      ? 'text-[var(--teal-500)] bg-[var(--teal-glow)] border-[var(--border-default)] shadow-sm'
+                      : 'text-[var(--text-secondary)] border-transparent hover:text-[var(--text-primary)] hover:bg-[var(--bg-elevated)]'
+                  }`}
                 >
-                  <Icon size={14} />
+                  <Icon size={13} className={active ? 'text-[var(--teal-500)]' : 'text-[var(--text-muted)]'} />
                   <span>{link.label}</span>
                 </Link>
               );
@@ -142,66 +76,37 @@ export default function Navbar({ role }) {
           </div>
 
           {/* Right Side — Auth */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
+          <div className="flex items-center gap-2.5 flex-shrink-0">
             <SignedIn>
               {/* Notification bell — UI only */}
-              <div style={{ position: 'relative', display: 'none' }} className="lg-block">
-                <button style={{
-                  background: 'var(--bg-elevated)',
-                  border: '1px solid var(--border-subtle)',
-                  borderRadius: 8,
-                  padding: '6px 8px',
-                  color: 'var(--text-secondary)',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                }}>
-                  <Bell size={15} />
+              <div className="relative hidden lg:block">
+                <button className="bg-[var(--bg-elevated)] hover:bg-[var(--bg-overlay)] border border-[var(--border-subtle)] rounded-xl p-2 text-[var(--text-secondary)] hover:text-[var(--text-primary)] cursor-pointer flex items-center transition-colors duration-150">
+                  <Bell size={14} />
                 </button>
               </div>
 
               {/* Role chip + avatar */}
-              <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 8,
-                background: 'var(--bg-elevated)',
-                border: '1px solid var(--border-subtle)',
-                borderRadius: 24,
-                padding: '4px 10px 4px 4px',
-              }}
-                className="lg-only"
-              >
+              <div className="hidden lg:flex items-center gap-2 bg-[var(--bg-elevated)] border border-[var(--border-subtle)] rounded-full py-1 pr-2.5 pl-1.5">
                 {role && role !== 'citizen' && (
-                  <span style={{
-                    fontSize: 10,
-                    fontWeight: 700,
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.06em',
-                    color: 'var(--teal-500)',
-                    background: 'var(--teal-glow)',
-                    border: '1px solid var(--border-default)',
-                    padding: '1px 7px',
-                    borderRadius: 4,
-                  }}>
+                  <span className="text-[9px] font-extrabold uppercase tracking-widest text-[var(--teal-500)] bg-[var(--teal-glow)] border border-[var(--border-default)] px-2 py-0.5 rounded">
                     {role}
                   </span>
                 )}
                 <UserButton
                   appearance={{
                     elements: {
-                      userButtonAvatarBox: 'w-7 h-7 border border-teal-500/40',
+                      userButtonAvatarBox: 'w-6 h-6 border border-teal-500/30 hover:border-teal-500 transition-colors',
                     }
                   }}
                 />
               </div>
 
               {/* Mobile: just avatar */}
-              <div className="lg-hidden">
+              <div className="lg:hidden">
                 <UserButton
                   appearance={{
                     elements: {
-                      userButtonAvatarBox: 'w-7 h-7 border border-teal-500/40',
+                      userButtonAvatarBox: 'w-7 h-7 border border-teal-500/30',
                     }
                   }}
                 />
@@ -210,7 +115,7 @@ export default function Navbar({ role }) {
 
             <SignedOut>
               <SignInButton mode="modal">
-                <button className="btn btn-primary btn-sm" style={{ display: 'none' }} id="join-btn-desktop">
+                <button className="btn btn-secondary btn-sm hidden lg:inline-flex">
                   Join Platform
                 </button>
               </SignInButton>
@@ -224,34 +129,17 @@ export default function Navbar({ role }) {
             {/* Mobile hamburger */}
             <button
               onClick={() => setIsOpen(!isOpen)}
-              style={{
-                background: 'var(--bg-elevated)',
-                border: '1px solid var(--border-subtle)',
-                borderRadius: 8,
-                padding: '7px 8px',
-                color: 'var(--text-secondary)',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-              }}
-              className="lg-hidden-btn"
+              className="bg-[var(--bg-elevated)] hover:bg-[var(--bg-overlay)] border border-[var(--border-subtle)] rounded-xl p-2 text-[var(--text-secondary)] hover:text-[var(--text-primary)] cursor-pointer flex lg:hidden items-center transition-colors duration-150"
               aria-label="Toggle navigation"
             >
-              {isOpen ? <X size={18} /> : <Menu size={18} />}
+              {isOpen ? <X size={16} /> : <Menu size={16} />}
             </button>
           </div>
         </div>
 
         {/* Mobile Menu */}
         {isOpen && (
-          <div
-            className="animate-slideInDown"
-            style={{
-              borderTop: '1px solid var(--border-subtle)',
-              background: 'var(--bg-surface)',
-              padding: '8px 16px 16px',
-            }}
-          >
+          <div className="lg:hidden border-t border-[var(--border-subtle)] bg-[var(--bg-surface)] px-4 py-3 space-y-1 animate-slideInDown">
             {links.map((link) => {
               const Icon = link.icon;
               const active = isActive(link.path);
@@ -259,31 +147,22 @@ export default function Navbar({ role }) {
                 <Link
                   key={link.path}
                   to={link.path}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 10,
-                    padding: '11px 12px',
-                    borderRadius: 8,
-                    fontSize: 14,
-                    fontWeight: active ? 600 : 500,
-                    color: active ? 'var(--teal-500)' : 'var(--text-secondary)',
-                    background: active ? 'var(--teal-glow)' : 'transparent',
-                    textDecoration: 'none',
-                    borderLeft: active ? '2px solid var(--teal-500)' : '2px solid transparent',
-                    marginBottom: 2,
-                  }}
+                  className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold transition-all border-l-2 ${
+                    active
+                      ? 'text-[var(--teal-500)] bg-[var(--teal-glow)] border-l-[var(--teal-500)]'
+                      : 'text-[var(--text-secondary)] border-l-transparent hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]'
+                  }`}
                 >
-                  <Icon size={16} />
+                  <Icon size={15} />
                   <span>{link.label}</span>
                 </Link>
               );
             })}
 
             <SignedOut>
-              <div style={{ paddingTop: 12, borderTop: '1px solid var(--border-subtle)', marginTop: 8 }}>
+              <div className="pt-3 border-t border-[var(--border-subtle)] mt-2">
                 <SignInButton mode="modal">
-                  <button className="btn btn-primary" style={{ width: '100%' }}>
+                  <button className="btn btn-primary w-full">
                     Join Platform
                   </button>
                 </SignInButton>
@@ -292,21 +171,6 @@ export default function Navbar({ role }) {
           </div>
         )}
       </nav>
-
-      {/* Responsive style helper — avoids Tailwind dependency for lg: breakpoints */}
-      <style>{`
-        @media (min-width: 1024px) {
-          .lg-flex { display: flex !important; }
-          .lg-block { display: block !important; }
-          .lg-only { display: flex !important; }
-          .lg-hidden { display: none !important; }
-          .lg-hidden-btn { display: none !important; }
-          #join-btn-desktop { display: inline-flex !important; }
-        }
-        @media (max-width: 1023px) {
-          .lg-only { display: none !important; }
-        }
-      `}</style>
     </>
   );
 }

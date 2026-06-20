@@ -96,11 +96,11 @@ export default function SubmitPost() {
 
   // Handle file selection
   const processFiles = (files) => {
-    if (!files.length) return;
+    if (!files || !files.length) return;
     const arr = Array.from(files).slice(0, 5);
     setSelectedFiles(arr);
     setPreviews(arr.map(f => URL.createObjectURL(f)));
-    analyzeImage(arr[0]);
+    analyzeImages(arr);
   };
 
   const handleFileChange = (e) => processFiles(e.target.files);
@@ -119,17 +119,23 @@ export default function SubmitPost() {
     dropRef.current.style.borderColor = 'var(--border-default)';
   };
 
-  const analyzeImage = async (file) => {
+  const analyzeImages = async (files) => {
     try {
       setAiLoading(true);
       setAiResult(null);
       const fd = new FormData();
-      fd.append('image', file);
+      files.forEach(file => {
+        fd.append('images', file);
+      });
       if (description) fd.append('description', description);
       const res = await api.post('/ai/classify', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
       setAiResult(res.data);
       if (res.data.category) setCategory(res.data.category);
-      toast.success(`AI detected: ${res.data.category}`);
+      if (res.data.allImagesRelevant === false) {
+        toast.error(`AI Relevance Warning: ${res.data.relevanceExplanation || 'One of the images is not relevant.'}`, { duration: 6000 });
+      } else {
+        toast.success(`AI detected: ${res.data.category}`);
+      }
     } catch {
       toast.error('AI classification failed — categorize manually.');
     } finally {
@@ -161,6 +167,11 @@ export default function SubmitPost() {
     const newPreviews = previews.filter((_, i) => i !== idx);
     setSelectedFiles(newFiles);
     setPreviews(newPreviews);
+    if (newFiles.length > 0) {
+      analyzeImages(newFiles);
+    } else {
+      setAiResult(null);
+    }
   };
 
   // Step validation

@@ -75,13 +75,20 @@ const generateContentWithFallback = async (contents) => {
   throw lastError || new Error('All models failed to respond');
 };
 
-// ─────────────────────────────────────────────
 // AI: Classify civic issue from image + description
-// ─────────────────────────────────────────────
-const classifyIssue = async (imageBase64, mimeType = 'image/jpeg', description = '', metadataContext = '') => {
+const classifyIssue = async (images, description = '', metadataContext = '') => {
   try {
+    let imagesArray = [];
+    if (Array.isArray(images)) {
+      imagesArray = images;
+    } else if (images && typeof images === 'object' && images.base64) {
+      imagesArray = [images];
+    } else if (typeof images === 'string') {
+      imagesArray = [{ base64: images, mimeType: 'image/jpeg' }];
+    }
+
     const prompt = `You are a civic issue classifier, forensic image validator, and municipal assistant for Tamil Nadu, India.
-Analyze this infrastructure/civic problem image.
+Analyze the uploaded infrastructure/civic problem image(s).
 
 1. Classify into ONE category:
 pothole | road_damage | garbage | water_leakage | drainage | streetlight | public_property | electricity | other
@@ -89,10 +96,13 @@ pothole | road_damage | garbage | water_leakage | drainage | streetlight | publi
 2. Determine severity: low | medium | high | critical
 
 3. Perform image forensics and check originality:
-Analyze if this is a genuine, original photo taken in-situ (authentic), or if it is a screenshot of another photo, a downloaded stock photo from the web, a modified/manipulated photo, or unknown.
+Analyze if the images are genuine, original photos taken in-situ (authentic), or if any of them is a screenshot of another photo, a downloaded stock photo from the web, a modified/manipulated photo, or unknown.
 Provide:
 - originalityStatus: "authentic" | "suspicious_screenshot" | "stock_photo_detected" | "manipulated" | "unknown"
-- originalityAnalysis: A short, 1-2 sentence explanation of your assessment (e.g. "Image has no signs of modifications and depicts local environment consistent with Tamil Nadu" or "Image appears to be a screenshot of a news article or map").
+- originalityAnalysis: A short, 1-2 sentence explanation of your assessment.
+
+4. Verify relevance:
+Ensure that ALL uploaded images are relevant to the infrastructure/civic problem described in the user description. If any image is irrelevant, completely unrelated, or inappropriate (e.g. random pet photo, meme, text document, or food picture that has nothing to do with the civic issue), set "allImagesRelevant" to false and provide a clear explanation in "relevanceExplanation". Otherwise, set "allImagesRelevant" to true and leave "relevanceExplanation" empty.
 
 Respond ONLY with valid JSON (no markdown, no code blocks, no backticks):
 {
@@ -102,15 +112,21 @@ Respond ONLY with valid JSON (no markdown, no code blocks, no backticks):
   "confidence": 0.0-1.0,
   "summary": "one sentence description",
   "originalityStatus": "authentic|suspicious_screenshot|stock_photo_detected|manipulated|unknown",
-  "originalityAnalysis": "..."
+  "originalityAnalysis": "...",
+  "allImagesRelevant": true|false,
+  "relevanceExplanation": "..."
 }
 ${description ? `\nUser description: ${description}` : ''}
 ${metadataContext ? `\nExtracted Image Digital Footprint (EXIF) Context:\n${metadataContext}` : ''}`;
 
-    const result = await generateContentWithFallback([
-      prompt,
-      { inlineData: { data: imageBase64, mimeType } },
-    ]);
+    const parts = [prompt];
+    for (const img of imagesArray) {
+      if (img.base64) {
+        parts.push({ inlineData: { data: img.base64, mimeType: img.mimeType || 'image/jpeg' } });
+      }
+    }
+
+    const result = await generateContentWithFallback(parts);
     const json = result.response.text().replace(/```json?/gi, '').replace(/```/g, '').trim();
     return JSON.parse(json);
   } catch (err) {
@@ -122,7 +138,9 @@ ${metadataContext ? `\nExtracted Image Digital Footprint (EXIF) Context:\n${meta
       confidence: 0, 
       summary: description || 'Civic issue',
       originalityStatus: 'unknown',
-      originalityAnalysis: 'AI image forensics failed to execute.'
+      originalityAnalysis: 'AI image forensics failed to execute.',
+      allImagesRelevant: true,
+      relevanceExplanation: ''
     };
   }
 };
@@ -274,12 +292,42 @@ const updateIntensityScore = async (postId) => {
   const post = await Post.findById(postId).lean();
   if (!post) return 0;
 
-  let score = Math.round(post.likeCount + (post.commentCount * 1.5) + (post.supportCount * 3));
+  // Instagram-like ranking: base score + engagement weights
+  let baseScore = 20;
+  let score = Math.round(post.likeCount + (post.commentCount * 1.5) + (post.supportCount * 3)) + baseScore;
   
-  // Penalize intensity score for stock photos to lower priority
-  if (post.originalityStatus === 'stock_photo_detected') {
-    score = Math.round(score * 0.25);
+  // Boosts
+  if (post.isVerified || ['officer', 'department', 'admin'].includes(post.creatorRole)) {
+    score += 150;
   }
+  if (post.originalityStatus === 'authentic') {
+    score += 100;
+  }
+  if (post.imageMetadata?.gpsMatchStatus === 'matched') {
+    score += 50;
+  }
+
+  // Penalties
+  if (post.originalityStatus === 'stock_photo_detected') {
+    score = Math.round(score * 0.1); // 90% reduction
+  } else if (post.originalityStatus === 'suspicious_screenshot') {
+    score = Math.round(score * 0.5); // 50% reduction
+  } else if (post.originalityStatus === 'manipulated') {
+    score = Math.round(score * 0.2); // 80% reduction
+  }
+
+  if (post.imageMetadata?.gpsMatchStatus === 'mismatch') {
+    score = Math.round(score * 0.6); // 40% reduction
+  } else if (post.imageMetadata?.gpsMatchStatus === 'no_gps_data' && !post.isVerified) {
+    score = Math.round(score * 0.8); // 20% reduction if unverified
+  }
+
+  if (post.allImagesRelevant === false) {
+    score = Math.round(score * 0.1); // 90% reduction
+  }
+
+  // Ensure score is not negative
+  score = Math.max(0, score);
 
   await Post.findByIdAndUpdate(postId, { intensityScore: score });
 
