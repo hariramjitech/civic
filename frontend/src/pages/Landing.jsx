@@ -3,9 +3,11 @@ import { SignInButton, SignedIn, SignedOut } from '@clerk/clerk-react';
 import { Link } from 'react-router-dom';
 import {
   ShieldCheck, EyeOff, Sparkles, Users, MapPin, ArrowRight,
-  Camera, Cpu, PhoneCall, BarChart2, TrendingUp, Clock
+  Camera, Cpu, PhoneCall, BarChart2, TrendingUp, Clock,
+  Globe, Compass, Newspaper, Building2, Activity, ExternalLink, AlertTriangle, ChevronRight
 } from 'lucide-react';
 import api from '../lib/api';
+import { useCivic } from '../context/CivicContext';
 
 const FEATURES = [
   {
@@ -73,15 +75,150 @@ const METRICS = [
   { label: 'Escalation Levels', value: '3-Tier', color: '#f87171' },
 ];
 
+const TAMIL_NADU_DISTRICTS = [
+  'Chennai', 'Coimbatore', 'Madurai', 'Tiruchirappalli', 'Salem', 
+  'Tirunelveli', 'Vellore', 'Erode', 'Thoothukudi', 'Kancheepuram', 
+  'Thanjavur', 'Tiruppur', 'Dindigul', 'Namakkal', 'Krishnagiri', 
+  'Dharmapuri', 'Villupuram', 'Cuddalore'
+];
+
 export default function Landing() {
+  const { isSignedIn } = useCivic();
   const [liveStats, setLiveStats] = useState(null);
+
+  const [generalNews, setGeneralNews] = useState([]);
+  const [localNews, setLocalNews] = useState([]);
+  const [localPosts, setLocalPosts] = useState([]);
+  const [govProjects, setGovProjects] = useState([]);
+  const [loadingNews, setLoadingNews] = useState(true);
+  const [loadingLocalData, setLoadingLocalData] = useState(false);
+  const [district, setDistrict] = useState('');
+  const [locationStatus, setLocationStatus] = useState('idle'); // idle | loading | success | denied
+  const [activeTab, setActiveTab] = useState('news'); // news | posts | gov
+
+  const fetchDashboardData = async (distName, coords = null) => {
+    setLoadingLocalData(true);
+    try {
+      let newsParams = {};
+      if (coords) {
+        newsParams = { lat: coords.lat, lng: coords.lng };
+      } else if (distName) {
+        newsParams = { district: distName };
+      }
+
+      const newsRes = await api.get('/news', { params: newsParams });
+      setGeneralNews(newsRes.data.generalNews || []);
+      setLocalNews(newsRes.data.locationNews || []);
+      const detectedDist = newsRes.data.district;
+
+      if (detectedDist && detectedDist !== 'Unknown') {
+        setDistrict(detectedDist);
+        sessionStorage.setItem('detected_district', detectedDist);
+        if (coords) {
+          sessionStorage.setItem('detected_coords', JSON.stringify(coords));
+        }
+
+        const [postsRes, govRes] = await Promise.allSettled([
+          api.get('/posts', { params: { district: detectedDist, limit: 5 } }),
+          api.get(`/ai/gov-data/${detectedDist}`)
+        ]);
+
+        if (postsRes.status === 'fulfilled') {
+          setLocalPosts(postsRes.value.data.posts || []);
+        } else {
+          console.warn('Failed to load local posts');
+        }
+
+        if (govRes.status === 'fulfilled') {
+          setGovProjects(govRes.value.data.data || []);
+        } else {
+          console.warn('Failed to load government road projects');
+        }
+      }
+      setLocationStatus('success');
+    } catch (err) {
+      console.error('Failed to load dashboard data:', err);
+    } finally {
+      setLoadingLocalData(false);
+      setLoadingNews(false);
+    }
+  };
+
+  const detectLocation = () => {
+    if (!navigator.geolocation) {
+      setLocationStatus('denied');
+      return;
+    }
+
+    setLocationStatus('loading');
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const coords = {
+          lat: position.coords.latitude,
+          lng: position.coords.longitude
+        };
+        fetchDashboardData(null, coords);
+      },
+      (error) => {
+        console.warn('Geolocation permission error:', error);
+        setLocationStatus('denied');
+      },
+      { timeout: 8000 }
+    );
+  };
+
+  const handleDistrictChange = (e) => {
+    const selected = e.target.value;
+    if (!selected) return;
+    setDistrict(selected);
+    fetchDashboardData(selected);
+  };
 
   useEffect(() => {
     // Try to load public stats
     api.get('/analytics/public-stats')
       .then(res => setLiveStats(res.data))
       .catch(() => { }); // Graceful fail if endpoint not ready
-  }, []);
+
+    // Load initial news and check session location cache
+    const initNews = async () => {
+      const cachedDist = sessionStorage.getItem('detected_district');
+      const cachedCoordsStr = sessionStorage.getItem('detected_coords');
+
+      if (isSignedIn) {
+        if (cachedDist) {
+          setDistrict(cachedDist);
+          setLocationStatus('success');
+          if (cachedCoordsStr) {
+            const coords = JSON.parse(cachedCoordsStr);
+            fetchDashboardData(null, coords);
+          } else {
+            fetchDashboardData(cachedDist);
+          }
+        } else {
+          try {
+            const newsRes = await api.get('/news');
+            setGeneralNews(newsRes.data.generalNews || []);
+          } catch (err) {
+            console.error('Failed to load general news:', err);
+          } finally {
+            setLoadingNews(false);
+          }
+        }
+      } else {
+        try {
+          const newsRes = await api.get('/news');
+          setGeneralNews(newsRes.data.generalNews || []);
+        } catch (err) {
+          console.error('Failed to load general news:', err);
+        } finally {
+          setLoadingNews(false);
+        }
+      }
+    };
+
+    initNews();
+  }, [isSignedIn]);
 
   return (
     <div className="max-w-5xl mx-auto px-4 pb-16">
@@ -141,6 +278,390 @@ export default function Landing() {
             <div className="section-label">{m.label}</div>
           </div>
         ))}
+      </section>
+
+      {/* ── CIVIC & INFRASTRUCTURE INTELLIGENCE HUB ── */}
+      <section className="my-16 animate-slideInUp">
+        <div className="text-center mb-10">
+          <div className="section-label mb-2">Real-Time Insights</div>
+          <h2 className="font-display text-2xl md:text-3xl font-extrabold text-[var(--text-primary)]">
+            Civic & Infrastructure Intelligence Hub
+          </h2>
+          <p className="text-xs text-[var(--text-secondary)] mt-2 max-w-lg mx-auto">
+            Stay updated with live infrastructure reports, government projects, and local news across Tamil Nadu.
+          </p>
+        </div>
+
+        {/* Dashboard Box */}
+        <div className="card p-6 md:p-8 relative overflow-hidden bg-gradient-to-br from-[var(--bg-surface)] to-[var(--bg-elevated)] border border-[var(--border-default)] rounded-2xl shadow-md">
+          
+          {/* Guest or Logged In without location */}
+          {(!isSignedIn || locationStatus === 'idle') && (
+            <div>
+              <div className="flex items-center justify-between mb-6 pb-4 border-b border-[var(--border-subtle)]">
+                <div className="flex items-center gap-2">
+                  <Globe className="text-[var(--teal-500)]" size={20} />
+                  <h3 className="font-display text-lg font-bold text-[var(--text-primary)]">
+                    Tamil Nadu Infrastructure News
+                  </h3>
+                </div>
+                {isSignedIn && (
+                  <button onClick={detectLocation} className="btn btn-primary btn-sm">
+                    <MapPin size={12} /> Personalize for My Location
+                  </button>
+                )}
+                {!isSignedIn && (
+                  <span className="text-xs text-[var(--text-muted)] bg-[var(--bg-elevated)] px-3 py-1 rounded-full border border-[var(--border-subtle)]">
+                    Live Updates
+                  </span>
+                )}
+              </div>
+
+              {isSignedIn && locationStatus === 'idle' && (
+                <div className="mb-6 p-4 rounded-xl border border-[var(--teal-400)]/20 bg-[var(--teal-glow)] flex flex-col md:flex-row justify-between items-center gap-4">
+                  <div className="flex items-start gap-3">
+                    <Compass className="text-[var(--teal-500)] mt-0.5 flex-shrink-0" size={18} />
+                    <div>
+                      <h4 className="text-xs font-bold text-[var(--text-primary)]">Unlock Location-Based Civic Insights</h4>
+                      <p className="text-[11px] text-[var(--text-secondary)] mt-0.5 leading-relaxed">
+                        Share your browser location to automatically load government projects, local reports, and regional news specific to your district.
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex gap-2 w-full md:w-auto justify-end">
+                    <button onClick={detectLocation} className="btn btn-primary btn-sm flex-1 md:flex-none">
+                      Detect My Location
+                    </button>
+                    <select onChange={handleDistrictChange} className="btn btn-secondary btn-sm flex-1 md:flex-none">
+                      <option value="">Select District</option>
+                      {TAMIL_NADU_DISTRICTS.map(d => (
+                        <option key={d} value={d}>{d}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              )}
+              
+              {loadingNews ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {[1, 2, 3, 4].map(n => (
+                    <div key={n} className="card p-4 flex flex-col gap-3">
+                      <div className="skeleton h-32 w-full rounded-lg" />
+                      <div className="skeleton h-4 w-3/4" />
+                      <div className="skeleton h-3 w-1/2" />
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {generalNews.map((news, idx) => (
+                    <a href={news.url} target="_blank" rel="noopener noreferrer" key={idx} className="card p-4 hover:scale-[1.01] hover:border-[var(--teal-400)] transition-all duration-300 flex flex-col sm:flex-row gap-4">
+                      {news.imageUrl && (
+                        <img src={news.imageUrl} alt={news.title} className="w-full sm:w-28 h-28 object-cover rounded-lg flex-shrink-0" />
+                      )}
+                      <div className="flex flex-col justify-between flex-1 min-w-0">
+                        <div>
+                          <div className="flex items-center gap-2 mb-1.5">
+                            <span className="text-[9px] font-bold text-[var(--teal-500)] uppercase tracking-wider bg-[var(--teal-glow)] px-1.5 py-0.5 rounded">
+                              {news.source}
+                            </span>
+                            <span className="text-[9px] text-[var(--text-muted)]">
+                              {new Date(news.publishedAt).toLocaleDateString()}
+                            </span>
+                          </div>
+                          <h4 className="font-display text-sm font-bold text-[var(--text-primary)] line-clamp-2 leading-snug mb-1 hover:text-[var(--teal-500)] transition-colors">
+                            {news.title}
+                          </h4>
+                          <p className="text-xs text-[var(--text-secondary)] line-clamp-2 leading-relaxed">
+                            {news.description}
+                          </p>
+                        </div>
+                        <div className="text-[10px] font-bold text-[var(--teal-500)] flex items-center gap-1 mt-2">
+                          Read Full Article <ExternalLink size={10} />
+                        </div>
+                      </div>
+                    </a>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {isSignedIn && locationStatus !== 'idle' && (
+            <div>
+              {/* Geolocation Loading state */}
+              {locationStatus === 'loading' && (
+                <div className="flex flex-col items-center justify-center py-12">
+                  <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-[var(--teal-500)] mb-4"></div>
+                  <p className="text-xs text-[var(--text-secondary)] font-medium animate-pulse">
+                    Detecting your district and compiling intelligence dashboard...
+                  </p>
+                </div>
+              )}
+
+              {/* Denied location prompt */}
+              {locationStatus === 'denied' && (
+                <div className="text-center py-8 max-w-sm mx-auto animate-fadeIn">
+                  <div className="w-10 h-10 rounded-xl bg-red-500/10 border border-red-500/20 flex items-center justify-center mx-auto mb-3 text-red-400">
+                    <AlertTriangle size={18} />
+                  </div>
+                  <h3 className="font-display text-base font-bold text-[var(--text-primary)] mb-1">
+                    Location Access Unavailable
+                  </h3>
+                  <p className="text-xs text-[var(--text-secondary)] mb-4">
+                    Please select a district manually to view local infrastructure details:
+                  </p>
+                  <select onChange={handleDistrictChange} className="glass-input text-xs max-w-xs mx-auto">
+                    <option value="">-- Select Tamil Nadu District --</option>
+                    {TAMIL_NADU_DISTRICTS.map(d => (
+                      <option key={d} value={d}>{d}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {/* Success dashboard state */}
+              {locationStatus === 'success' && (
+                <div className="animate-fadeIn">
+                  {/* Dashboard Header */}
+                  <div className="flex flex-wrap items-center justify-between gap-4 mb-6 pb-4 border-b border-[var(--border-subtle)]">
+                    <div className="flex items-center gap-2.5">
+                      <Compass className="text-[var(--teal-500)]" size={20} />
+                      <div>
+                        <h3 className="font-display text-lg font-bold text-[var(--text-primary)] leading-none">
+                          Civic Dashboard: {district} District
+                        </h3>
+                        <span className="text-[10px] text-[var(--text-muted)] mt-1.5 block">
+                          Real-time localized civic intelligence
+                        </span>
+                      </div>
+                    </div>
+                    
+                    {/* Navigation tabs */}
+                    <div className="flex flex-wrap gap-1.5 items-center">
+                      <button 
+                        onClick={() => setActiveTab('news')} 
+                        className={`filter-pill ${activeTab === 'news' ? 'active' : ''}`}
+                      >
+                        <Newspaper size={12} /> News Updates
+                      </button>
+                      <button 
+                        onClick={() => setActiveTab('gov')} 
+                        className={`filter-pill ${activeTab === 'gov' ? 'active' : ''}`}
+                      >
+                        <Building2 size={12} /> Gov Projects
+                      </button>
+                      <button 
+                        onClick={() => setActiveTab('posts')} 
+                        className={`filter-pill ${activeTab === 'posts' ? 'active' : ''}`}
+                      >
+                        <Activity size={12} /> Local Alerts
+                      </button>
+                      
+                      <div className="h-4 w-px bg-[var(--border-default)] mx-1 hidden sm:block"></div>
+                      
+                      {/* Manual switcher dropdown */}
+                      <select onChange={handleDistrictChange} value={district} className="text-[11px] font-medium bg-[var(--bg-elevated)] border border-[var(--border-default)] text-[var(--text-secondary)] rounded-lg px-2.5 py-1.5 outline-none cursor-pointer">
+                        {TAMIL_NADU_DISTRICTS.map(d => (
+                          <option key={d} value={d}>{d}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* Dashboard Content Tabs */}
+                  {loadingLocalData ? (
+                    <div className="flex flex-col items-center justify-center py-12">
+                      <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-[var(--teal-500)] mb-4"></div>
+                      <p className="text-xs text-[var(--text-secondary)]">Loading local data...</p>
+                    </div>
+                  ) : (
+                    <div>
+                      {/* Tab 1: News (Local News + General News) */}
+                      {activeTab === 'news' && (
+                        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                          {/* Local News Column */}
+                          <div className="lg:col-span-6 border-r-0 lg:border-r border-[var(--border-subtle)] pr-0 lg:pr-6">
+                            <h4 className="font-display text-xs font-extrabold text-[var(--text-primary)] mb-4 flex items-center gap-1.5 uppercase tracking-wider">
+                              <MapPin size={14} className="text-[var(--teal-400)]" />
+                              Local Updates in {district}
+                            </h4>
+                            {localNews.length === 0 ? (
+                              <div className="p-6 bg-[var(--bg-elevated)] rounded-xl border border-[var(--border-subtle)] text-center text-xs text-[var(--text-muted)]">
+                                No specific infrastructure news found for {district} this week. Showing state updates.
+                              </div>
+                            ) : (
+                              <div className="flex flex-col gap-3">
+                                {localNews.slice(0, 3).map((news, idx) => (
+                                  <a href={news.url} target="_blank" rel="noopener noreferrer" key={idx} className="card p-3 hover:scale-[1.01] hover:border-[var(--teal-400)] transition-all duration-300 flex flex-col sm:flex-row gap-3">
+                                    {news.imageUrl && (
+                                      <img src={news.imageUrl} alt={news.title} className="w-full sm:w-20 h-20 object-cover rounded-lg flex-shrink-0" />
+                                    )}
+                                    <div className="flex flex-col justify-between flex-1 min-w-0">
+                                      <div>
+                                        <div className="flex items-center gap-1.5 mb-1">
+                                          <span className="text-[9px] font-bold text-[var(--teal-500)] uppercase tracking-wider bg-[var(--teal-glow)] px-1.5 py-0.5 rounded">
+                                            {news.source}
+                                          </span>
+                                        </div>
+                                        <h5 className="font-display text-xs font-bold text-[var(--text-primary)] line-clamp-2 leading-snug">
+                                          {news.title}
+                                        </h5>
+                                      </div>
+                                      <div className="text-[9px] text-[var(--text-muted)] mt-1.5">
+                                        {new Date(news.publishedAt).toLocaleDateString()}
+                                      </div>
+                                    </div>
+                                  </a>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+
+                          {/* State News Column */}
+                          <div className="lg:col-span-6">
+                            <h4 className="font-display text-xs font-extrabold text-[var(--text-primary)] mb-4 flex items-center gap-1.5 uppercase tracking-wider">
+                              <Globe size={14} className="text-[var(--teal-400)]" />
+                              Tamil Nadu Infrastructure News
+                            </h4>
+                            <div className="flex flex-col gap-3">
+                              {generalNews.slice(0, 3).map((news, idx) => (
+                                <a href={news.url} target="_blank" rel="noopener noreferrer" key={idx} className="card p-3 hover:scale-[1.01] hover:border-[var(--teal-400)] transition-all duration-300 flex flex-col sm:flex-row gap-3">
+                                  {news.imageUrl && (
+                                    <img src={news.imageUrl} alt={news.title} className="w-full sm:w-20 h-20 object-cover rounded-lg flex-shrink-0" />
+                                  )}
+                                  <div className="flex flex-col justify-between flex-1 min-w-0">
+                                    <div>
+                                      <div className="flex items-center gap-1.5 mb-1">
+                                        <span className="text-[9px] font-bold text-[var(--teal-500)] uppercase tracking-wider bg-[var(--teal-glow)] px-1.5 py-0.5 rounded">
+                                          {news.source}
+                                        </span>
+                                      </div>
+                                      <h5 className="font-display text-xs font-bold text-[var(--text-primary)] line-clamp-2 leading-snug">
+                                        {news.title}
+                                      </h5>
+                                    </div>
+                                    <div className="text-[9px] text-[var(--text-muted)] mt-1.5">
+                                      {new Date(news.publishedAt).toLocaleDateString()}
+                                    </div>
+                                  </div>
+                                </a>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Tab 2: Government Road Data (data.gov.in) */}
+                      {activeTab === 'gov' && (
+                        <div>
+                          <div className="flex items-center justify-between mb-4">
+                            <h4 className="font-display text-xs font-extrabold text-[var(--text-primary)] flex items-center gap-1.5 uppercase tracking-wider">
+                              <Building2 size={14} className="text-[var(--teal-400)]" />
+                              Government Road Projects in {district}
+                            </h4>
+                            <span className="text-[9px] text-[var(--text-muted)] bg-[var(--bg-elevated)] border border-[var(--border-subtle)] px-2.5 py-0.5 rounded-full">
+                              Source: data.gov.in
+                            </span>
+                          </div>
+                          {govProjects.length === 0 ? (
+                            <div className="p-8 bg-[var(--bg-elevated)] rounded-xl border border-[var(--border-subtle)] text-center text-xs text-[var(--text-muted)]">
+                              No active government road datasets mapped to {district} at this time.
+                            </div>
+                          ) : (
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                              {govProjects.slice(0, 6).map((proj, idx) => (
+                                <div key={idx} className="card p-4 bg-[var(--bg-surface)] flex flex-col justify-between">
+                                  <div>
+                                    <div className="flex justify-between items-start mb-2 gap-2">
+                                      <span className="text-[9px] font-semibold tracking-wider text-[var(--teal-500)] bg-[var(--teal-glow)] px-2 py-0.5 rounded uppercase">
+                                        {proj.work_category || 'Road Work'}
+                                      </span>
+                                      {proj.sanctioned_cost && (
+                                        <span className="text-[10px] font-bold text-[var(--text-primary)] whitespace-nowrap">
+                                          ₹{proj.sanctioned_cost >= 10000000 
+                                            ? `${(proj.sanctioned_cost / 10000000).toFixed(2)} Cr` 
+                                            : `${(proj.sanctioned_cost / 100000).toFixed(1)} Lakh`
+                                          }
+                                        </span>
+                                      )}
+                                    </div>
+                                    <h5 className="font-display text-xs font-bold text-[var(--text-primary)] line-clamp-2 mb-3 leading-snug">
+                                      {proj.work_name || proj.road_name || 'Infrastructure Project'}
+                                    </h5>
+                                  </div>
+                                  <div className="grid grid-cols-2 gap-2 text-[10px] border-t border-[var(--border-subtle)] pt-2 mt-auto">
+                                    <div>
+                                      <span className="text-[var(--text-muted)] block">Department:</span>
+                                      <div className="font-semibold text-[var(--text-secondary)] truncate">
+                                        {proj.department_name || 'Highway / PWD'}
+                                      </div>
+                                    </div>
+                                    <div>
+                                      <span className="text-[var(--text-muted)] block">Length:</span>
+                                      <div className="font-semibold text-[var(--text-secondary)]">
+                                        {proj.road_length_km ? `${proj.road_length_km} km` : 'N/A'}
+                                      </div>
+                                    </div>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Tab 3: Local Reports (Platform Posts) */}
+                      {activeTab === 'posts' && (
+                        <div>
+                          <div className="flex items-center justify-between mb-4">
+                            <h4 className="font-display text-xs font-extrabold text-[var(--text-primary)] flex items-center gap-1.5 uppercase tracking-wider">
+                              <AlertTriangle size={14} className="text-[var(--teal-400)]" />
+                              Unresolved Civic Reports in {district}
+                            </h4>
+                            <Link to="/feed" className="text-[10px] font-bold text-[var(--teal-500)] flex items-center gap-0.5">
+                              View Full Feed <ChevronRight size={10} />
+                            </Link>
+                          </div>
+                          {localPosts.length === 0 ? (
+                            <div className="p-8 bg-[var(--bg-elevated)] rounded-xl border border-[var(--border-subtle)] text-center text-xs text-[var(--text-muted)]">
+                              No unresolved incidents reported in {district} yet. Be the first to report!
+                            </div>
+                          ) : (
+                            <div className="flex flex-col gap-3">
+                              {localPosts.slice(0, 4).map((post, idx) => (
+                                <Link to={`/posts/${post._id}`} key={idx} className="card p-4 bg-[var(--bg-surface)] flex justify-between items-center hover:scale-[1.005] transition-transform">
+                                  <div className="min-w-0 flex-1 pr-4">
+                                    <div className="flex items-center gap-2 mb-1.5">
+                                      <span className={`severity-badge severity-${post.severity || 'medium'}`}>
+                                        {post.severity}
+                                      </span>
+                                      <span className="text-[9px] text-[var(--text-muted)]">
+                                        {new Date(post.createdAt).toLocaleDateString()}
+                                      </span>
+                                    </div>
+                                    <h5 className="font-display text-sm font-bold text-[var(--text-primary)] truncate mb-1">
+                                      {post.title}
+                                    </h5>
+                                    <p className="text-xs text-[var(--text-secondary)] truncate">
+                                      {post.address || post.description}
+                                    </p>
+                                  </div>
+                                  <ChevronRight size={16} className="text-[var(--text-muted)] flex-shrink-0" />
+                                </Link>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+        </div>
       </section>
 
       {/* ── HOW IT WORKS ── */}

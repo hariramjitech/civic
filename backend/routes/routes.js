@@ -16,6 +16,7 @@ const {
   postLimiter, aiLimiter, asyncHandler,
   generateChatAlias,
 } = require('../middleware/middleware');
+const { fetchGeneralNews, fetchDistrictNews } = require('../services/newsService');
 const {
   classifyIssue, checkDuplicate, moderateContent,
   generateReport, predictRiskZones,
@@ -1110,6 +1111,34 @@ router.delete('/admin/posts/:id', requireAuth, attachUser, requireRole('admin'),
     performedBy: req.user.clerkId
   });
   res.json({ success: true });
+}));
+
+// GET /api/news — fetch TN infrastructure news and optional district news
+router.get('/news', attachUser, asyncHandler(async (req, res) => {
+  const { lat, lng, district } = req.query;
+  let resolvedDistrict = district || null;
+
+  if (lat && lng && !resolvedDistrict) {
+    try {
+      const geo = await reverseGeocode(parseFloat(lat), parseFloat(lng));
+      resolvedDistrict = geo.district;
+    } catch (err) {
+      console.warn('⚠️ Geocoding failed in news route:', err.message);
+    }
+  }
+
+  const generalNews = await fetchGeneralNews();
+  let locationNews = [];
+
+  if (resolvedDistrict && resolvedDistrict !== 'Unknown') {
+    locationNews = await fetchDistrictNews(resolvedDistrict);
+  }
+
+  res.json({
+    generalNews,
+    locationNews,
+    district: resolvedDistrict
+  });
 }));
 
 module.exports = router;
