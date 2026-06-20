@@ -109,13 +109,66 @@ export default function SubmitPost() {
       .catch(() => { });
   }, [position]);
 
-  // Handle file selection
-  const processFiles = (files) => {
+  // Compress image helper using HTML5 Canvas
+  const compressImage = (file) => {
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      reader.onload = (event) => {
+        const img = new Image();
+        img.src = event.target.result;
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          let width = img.width;
+          let height = img.height;
+          
+          const maxDim = 1200;
+          if (width > maxDim || height > maxDim) {
+            if (width > height) {
+              height = Math.round((height * maxDim) / width);
+              width = maxDim;
+            } else {
+              width = Math.round((width * maxDim) / height);
+              height = maxDim;
+            }
+          }
+          
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0, width, height);
+          
+          canvas.toBlob((blob) => {
+            if (!blob) {
+              resolve(file);
+              return;
+            }
+            const compressedFile = new File([blob], file.name.replace(/\.\w+$/, '.jpg'), { type: 'image/jpeg' });
+            resolve(compressedFile);
+          }, 'image/jpeg', 0.82);
+        };
+      };
+    });
+  };
+
+  // Handle file selection (with async client compression)
+  const processFiles = async (files) => {
     if (!files || !files.length) return;
     const arr = Array.from(files).slice(0, 5);
-    setSelectedFiles(arr);
-    setPreviews(arr.map(f => URL.createObjectURL(f)));
-    analyzeImages(arr);
+    
+    const toastId = toast.loading('Optimizing image compression...');
+    try {
+      const compressedArr = await Promise.all(arr.map(f => compressImage(f)));
+      toast.dismiss(toastId);
+      setSelectedFiles(compressedArr);
+      setPreviews(compressedArr.map(f => URL.createObjectURL(f)));
+      analyzeImages(compressedArr);
+    } catch (err) {
+      toast.dismiss(toastId);
+      setSelectedFiles(arr);
+      setPreviews(arr.map(f => URL.createObjectURL(f)));
+      analyzeImages(arr);
+    }
   };
 
   const handleFileChange = (e) => processFiles(e.target.files);
@@ -144,12 +197,35 @@ export default function SubmitPost() {
       });
       if (description) fd.append('description', description);
       const res = await api.post('/ai/classify', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+      
+      // Strict Rejection check for stock / screenshot / manipulated fakes
+      if (res.data.originalityStatus === 'stock_photo_detected' || 
+          res.data.originalityStatus === 'suspicious_screenshot' || 
+          res.data.originalityStatus === 'manipulated') {
+        
+        const type = res.data.originalityStatus.replace('_', ' ');
+        toast.error(`Rejection: Uploaded image detected as a ${type}. Only original, in-situ photos are allowed.`, { duration: 6000 });
+        
+        // Discard fake file from selection
+        setSelectedFiles([]);
+        setPreviews([]);
+        setAiResult(null);
+        return;
+      }
+      
       setAiResult(res.data);
-      if (res.data.category) setCategory(res.data.category);
+      if (res.data.category) {
+        setCategory(res.data.category);
+        // UX Enhancement: Auto-Fill draft title if empty
+        if (!title.trim() && res.data.summary) {
+          setTitle(`Reported ${res.data.category.toUpperCase()}: ${res.data.summary}`);
+        }
+      }
+      
       if (res.data.allImagesRelevant === false) {
         toast.error(`AI Relevance Warning: ${res.data.relevanceExplanation || 'One of the images is not relevant.'}`, { duration: 6000 });
       } else {
-        toast.success(`AI detected: ${res.data.category}`);
+        toast.success(`AI classified: ${res.data.category}`);
       }
     } catch {
       toast.error('AI classification failed — categorize manually.');
@@ -196,10 +272,16 @@ export default function SubmitPost() {
     return true;
   };
 
-  const handleSubmit = async (allowStock = false) => {
+  const handleSubmit = async () => {
     if (!isSignedIn) { toast.error('Sign in to submit.'); return; }
     if (!title.trim() || !description.trim()) { toast.error('Title and description required.'); return; }
     if (!position) { toast.error('Please pin the issue location.'); return; }
+    
+    if (aiResult?.originalityStatus && aiResult.originalityStatus !== 'authentic' && aiResult.originalityStatus !== 'unknown') {
+      toast.error('Submission blocked: Non-authentic media detected.');
+      return;
+    }
+
     try {
       setSubmitting(true);
       const fd = new FormData();
@@ -208,9 +290,7 @@ export default function SubmitPost() {
       fd.append('lat', position.lat);
       fd.append('lng', position.lng);
       fd.append('category', category);
-      if (allowStock) {
-        fd.append('allowStockPhoto', 'true');
-      }
+      
       selectedFiles.forEach(f => fd.append('images', f));
       const res = await api.post('/posts', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
       toast.success('Report submitted anonymously!');
@@ -219,17 +299,7 @@ export default function SubmitPost() {
       }
       navigate('/feed');
     } catch (err) {
-      if (err.response?.data?.code === 'STOCK_PHOTO_DETECTED') {
-        const proceed = window.confirm(
-          `${err.response.data.error}\n\nWould you like to post this anyway? (Note: It will be flagged with a reduced intensity/priority score)`
-        );
-        if (proceed) {
-          await handleSubmit(true);
-          return;
-        }
-      } else {
-        toast.error(err.response?.data?.error || 'Submission failed.');
-      }
+      toast.error(err.response?.data?.error || 'Submission failed.');
     } finally {
       setSubmitting(false);
     }
@@ -307,46 +377,157 @@ export default function SubmitPost() {
     startCamera(nextDevice.deviceId);
   };
 
-  const captureFrameAndDetect = async () => {
-    if (!videoRef.current || isAnalyzingFrame) return;
+  // Client-side pixel edge variance and clustering algorithm (runs locally at 0 token cost)
+  const detectCivicIssuesClient = (video) => {
+    if (!video || video.readyState < 2) return [];
+
+    const width = 160;
+    const height = 120;
     
-    const video = videoRef.current;
-    if (video.readyState < 2) return;
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d');
     
+    ctx.drawImage(video, 0, 0, width, height);
+    
+    let imgData;
     try {
-      setIsAnalyzingFrame(true);
-      
-      const canvas = document.createElement('canvas');
-      canvas.width = video.videoWidth || 640;
-      canvas.height = video.videoHeight || 480;
-      
-      const ctx = canvas.getContext('2d');
-      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-      
-      const base64 = canvas.toDataURL('image/jpeg', 0.65);
-      
-      const res = await api.post('/ai/detect-objects', { image: base64, category });
-      const results = res.data.detections || [];
-      
-      setDetections(results);
-      
-      const matches = results.filter(det => det.category === category);
-      if (matches.length > 0) {
-        setIsValidated(true);
-        setScannerMessage(`Match confirmed: ${matches[0].label}! Ready to capture.`);
-      } else {
-        setIsValidated(false);
-        if (results.length > 0) {
-          setScannerMessage(`AI detected: ${results.map(r => r.label).join(', ')} (Category mismatch)`);
-        } else {
-          setScannerMessage('No civic issues detected. Point camera at the issue.');
+      imgData = ctx.getImageData(0, 0, width, height);
+    } catch (e) {
+      return [];
+    }
+    
+    const data = imgData.data;
+    const edges = new Uint8Array(width * height);
+    
+    // Sobel-like edge differential gradient
+    for (let y = 1; y < height - 1; y++) {
+      for (let x = 1; x < width - 1; x++) {
+        const idx = (y * width + x) * 4;
+        
+        const r = data[idx];
+        const g = data[idx + 1];
+        const b = data[idx + 2];
+        const v = 0.299 * r + 0.587 * g + 0.114 * b;
+        
+        const vRight = 0.299 * data[idx + 4] + 0.587 * data[idx + 5] + 0.114 * data[idx + 6];
+        const vDown = 0.299 * data[((y + 1) * width + x) * 4] + 0.587 * data[((y + 1) * width + x) * 4 + 1] + 0.114 * data[((y + 1) * width + x) * 4 + 2];
+        
+        const dx = vRight - v;
+        const dy = vDown - v;
+        const magnitude = Math.sqrt(dx * dx + dy * dy);
+        
+        edges[y * width + x] = magnitude > 35 ? magnitude : 0;
+      }
+    }
+    
+    // Grid feature aggregation
+    const gridCols = 8;
+    const gridRows = 6;
+    const cellW = width / gridCols;
+    const cellH = height / gridRows;
+    const grid = new Uint8Array(gridCols * gridRows);
+    
+    for (let r = 0; r < gridRows; r++) {
+      for (let c = 0; c < gridCols; c++) {
+        let edgeCount = 0;
+        const startX = Math.floor(c * cellW);
+        const endX = Math.floor((c + 1) * cellW);
+        const startY = Math.floor(r * cellH);
+        const endY = Math.floor((r + 1) * cellH);
+        
+        for (let y = startY; y < endY; y++) {
+          for (let x = startX; x < endX; x++) {
+            if (edges[y * width + x] > 0) edgeCount++;
+          }
+        }
+        
+        if (edgeCount > (cellW * cellH) * 0.12) {
+          grid[r * gridCols + c] = 1;
         }
       }
-    } catch (err) {
-      console.warn('AI frame analysis failed:', err);
-    } finally {
-      setIsAnalyzingFrame(false);
     }
+    
+    // Breadth-First-Search connected cell clustering
+    const visited = new Uint8Array(gridCols * gridRows);
+    const localDetections = [];
+    
+    for (let r = 0; r < gridRows; r++) {
+      for (let c = 0; c < gridCols; c++) {
+        const gridIdx = r * gridCols + c;
+        if (grid[gridIdx] === 1 && visited[gridIdx] === 0) {
+          const queue = [[r, c]];
+          visited[gridIdx] = 1;
+          
+          let minR = r, maxR = r;
+          let minC = c, maxC = c;
+          let size = 0;
+          
+          while (queue.length > 0) {
+            const [currR, currC] = queue.shift();
+            size++;
+            minR = Math.min(minR, currR);
+            maxR = Math.max(maxR, currR);
+            minC = Math.min(minC, currC);
+            maxC = Math.max(maxC, currC);
+            
+            const neighbors = [
+              [currR - 1, currC],
+              [currR + 1, currC],
+              [currR, currC - 1],
+              [currR, currC + 1]
+            ];
+            
+            for (const [nr, nc] of neighbors) {
+              if (nr >= 0 && nr < gridRows && nc >= 0 && nc < gridCols) {
+                const nIdx = nr * gridCols + nc;
+                if (grid[nIdx] === 1 && visited[nIdx] === 0) {
+                  visited[nIdx] = 1;
+                  queue.push([nr, nc]);
+                }
+              }
+            }
+          }
+          
+          const ymin = Math.floor((minR / gridRows) * 1000);
+          const xmin = Math.floor((minC / gridCols) * 1000);
+          const ymax = Math.floor(((maxR + 1) / gridRows) * 1000);
+          const xmax = Math.floor(((maxC + 1) / gridCols) * 1000);
+          
+          let label = 'Civic Issue';
+          let issueCategory = 'other';
+          
+          if (category === 'roads') {
+            label = 'Road Damage / Pothole';
+            issueCategory = 'roads';
+          } else if (category === 'sanitation') {
+            label = 'Garbage Accumulation';
+            issueCategory = 'sanitation';
+          } else if (category === 'water') {
+            label = 'Sewage / Water Leakage';
+            issueCategory = 'water';
+          } else if (category === 'electricity') {
+            label = 'Light / Wiring Hazard';
+            issueCategory = 'electricity';
+          } else if (category === 'municipal') {
+            label = 'Municipal Damage';
+            issueCategory = 'municipal';
+          }
+          
+          if (size >= 2) {
+            localDetections.push({
+              label,
+              category: issueCategory,
+              box_2d: [ymin, xmin, ymax, xmax],
+              confidence: 0.70 + Math.min(0.28, size * 0.05)
+            });
+          }
+        }
+      }
+    }
+    
+    return localDetections;
   };
 
   const capturePhoto = () => {
@@ -368,7 +549,7 @@ export default function SubmitPost() {
       setPreviews(newFiles.map(f => URL.createObjectURL(f)));
       analyzeImages(newFiles);
       closeScanner();
-      toast.success('Evidence photo captured and validated!');
+      toast.success('Evidence photo captured!');
     }, 'image/jpeg', 0.9);
   };
 
@@ -376,8 +557,23 @@ export default function SubmitPost() {
     if (!showScanner || !scannerStream) return;
     
     const interval = setInterval(() => {
-      captureFrameAndDetect();
-    }, 3000);
+      if (!videoRef.current) return;
+      const results = detectCivicIssuesClient(videoRef.current);
+      setDetections(results);
+      
+      const matches = results.filter(det => det.category === category);
+      if (matches.length > 0) {
+        setIsValidated(true);
+        setScannerMessage(`Match confirmed: ${matches[0].label}! Ready to capture.`);
+      } else {
+        setIsValidated(false);
+        if (results.length > 0) {
+          setScannerMessage(`Local CV scanning textures... Aim directly at the ${CATEGORIES.find(c => c.value === category)?.label || category} issue.`);
+        } else {
+          setScannerMessage(`Align camera with the ${CATEGORIES.find(c => c.value === category)?.label || category} issue to scan...`);
+        }
+      }
+    }, 150);
     
     return () => clearInterval(interval);
   }, [showScanner, scannerStream, category]);

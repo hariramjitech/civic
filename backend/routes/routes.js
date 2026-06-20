@@ -17,7 +17,7 @@ const {
   generateChatAlias,
 } = require('../middleware/middleware');
 const {
-  classifyIssue, detectObjects, checkDuplicate, moderateContent,
+  classifyIssue, checkDuplicate, moderateContent,
   generateReport, predictRiskZones,
   reverseGeocode, fetchGovRoadData,
   updateIntensityScore, rewriteComplaint,
@@ -339,15 +339,22 @@ GPS Match Status: ${imageMetadata.gpsMatchStatus}`;
       aiResult = await classifyIssue(imagesPayload, description, metadataContext);
     }
 
-    // Block stock photo posts unless allowed by a bypass flag
+    // Block fake/manipulated media posts strictly to maintain authenticity
     if (aiResult.originalityStatus === 'stock_photo_detected') {
-      const allowStockPhoto = req.body.allowStockPhoto === 'true' || req.body.allowStockPhoto === true;
-      if (!allowStockPhoto) {
-        return res.status(400).json({
-          error: 'Stock photo detected. To maintain platform authenticity, you must upload a genuine, original image taken in-situ.',
-          code: 'STOCK_PHOTO_DETECTED'
-        });
-      }
+      return res.status(400).json({
+        error: 'Stock photo detected. Only genuine, in-situ original images are allowed to maintain platform authenticity.',
+        code: 'FAKE_MEDIA_REJECTED'
+      });
+    } else if (aiResult.originalityStatus === 'suspicious_screenshot') {
+      return res.status(400).json({
+        error: 'Screenshot detected. Please upload an original photo taken in-situ, not a screenshot.',
+        code: 'FAKE_MEDIA_REJECTED'
+      });
+    } else if (aiResult.originalityStatus === 'manipulated') {
+      return res.status(400).json({
+        error: 'Manipulated/edited photo detected. Only original, unedited photos are allowed.',
+        code: 'FAKE_MEDIA_REJECTED'
+      });
     }
 
     // Verify all images are relevant to the civic issue
@@ -806,18 +813,6 @@ router.post('/ai/classify',
       mimeType: file.mimetype
     }));
     const result = await classifyIssue(imagesPayload, req.body.description || '');
-    res.json(result);
-  })
-);
-
-// POST /api/ai/detect-objects — detect civic issues with bounding boxes from live camera frame
-router.post('/ai/detect-objects',
-  requireAuth, attachUser, aiLimiter,
-  asyncHandler(async (req, res) => {
-    const { image, category } = req.body;
-    if (!image) return res.status(400).json({ error: 'Image is required' });
-    const base64Data = image.replace(/^data:image\/\w+;base64,/, "");
-    const result = await detectObjects(base64Data, category || '');
     res.json(result);
   })
 );
