@@ -182,13 +182,38 @@ export default function Feed() {
 
   const handleSupport = async (postId) => {
     try {
-      const res = await api.post(`/posts/${postId}/support`);
+      let payload = {};
+      if (coords) {
+        payload = { lat: coords.lat, lng: coords.lng };
+      } else if (navigator.geolocation) {
+        const getPosition = () => new Promise((resolve) => {
+          navigator.geolocation.getCurrentPosition(
+            (pos) => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+            () => resolve(null),
+            { timeout: 2000 }
+          );
+        });
+        const freshCoords = await getPosition();
+        if (freshCoords) {
+          payload = freshCoords;
+        }
+      }
+
+      const res = await api.post(`/posts/${postId}/support`, payload);
       setPosts(prev => prev.map(p => p._id === postId
         ? { ...p, supportCount: res.data.supportCount, intensityScore: res.data.intensityScore }
         : p
       ));
-      toast.success('Support added!');
-    } catch { toast.error('Could not amplify.'); }
+      
+      if (res.data.isLocal) {
+        toast.success(`Local support verified! Added ${Math.round(res.data.distance || 0)}m away. 🔥`);
+      } else {
+        toast.success('Support added!');
+      }
+    } catch (err) {
+      const errorMsg = err.response?.data?.error || 'Could not amplify.';
+      toast.error(errorMsg);
+    }
   };
 
   const copyLink = (id) => {

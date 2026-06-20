@@ -21,6 +21,7 @@ const userSchema = new Schema({
   postTokens: [{ type: String }],         // HMAC tokens of own posts (to claim ownership)
   commentTokens: [{ type: String }],         // HMAC tokens of own comments
   likedPosts: [{ type: Schema.Types.ObjectId, ref: 'Post' }],
+  supportedPosts: [{ type: Schema.Types.ObjectId, ref: 'Post' }],
   votedPolls: [{ type: Map, of: String }],// pollId → optionIndex
   joinedRooms: [{ type: Schema.Types.ObjectId, ref: 'ChatRoom' }],
   isActive: { type: Boolean, default: true },
@@ -71,6 +72,7 @@ const postSchema = new Schema({
   likeCount: { type: Number, default: 0 },
   commentCount: { type: Number, default: 0 },
   supportCount: { type: Number, default: 0 },  // cross-city reports
+  localSupportCount: { type: Number, default: 0 }, // verified local reports (within 500m)
   intensityScore: { type: Number, default: 0 },   // computed score
 
   // Auto-attached official contacts (populated from Contact collection)

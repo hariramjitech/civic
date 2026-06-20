@@ -570,12 +570,45 @@ router.post('/posts/:id/like', requireAuth, attachUser, asyncHandler(async (req,
 
 // POST /api/posts/:id/support — cross-city support report (bumps intensity)
 router.post('/posts/:id/support', requireAuth, attachUser, asyncHandler(async (req, res) => {
-  const post = await Post.findOneAndUpdate(
-    { _id: req.params.id, isDeleted: false },
-    { $inc: { supportCount: 1 } },
-    { new: true }
-  );
+  // 1. Prevent duplicate support upvotes from the same user
+  const user = await User.findById(req.user._id);
+  if (!user) return res.status(401).json({ error: 'User not found' });
+  
+  if (user.supportedPosts?.includes(req.params.id)) {
+    return res.status(400).json({ error: 'You have already supported this post' });
+  }
+
+  // 2. Fetch the post and check if it exists
+  const post = await Post.findOne({ _id: req.params.id, isDeleted: false });
   if (!post) return res.status(404).json({ error: 'Post not found' });
+
+  // 3. Proximity check (local support)
+  const { lat, lng } = req.body;
+  let isLocal = false;
+  let distance = null;
+
+  if (lat && lng && post.location?.coordinates) {
+    const postLng = post.location.coordinates[0];
+    const postLat = post.location.coordinates[1];
+    distance = getHaversineDistance(parseFloat(lat), parseFloat(lng), postLat, postLng);
+    if (distance <= 500) {
+      isLocal = true;
+    }
+  }
+
+  // 4. Update post counts
+  post.supportCount = (post.supportCount || 0) + 1;
+  if (isLocal) {
+    post.localSupportCount = (post.localSupportCount || 0) + 1;
+  }
+  await post.save();
+
+  // 5. Add post to user's supported list
+  await User.findByIdAndUpdate(req.user._id, {
+    $addToSet: { supportedPosts: post._id }
+  });
+
+  // 6. Recalculate intensity score
   const newScore = await updateIntensityScore(post._id);
 
   const populated = await Post.findById(post._id)
@@ -589,7 +622,14 @@ router.post('/posts/:id/support', requireAuth, attachUser, asyncHandler(async (r
     io.to(`post:${populated._id}`).emit('post:updated', populated);
   }
 
-  res.json({ success: true, supportCount: populated.supportCount, intensityScore: newScore });
+  res.json({
+    success: true,
+    supportCount: populated.supportCount,
+    localSupportCount: populated.localSupportCount,
+    intensityScore: newScore,
+    isLocal,
+    distance
+  });
 }));
 
 // GET /api/posts/:id/comments — paginated comments
@@ -802,23 +842,89 @@ router.delete('/rooms/:id', requireAuth, attachUser, asyncHandler(async (req, re
 // ═══════════════════════════════════════════
 
 // POST /api/ai/classify — classify image(s)
-router.post('/ai/classify',
+router.post('/api/ai/classify',
   requireAuth, attachUser, aiLimiter,
   upload.any(),
   asyncHandler(async (req, res) => {
     const files = req.files || [];
     if (files.length === 0) return res.status(400).json({ error: 'Image(s) required' });
+
+    // Parse EXIF metadata
+    let imageMetadata = {
+      camera: 'Unknown',
+      software: 'Unknown',
+      dateTimeOriginal: null,
+      hasGPS: false,
+      exifGPS: { lat: 0, lng: 0 }
+    };
+    
+    let cameraModels = [];
+    let softwares = [];
+    let captureDates = [];
+    let gpsLatitudes = [];
+    let gpsLongitudes = [];
+
+    for (const file of files) {
+      try {
+        const parser = require('exif-parser').create(file.buffer);
+        const result = parser.parse();
+        if (result && result.tags) {
+          const tags = result.tags;
+          const make = tags.Make || '';
+          const model = tags.Model || '';
+          if (make || model) {
+            cameraModels.push(`${make} ${model}`.trim());
+          }
+          if (tags.Software) {
+            softwares.push(tags.Software);
+          }
+          if (tags.DateTimeOriginal) {
+            captureDates.push(new Date(tags.DateTimeOriginal * 1000));
+          } else if (tags.CreateDate) {
+            captureDates.push(new Date(tags.CreateDate * 1000));
+          }
+          if (tags.GPSLatitude !== undefined && tags.GPSLongitude !== undefined) {
+            gpsLatitudes.push(tags.GPSLatitude);
+            gpsLongitudes.push(tags.GPSLongitude);
+          }
+        }
+      } catch (exifErr) {
+        console.error('EXIF parsing failed in classify endpoint:', exifErr.message);
+      }
+    }
+
+    imageMetadata.camera = cameraModels.length > 0 ? Array.from(new Set(cameraModels)).join(', ') : 'Unknown';
+    imageMetadata.software = softwares.length > 0 ? Array.from(new Set(softwares)).join(', ') : 'Unknown';
+    imageMetadata.dateTimeOriginal = captureDates.length > 0 ? captureDates[0] : null;
+
+    if (gpsLatitudes.length > 0) {
+      imageMetadata.hasGPS = true;
+      imageMetadata.exifGPS.lat = gpsLatitudes[0];
+      imageMetadata.exifGPS.lng = gpsLongitudes[0];
+    }
+
     const imagesPayload = files.map(file => ({
       base64: file.buffer.toString('base64'),
       mimeType: file.mimetype
     }));
-    const result = await classifyIssue(imagesPayload, req.body.description || '');
-    res.json(result);
+
+    // Extracted footprint metadata context to supply to Gemini
+    const metadataContext = `Camera: ${imageMetadata.camera}
+Software/Editor: ${imageMetadata.software}
+Date Captured: ${imageMetadata.dateTimeOriginal ? imageMetadata.dateTimeOriginal.toISOString() : 'Unknown'}
+Photo GPS: ${imageMetadata.hasGPS ? `Lat: ${imageMetadata.exifGPS.lat}, Lng: ${imageMetadata.exifGPS.lng}` : 'No GPS data'}`;
+
+    const result = await classifyIssue(imagesPayload, req.body.description || '', metadataContext);
+    
+    res.json({
+      ...result,
+      metadata: imageMetadata
+    });
   })
 );
 
 // POST /api/ai/rewrite — rewrite complaint description for clarity and professionalism
-router.post('/ai/rewrite',
+router.post('/api/ai/rewrite',
   requireAuth, attachUser, aiLimiter,
   asyncHandler(async (req, res) => {
     const { description } = req.body;

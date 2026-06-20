@@ -302,9 +302,14 @@ const updateIntensityScore = async (postId) => {
   const post = await Post.findById(postId).lean();
   if (!post) return 0;
 
-  // Instagram-like ranking: base score + engagement weights
+  // Instagram-like ranking: base score + engagement weights + local support boost
   let baseScore = 20;
-  let score = Math.round(post.likeCount + (post.commentCount * 1.5) + (post.supportCount * 3)) + baseScore;
+  let score = Math.round(
+    (post.likeCount || 0) + 
+    ((post.commentCount || 0) * 1.5) + 
+    ((post.supportCount || 0) * 3) + 
+    ((post.localSupportCount || 0) * 15)
+  ) + baseScore;
   
   // Boosts
   if (post.isVerified || ['officer', 'department', 'admin'].includes(post.creatorRole)) {

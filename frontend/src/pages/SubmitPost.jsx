@@ -198,21 +198,6 @@ export default function SubmitPost() {
       if (description) fd.append('description', description);
       const res = await api.post('/ai/classify', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
       
-      // Strict Rejection check for stock / screenshot / manipulated fakes
-      if (res.data.originalityStatus === 'stock_photo_detected' || 
-          res.data.originalityStatus === 'suspicious_screenshot' || 
-          res.data.originalityStatus === 'manipulated') {
-        
-        const type = res.data.originalityStatus.replace('_', ' ');
-        toast.error(`Rejection: Uploaded image detected as a ${type}. Only original, in-situ photos are allowed.`, { duration: 6000 });
-        
-        // Discard fake file from selection
-        setSelectedFiles([]);
-        setPreviews([]);
-        setAiResult(null);
-        return;
-      }
-      
       setAiResult(res.data);
       if (res.data.category) {
         setCategory(res.data.category);
@@ -222,7 +207,14 @@ export default function SubmitPost() {
         }
       }
       
-      if (res.data.allImagesRelevant === false) {
+      // Warning for stock / screenshot / manipulated fakes
+      if (res.data.originalityStatus === 'stock_photo_detected' || 
+          res.data.originalityStatus === 'suspicious_screenshot' || 
+          res.data.originalityStatus === 'manipulated') {
+        
+        const type = res.data.originalityStatus.replace('_', ' ');
+        toast.error(`Warning: Uploaded image detected as a ${type}. Submission is locked.`, { duration: 6000 });
+      } else if (res.data.allImagesRelevant === false) {
         toast.error(`AI Relevance Warning: ${res.data.relevanceExplanation || 'One of the images is not relevant.'}`, { duration: 6000 });
       } else {
         toast.success(`AI classified: ${res.data.category}`);
@@ -269,7 +261,16 @@ export default function SubmitPost() {
   const canProceed = () => {
     if (step === 1) return title.trim() && description.trim();
     if (step === 2) return !!position;
+    if (step === 3) return selectedFiles.length > 0; // Require image proof
     return true;
+  };
+
+  const isSubmitDisabled = () => {
+    if (selectedFiles.length === 0) return true;
+    if (aiResult?.originalityStatus && aiResult.originalityStatus !== 'authentic' && aiResult.originalityStatus !== 'unknown') {
+      return true;
+    }
+    return false;
   };
 
   const handleSubmit = async () => {
@@ -277,7 +278,7 @@ export default function SubmitPost() {
     if (!title.trim() || !description.trim()) { toast.error('Title and description required.'); return; }
     if (!position) { toast.error('Please pin the issue location.'); return; }
     
-    if (aiResult?.originalityStatus && aiResult.originalityStatus !== 'authentic' && aiResult.originalityStatus !== 'unknown') {
+    if (isSubmitDisabled()) {
       toast.error('Submission blocked: Non-authentic media detected.');
       return;
     }
@@ -1054,26 +1055,38 @@ export default function SubmitPost() {
                 </div>
               </div>
 
+              {/* Deep Analysis EXIF Metadata HUD */}
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 4 }}>
                 <div style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-subtle)', padding: '8px 12px', borderRadius: 8 }}>
-                  <span style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Forensic Status</span>
-                  <span style={{ 
-                    fontSize: 12, 
-                    fontWeight: 700, 
-                    color: aiResult.originalityStatus === 'authentic' ? '#4ade80' : '#f43f5e',
-                    textTransform: 'capitalize' 
-                  }}>
-                    {aiResult.originalityStatus?.replace('_', ' ') || 'unknown'}
+                  <span style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Camera Make/Model</span>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-primary)' }}>
+                    {aiResult.metadata?.camera || 'Unknown / Direct Photo'}
                   </span>
                 </div>
                 <div style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-subtle)', padding: '8px 12px', borderRadius: 8 }}>
-                  <span style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', textTransform: 'uppercase', letterSpacing: '0.05em' }}>AI Relevance Match</span>
+                  <span style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Software / Source Editor</span>
                   <span style={{ 
                     fontSize: 12, 
                     fontWeight: 700, 
-                    color: aiResult.allImagesRelevant !== false ? '#4ade80' : '#f43f5e'
+                    color: aiResult.metadata?.software && aiResult.metadata.software !== 'Unknown' && aiResult.metadata.software !== 'None' ? '#f43f5e' : 'var(--text-primary)'
                   }}>
-                    {aiResult.allImagesRelevant !== false ? '100% Relevant' : 'Irrelevant Media'}
+                    {aiResult.metadata?.software || 'None / Direct Photo'}
+                  </span>
+                </div>
+                <div style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-subtle)', padding: '8px 12px', borderRadius: 8 }}>
+                  <span style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Photo Capture Date</span>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-primary)' }}>
+                    {aiResult.metadata?.dateTimeOriginal ? new Date(aiResult.metadata.dateTimeOriginal).toLocaleString() : 'No timestamp in tags'}
+                  </span>
+                </div>
+                <div style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-subtle)', padding: '8px 12px', borderRadius: 8 }}>
+                  <span style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', textTransform: 'uppercase', letterSpacing: '0.05em' }}>AI Forensics Assessment</span>
+                  <span style={{ 
+                    fontSize: 12, 
+                    fontWeight: 700, 
+                    color: aiResult.originalityStatus === 'authentic' ? '#4ade80' : '#f43f5e'
+                  }}>
+                    {aiResult.originalityStatus?.replace('_', ' ').toUpperCase()}
                   </span>
                 </div>
               </div>
@@ -1086,6 +1099,30 @@ export default function SubmitPost() {
             </div>
           )}
         </div>
+
+        {/* Fake Rejection Warning Banner */}
+        {aiResult && (aiResult.originalityStatus === 'stock_photo_detected' || aiResult.originalityStatus === 'suspicious_screenshot' || aiResult.originalityStatus === 'manipulated') && (
+          <div style={{
+            padding: '14px 18px',
+            background: 'rgba(244, 63, 94, 0.08)',
+            border: '1px solid rgba(244, 63, 94, 0.25)',
+            borderRadius: 12,
+            display: 'flex',
+            alignItems: 'flex-start',
+            gap: 10,
+            fontSize: 13,
+            color: '#f43f5e',
+            fontWeight: 600,
+            lineHeight: 1.45,
+            animation: 'fadeIn 0.2s ease-out'
+          }}>
+            <span style={{ fontSize: 16 }}>⚠️</span>
+            <div>
+              <strong style={{ display: 'block', marginBottom: 2, fontSize: 14 }}>Media Legitimacy Block</strong>
+              This upload was flagged as a {aiResult.originalityStatus.replace('_', ' ')}. To protect the platform against fake/spam reports, submissions containing non-authentic media are strictly blocked. Please go back and capture an original image in-situ.
+            </div>
+          </div>
+        )}
       </div>
     );
   };
@@ -1171,7 +1208,7 @@ export default function SubmitPost() {
         {step < 4 ? (
           <button
             type="button"
-            onClick={() => canProceed() ? setStep(s => s + 1) : toast.error(step === 2 ? 'Pin a location on the map first.' : 'Fill in title and description.')}
+            onClick={() => canProceed() ? setStep(s => s + 1) : toast.error(step === 2 ? 'Pin a location on the map first.' : step === 3 ? 'At least one photo proof is required.' : 'Fill in title and description.')}
             className="btn btn-primary"
             style={{ flex: 1 }}
           >
@@ -1181,9 +1218,16 @@ export default function SubmitPost() {
           <button
             type="button"
             onClick={handleSubmit}
-            disabled={submitting}
+            disabled={submitting || isSubmitDisabled()}
             className="btn btn-primary"
-            style={{ flex: 1 }}
+            style={{ 
+              flex: 1, 
+              opacity: isSubmitDisabled() ? 0.55 : 1,
+              cursor: isSubmitDisabled() ? 'not-allowed' : 'pointer',
+              background: isSubmitDisabled() ? '#374151' : undefined,
+              borderColor: isSubmitDisabled() ? '#4b5563' : undefined,
+              color: isSubmitDisabled() ? '#9ca3af' : undefined
+            }}
           >
             {submitting ? (
               <><Loader2 size={16} style={{ animation: 'spin 0.8s linear infinite' }} /> Filing Report...</>
