@@ -1,19 +1,11 @@
 import axios from 'axios';
 
-const getApiUrl = () => {
-  if (import.meta.env.VITE_API_URL) {
-    return import.meta.env.VITE_API_URL;
-  }
-  if (typeof window !== 'undefined') {
-    const hostname = window.location.hostname;
-    if (hostname === 'localhost' || hostname === '127.0.0.1') {
-      return 'http://localhost:5000/api';
-    }
-  }
-  return 'https://civic-24jv.onrender.com/api';
-};
+// import.meta.env.DEV is true when running `npm run dev`, false in production build
+const API_URL = import.meta.env.DEV
+  ? import.meta.env.VITE_API_URL_DEV   // → http://localhost:5000/api
+  : import.meta.env.VITE_API_URL_PROD; // → https://civic-24jv.onrender.com/api
 
-const API_URL = getApiUrl();
+console.log(`🌐 API → ${API_URL}`);
 
 const api = axios.create({
   baseURL: API_URL,

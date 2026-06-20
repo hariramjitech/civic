@@ -1,19 +1,11 @@
 import { io } from 'socket.io-client';
 
-const getSocketUrl = () => {
-  if (import.meta.env.VITE_SOCKET_URL) {
-    return import.meta.env.VITE_SOCKET_URL;
-  }
-  if (typeof window !== 'undefined') {
-    const hostname = window.location.hostname;
-    if (hostname === 'localhost' || hostname === '127.0.0.1') {
-      return 'http://localhost:5000';
-    }
-  }
-  return 'https://civic-24jv.onrender.com';
-};
+// import.meta.env.DEV is true when running `npm run dev`, false in production build
+const SOCKET_URL = import.meta.env.DEV
+  ? import.meta.env.VITE_SOCKET_URL_DEV   // → http://localhost:5000
+  : import.meta.env.VITE_SOCKET_URL_PROD; // → https://civic-24jv.onrender.com
 
-const SOCKET_URL = getSocketUrl();
+console.log(`🔌 Socket → ${SOCKET_URL}`);
 
 let socket = null;
 
@@ -26,7 +18,7 @@ export const connectSocket = (userId) => {
       transports: ['websocket', 'polling'],
       autoConnect: true,
     });
-    console.log('🔌 Socket connection initialized for:', userId);
+    console.log('🔌 Socket connection initialized for:', userId, '→', SOCKET_URL);
   }
   return socket;
 };
