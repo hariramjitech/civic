@@ -1,7 +1,16 @@
 import axios from 'axios';
 
 const getApiUrl = () => {
-  return import.meta.env.VITE_API_URL || 'https://civic-24jv.onrender.com/api';
+  if (import.meta.env.VITE_API_URL) {
+    return import.meta.env.VITE_API_URL;
+  }
+  if (typeof window !== 'undefined') {
+    const hostname = window.location.hostname;
+    if (hostname === 'localhost' || hostname === '127.0.0.1') {
+      return 'http://localhost:5000/api';
+    }
+  }
+  return 'https://civic-24jv.onrender.com/api';
 };
 
 const API_URL = getApiUrl();
