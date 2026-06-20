@@ -843,7 +843,7 @@ router.delete('/rooms/:id', requireAuth, attachUser, asyncHandler(async (req, re
 // ═══════════════════════════════════════════
 
 // POST /api/ai/classify — classify image(s)
-router.post('/api/ai/classify',
+router.post('/ai/classify',
   requireAuth, attachUser, aiLimiter,
   upload.any(),
   asyncHandler(async (req, res) => {
@@ -925,7 +925,7 @@ Photo GPS: ${imageMetadata.hasGPS ? `Lat: ${imageMetadata.exifGPS.lat}, Lng: ${i
 );
 
 // POST /api/ai/rewrite — rewrite complaint description for clarity and professionalism
-router.post('/api/ai/rewrite',
+router.post('/ai/rewrite',
   requireAuth, attachUser, aiLimiter,
   asyncHandler(async (req, res) => {
     const { description } = req.body;
