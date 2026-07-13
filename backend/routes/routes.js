@@ -775,7 +775,11 @@ router.get('/rooms/:id', requireAuth, attachUser, asyncHandler(async (req, res) 
   const room = await ChatRoom.findOne({ _id: req.params.id, isActive: true });
   if (!room) return res.status(404).json({ error: 'Room not found' });
 
-  const messages = await Message.find({ roomId: room._id, isDeleted: false })
+  const messageQuery = room.type === 'discussion'
+    ? { roomId: room._id }
+    : { roomId: room._id, isDeleted: false };
+
+  const messages = await Message.find(messageQuery)
     .sort({ createdAt: -1 })
     .limit(50)
     .lean();
@@ -800,16 +804,19 @@ router.post('/rooms/:id/join', requireAuth, attachUser, asyncHandler(async (req,
   res.json({ success: true, memberCount: room.memberCount });
 }));
 
-// POST /api/rooms/:id/leave — leave a room (ephemeral: delete user's messages)
+// POST /api/rooms/:id/leave — leave a room
 router.post('/rooms/:id/leave', requireAuth, attachUser, asyncHandler(async (req, res) => {
   const clerkId = req.user.clerkId;
   const alias = generateChatAlias(clerkId, req.params.id);
+  const room = await ChatRoom.findById(req.params.id).lean();
 
-  // Delete user's messages from this room (ephemeral policy)
-  await Message.updateMany(
-    { roomId: req.params.id, senderAlias: alias },
-    { isDeleted: true }
-  );
+  // Strike rooms keep ephemeral cleanup; discussion rooms preserve history.
+  if (room?.type === 'strike') {
+    await Message.updateMany(
+      { roomId: req.params.id, senderAlias: alias },
+      { isDeleted: true }
+    );
+  }
 
   // Remove from members
   await ChatRoom.findByIdAndUpdate(req.params.id, {

@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { useAuth, useUser } from '@clerk/clerk-react';
 import api, { setAuthToken, setGetTokenFn } from '../lib/api';
-import { connectSocket, disconnectSocket, getSocket } from '../lib/socket';
+import { connectSocket, disconnectSocket } from '../lib/socket';
 import toast from 'react-hot-toast';
 
 const CivicContext = createContext(null);
@@ -13,20 +13,53 @@ export const CivicProvider = ({ children }) => {
   const [loadingProfile, setLoadingProfile] = useState(true);
   const [socket, setSocket] = useState(null);
 
-  const fetchProfile = async () => {
+  const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+  const waitForAuthToken = async (attempts = 8, delayMs = 250) => {
+    for (let i = 0; i < attempts; i += 1) {
+      try {
+        const token = await getToken?.();
+        if (token) return token;
+      } catch (err) {
+        console.warn('Token not ready yet:', err);
+      }
+
+      await sleep(delayMs);
+    }
+
+    return null;
+  };
+
+  const fetchProfile = async ({ retries = 2, retryDelay = 600 } = {}) => {
     try {
       setLoadingProfile(true);
-      const res = await api.get('/auth/me');
-      setUserProfile(res.data);
-      
-      // Initialize socket once we have the user profile
-      const sk = connectSocket(userId || res.data.clerkId);
-      setSocket(sk);
+      await waitForAuthToken();
+
+      let lastErr = null;
+      for (let attempt = 0; attempt <= retries; attempt += 1) {
+        try {
+          const res = await api.get('/auth/me');
+          setUserProfile(res.data);
+          lastErr = null;
+          break;
+        } catch (err) {
+          lastErr = err;
+          if (err.response?.status !== 401 || attempt === retries) {
+            throw err;
+          }
+          await sleep(retryDelay);
+          await waitForAuthToken(4, 200);
+        }
+      }
+
+      if (lastErr) {
+        throw lastErr;
+      }
     } catch (err) {
       console.error('Failed to sync profile with database:', err);
-      // Soft fail, user may not be in DB yet or server is slow
+      // Soft fail, user may not be in DB yet or the session is still hydrating.
       if (err.response?.status === 401) {
-        toast.error('Session expired. Please sign in again.');
+        setUserProfile(null);
       }
     } finally {
       setLoadingProfile(false);
@@ -43,10 +76,12 @@ export const CivicProvider = ({ children }) => {
         try {
           // Register the live getToken fn so interceptor always gets a fresh JWT
           setGetTokenFn(getToken);
+          await waitForAuthToken();
+          const sk = connectSocket(userId);
+          setSocket(sk);
           await fetchProfile();
         } catch (err) {
           console.error('Failed to sync Clerk token:', err);
-          setLoadingProfile(false);
         }
       } else {
         setUserProfile(null);

@@ -10,7 +10,21 @@ console.log(`🔌 Socket → ${SOCKET_URL}`);
 let socket = null;
 
 export const connectSocket = (userId) => {
-  if (!socket && userId) {
+  if (!userId) return null;
+
+  if (socket) {
+    if (socket.auth?.userId !== userId) {
+      socket.disconnect();
+      socket = null;
+    } else {
+      if (!socket.connected) {
+        socket.connect();
+      }
+      return socket;
+    }
+  }
+
+  if (!socket) {
     socket = io(SOCKET_URL, {
       auth: {
         userId,

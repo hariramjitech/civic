@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useCivic } from '../context/CivicContext';
 import api from '../lib/api';
+import { useLocation } from 'react-router-dom';
 import { MapContainer, TileLayer, Marker } from 'react-leaflet';
 import { 
   Flame, Users, ArrowRight, Shield, Bell, 
@@ -9,7 +10,8 @@ import {
 import toast from 'react-hot-toast';
 
 export default function StrikeRooms() {
-  const { isSignedIn, socket, userProfile, fetchProfile } = useCivic();
+  const { isSignedIn, loadingProfile, socket, userProfile, fetchProfile } = useCivic();
+  const location = useLocation();
   const [rooms, setRooms] = useState([]);
   const [activeRoom, setActiveRoom] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -22,16 +24,33 @@ export default function StrikeRooms() {
   const [inputText, setInputText] = useState('');
   const [userAlias, setUserAlias] = useState('');
   const [memberCount, setMemberCount] = useState(0);
+  const [roomDetailsLoading, setRoomDetailsLoading] = useState(false);
 
   const messagesEndRef = useRef(null);
 
+  const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+  const waitForSession = async (attempts = 12, delayMs = 250) => {
+    for (let i = 0; i < attempts; i += 1) {
+      if (isSignedIn && !loadingProfile) return true;
+      await sleep(delayMs);
+    }
+    return isSignedIn && !loadingProfile;
+  };
+
   const fetchStrikeRooms = async () => {
+    const ready = await waitForSession();
+    if (!ready) return;
+
     try {
       setLoading(true);
       const res = await api.get('/rooms', { params: { type: 'strike' } });
       setRooms(res.data.rooms);
     } catch (err) {
       console.error(err);
+      if (err.response?.status === 401) {
+        return;
+      }
       toast.error('Failed to load strike channels.');
     } finally {
       setLoading(false);
@@ -40,17 +59,67 @@ export default function StrikeRooms() {
 
   useEffect(() => {
     fetchStrikeRooms();
-  }, []);
+  }, [isSignedIn, loadingProfile]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const roomId = params.get('roomId');
+
+    if (!roomId || activeRoom?._id === roomId) return;
+
+    let cancelled = false;
+
+    const loadRoomById = async () => {
+      try {
+        const res = await api.get(`/rooms/${roomId}`);
+        if (cancelled) return;
+
+        setActiveRoom(res.data.room);
+        setMessages(res.data.messages || []);
+        setMemberCount(res.data.room.memberCount || 0);
+      } catch (err) {
+        if (!cancelled) {
+          console.error('Failed to load strike room by id:', err);
+        }
+      }
+    };
+
+    loadRoomById();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [location.search, activeRoom?._id]);
+
+  useEffect(() => {
+    if (!rooms.length) return;
+
+    const params = new URLSearchParams(location.search);
+    const roomId = params.get('roomId');
+    const postId = params.get('postId');
+
+    if (roomId && activeRoom?._id === roomId) return;
+
+    const targetRoom = rooms.find(room =>
+      String(room._id) === String(roomId) ||
+      (postId && String(room.postId) === String(postId))
+    );
+    if (targetRoom && activeRoom?._id !== targetRoom._id) {
+      setActiveRoom(targetRoom);
+    }
+  }, [rooms, location.search, activeRoom?._id]);
 
   // Fetch linked post details when active room changes
   useEffect(() => {
     if (!activeRoom) {
       setLinkedPost(null);
+      setRoomDetailsLoading(false);
       return;
     }
 
     const loadRoomDetails = async () => {
       try {
+        setRoomDetailsLoading(true);
         const res = await api.get(`/rooms/${activeRoom._id}`);
         setMessages(res.data.messages || []);
         setMemberCount(res.data.room.memberCount || 0);
@@ -61,6 +130,8 @@ export default function StrikeRooms() {
         }
       } catch (err) {
         console.error('Failed to load strike room linked post:', err);
+      } finally {
+        setRoomDetailsLoading(false);
       }
     };
     loadRoomDetails();
@@ -310,25 +381,35 @@ export default function StrikeRooms() {
                 {/* Message Log */}
                 <div className="flex-1 p-3 overflow-y-auto space-y-3 bg-gray-950/30">
                   <div className="text-[9px] text-gray-500 text-center uppercase font-bold tracking-widest pb-2 border-b border-gray-900/60">Protest Coordinator Chat</div>
-                  
-                  {messages.map((msg) => {
-                    const isMe = msg.senderAlias === userAlias;
-                    return (
-                      <div 
-                        key={msg._id} 
-                        className={`flex flex-col max-w-[80%] space-y-0.5 ${isMe ? 'ml-auto items-end' : 'items-start'}`}
-                      >
-                        <span className="text-[8px] text-gray-650 font-semibold">{msg.senderAlias || 'Anonymous'}</span>
-                        <div className={`p-2.5 rounded-lg text-xs leading-normal ${
-                          isMe 
-                            ? 'bg-rose-500/10 border border-rose-500/20 text-rose-300 rounded-tr-none' 
-                            : 'bg-gray-900 text-gray-300 border border-gray-850 rounded-tl-none'
-                        }`}>
-                          {msg.text}
-                        </div>
+                  {roomDetailsLoading ? (
+                    <div className="h-full min-h-[220px] flex items-center justify-center">
+                      <div className="flex flex-col items-center gap-3 text-center">
+                        <Loader2 className="w-8 h-8 text-rose-500 animate-spin" />
+                        <p className="text-xs text-gray-500 font-semibold uppercase tracking-wider">
+                          Loading chat room...
+                        </p>
                       </div>
-                    );
-                  })}
+                    </div>
+                  ) : (
+                    messages.map((msg) => {
+                      const isMe = msg.senderAlias === userAlias;
+                      return (
+                        <div
+                          key={msg._id}
+                          className={`flex flex-col max-w-[80%] space-y-0.5 ${isMe ? 'ml-auto items-end' : 'items-start'}`}
+                        >
+                          <span className="text-[8px] text-gray-650 font-semibold">{msg.senderAlias || 'Anonymous'}</span>
+                          <div className={`p-2.5 rounded-lg text-xs leading-normal ${
+                            isMe
+                              ? 'bg-rose-500/10 border border-rose-500/20 text-rose-300 rounded-tr-none'
+                              : 'bg-gray-900 text-gray-300 border border-gray-850 rounded-tl-none'
+                          }`}>
+                            {msg.text}
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
                   <div ref={messagesEndRef} />
                 </div>
 
@@ -343,6 +424,7 @@ export default function StrikeRooms() {
                   />
                   <button
                     type="submit"
+                    disabled={roomDetailsLoading}
                     className="p-2 bg-rose-500 text-gray-900 rounded-lg hover:bg-rose-400"
                   >
                     <Send size={12} />

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useCivic } from '../context/CivicContext';
 import api from '../lib/api';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import {
   Heart, MessageCircle, Flame, MapPin, Search,
   CheckCircle, Clock, Share2, ChevronDown, ChevronUp,
@@ -51,6 +51,7 @@ const SEV_BORDER = {
 
 export default function Feed() {
   const { isSignedIn, role, userProfile, socket } = useCivic();
+  const navigate = useNavigate();
   const [posts, setPosts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [myPostIds, setMyPostIds] = useState(new Set());
@@ -70,6 +71,7 @@ export default function Feed() {
 
   // Accessibility: Speak post details
   const [speakingId, setSpeakingId] = useState(null);
+  const [strikeRoomLoading, setStrikeRoomLoading] = useState({});
 
   const speakPost = (post) => {
     if (!window.speechSynthesis) {
@@ -213,6 +215,34 @@ export default function Feed() {
     } catch (err) {
       const errorMsg = err.response?.data?.error || 'Could not amplify.';
       toast.error(errorMsg);
+    }
+  };
+
+  const handleCreateStrikeRoom = async (post) => {
+    if (!isSignedIn) {
+      toast.error('Please sign in to create a strike room.');
+      return;
+    }
+
+    try {
+      setStrikeRoomLoading(prev => ({ ...prev, [post._id]: true }));
+      const res = await api.post('/rooms', {
+        name: `${post.title} Strike Room`,
+        description: `Live strike coordination for ${post.title}`,
+        type: 'strike',
+        postId: post._id,
+        district: post.district,
+        category: post.category,
+      });
+
+      const room = res.data.room;
+      toast.success(res.data.alreadyExists ? 'Opening existing strike room.' : 'Strike room created.');
+      navigate(`/strikes?roomId=${room._id}`);
+    } catch (err) {
+      const msg = err.response?.data?.error || 'Could not create strike room.';
+      toast.error(msg);
+    } finally {
+      setStrikeRoomLoading(prev => ({ ...prev, [post._id]: false }));
     }
   };
 
@@ -546,6 +576,25 @@ export default function Feed() {
                     >
                       <Flame size={19} strokeWidth={1.5} />
                       <span>{post.intensityScore || 0}</span>
+                    </button>
+
+                    <button
+                      onClick={() => handleCreateStrikeRoom(post)}
+                      disabled={!!strikeRoomLoading[post._id]}
+                      aria-label="Create strike room"
+                      style={{
+                        background: 'none', border: 'none', cursor: 'pointer', padding: '2px',
+                        display: 'flex', alignItems: 'center', gap: 5,
+                        color: 'var(--text-muted)', fontSize: 12, fontWeight: 700,
+                        transition: 'color 0.15s', whiteSpace: 'nowrap',
+                        opacity: strikeRoomLoading[post._id] ? 0.7 : 1,
+                      }}
+                      onMouseEnter={e => e.currentTarget.style.color = '#fb7185'}
+                      onMouseLeave={e => e.currentTarget.style.color = 'var(--text-muted)'}
+                      title="Create or open strike room"
+                    >
+                      <PlusCircle size={18} strokeWidth={1.5} />
+                      <span>{strikeRoomLoading[post._id] ? 'Opening...' : 'Strike'}</span>
                     </button>
                   </div>
  

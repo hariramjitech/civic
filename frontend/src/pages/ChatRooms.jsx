@@ -8,7 +8,7 @@ import {
 import toast from 'react-hot-toast';
 
 export default function ChatRooms() {
-  const { isSignedIn, userProfile, socket } = useCivic();
+  const { isSignedIn, loadingProfile, socket } = useCivic();
   const [rooms, setRooms] = useState([]);
   const [activeRoom, setActiveRoom] = useState(null);
   const [loadingRooms, setLoadingRooms] = useState(true);
@@ -37,36 +37,66 @@ export default function ChatRooms() {
   const messagesEndRef = useRef(null);
   const typingTimeoutRef = useRef(null);
 
+  const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
   const districts = [
     'Chennai', 'Coimbatore', 'Madurai', 'Tiruchirappalli', 'Salem', 
     'Tirunelveli', 'Vellore', 'Thoothukudi', 'Erode', 'Thanjavur'
   ];
 
-  const fetchRooms = async () => {
+  const fetchRooms = async (attempt = 0) => {
+    if (!isSignedIn) return false;
+
     try {
-      setLoadingRooms(true);
       const params = { type: 'discussion' };
       if (districtFilter) params.district = districtFilter;
       const res = await api.get('/rooms', { params });
-      setRooms(res.data.rooms);
+      setRooms(res.data.rooms || []);
+      return true;
     } catch (err) {
       console.error(err);
-      toast.error('Failed to load chat channels.');
-    } finally {
-      setLoadingRooms(false);
+      if (err.response?.status === 401 && attempt < 5) {
+        await sleep(400);
+        return fetchRooms(attempt + 1);
+      }
+      if (err.response?.status !== 401) {
+        toast.error('Failed to load chat channels.');
+      }
+      return false;
     }
   };
 
   useEffect(() => {
-    fetchRooms();
-  }, [districtFilter]);
+    let cancelled = false;
+
+    const load = async () => {
+      if (!isSignedIn) {
+        setLoadingRooms(false);
+        return;
+      }
+
+      setLoadingRooms(true);
+      const ok = await fetchRooms();
+      if (!cancelled) {
+        setLoadingRooms(false);
+      }
+      return ok;
+    };
+
+    load();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [districtFilter, isSignedIn, loadingProfile]);
 
   // Handle Socket Events for Active Room
   useEffect(() => {
     if (!socket || !activeRoom) return;
 
-    // Join room
-    socket.emit('room:join', { roomId: activeRoom._id });
+    const joinRoom = () => {
+      socket.emit('room:join', { roomId: activeRoom._id });
+    };
 
     // Load recent messages
     const fetchRecentMessages = async () => {
@@ -81,17 +111,21 @@ export default function ChatRooms() {
     fetchRecentMessages();
 
     // Listeners
-    socket.on('room:joined', ({ alias }) => {
+    socket.on('room:joined', ({ alias, memberCount: count }) => {
       setUserAlias(alias);
+      if (typeof count === 'number') {
+        setMemberCount(count);
+      }
       console.log('Joined room. Assigned alias:', alias);
     });
 
     socket.on('room:user_joined', ({ alias, memberCount: count }) => {
-      setMemberCount(count);
+      if (typeof count === 'number') setMemberCount(count);
       // Optional: append system log message
     });
 
-    socket.on('room:user_left', ({ alias }) => {
+    socket.on('room:user_left', ({ alias, memberCount: count }) => {
+      if (typeof count === 'number') setMemberCount(count);
       // Optional: append system log
     });
 
@@ -124,8 +158,16 @@ export default function ChatRooms() {
       toast.error(`Message Blocked: ${reason}`);
     });
 
+    // Join immediately if possible, otherwise wait for the socket to connect.
+    if (socket.connected) {
+      joinRoom();
+    } else {
+      socket.on('connect', joinRoom);
+    }
+
     return () => {
       // Cleanup on active room change
+      socket.off('connect', joinRoom);
       socket.emit('room:leave', { roomId: activeRoom._id });
       socket.off('room:joined');
       socket.off('room:user_joined');
@@ -326,10 +368,6 @@ export default function ChatRooms() {
               </div>
 
               <div className="flex items-center space-x-3">
-                <div className="text-[10px] text-gray-400 flex items-center space-x-1 font-semibold uppercase tracking-wider bg-gray-900 px-2.5 py-1 rounded-full border border-gray-800">
-                  <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-ping mr-1" />
-                  <span>{memberCount} active</span>
-                </div>
                 <button
                   onClick={handleLeaveCurrentRoom}
                   className="px-2.5 py-1 rounded bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 text-[10px] uppercase font-bold border border-rose-500/20 transition-all"

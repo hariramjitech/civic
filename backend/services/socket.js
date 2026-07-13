@@ -24,8 +24,19 @@ const initSocket = (io) => {
       socket.join(roomId);
       socket.data = { roomId, clerkId, alias: generateChatAlias(clerkId, roomId) };
 
-      io.to(roomId).emit('room:user_joined', { alias: socket.data.alias, memberCount: room.memberCount });
-      socket.emit('room:joined', { roomId, alias: socket.data.alias });
+      let liveCount = room.memberCount;
+
+      if (room.type === 'discussion') {
+        const updated = await ChatRoom.findOneAndUpdate(
+          { _id: roomId, type: 'discussion' },
+          { $addToSet: { members: clerkId }, $inc: { memberCount: 1 } },
+          { new: true }
+        );
+        if (updated) liveCount = updated.memberCount;
+      }
+
+      io.to(roomId).emit('room:user_joined', { alias: socket.data.alias, memberCount: liveCount });
+      socket.emit('room:joined', { roomId, alias: socket.data.alias, memberCount: liveCount });
     });
 
     // ── SEND MESSAGE ─────────────────────────
@@ -60,8 +71,23 @@ const initSocket = (io) => {
     // ── LEAVE ROOM (ephemeral — delete messages) ──
     socket.on('room:leave', async ({ roomId }) => {
       socket.leave(roomId);
-      await Message.updateMany({ roomId, senderAlias: socket.data.alias }, { isDeleted: true });
-      io.to(roomId).emit('room:user_left', { alias: socket.data.alias });
+      const room = await ChatRoom.findOne({ _id: roomId, isActive: true });
+      if (room?.type === 'strike') {
+        await Message.updateMany({ roomId, senderAlias: socket.data.alias }, { isDeleted: true });
+      }
+      const discussionRoom = await ChatRoom.findOne({ _id: roomId, type: 'discussion', members: clerkId });
+      if (discussionRoom) {
+        const updated = await ChatRoom.findOneAndUpdate(
+          { _id: roomId, type: 'discussion', members: clerkId },
+          { $pull: { members: clerkId }, $inc: { memberCount: -1 } },
+          { new: true }
+        );
+        if (updated) {
+          io.to(roomId).emit('room:user_left', { alias: socket.data.alias, memberCount: updated.memberCount });
+        }
+      } else {
+        io.to(roomId).emit('room:user_left', { alias: socket.data.alias });
+      }
     });
 
     // ── STRIKE ROOM — live member count ─────
@@ -94,8 +120,23 @@ const initSocket = (io) => {
     socket.on('disconnect', async () => {
       const { roomId, alias } = socket.data || {};
       if (roomId && alias) {
-        await Message.updateMany({ roomId, senderAlias: alias }, { isDeleted: true });
-        io.to(roomId).emit('room:user_left', { alias });
+        const room = await ChatRoom.findOne({ _id: roomId, isActive: true });
+        if (room?.type === 'strike') {
+          await Message.updateMany({ roomId, senderAlias: alias }, { isDeleted: true });
+        }
+        const discussionRoom = await ChatRoom.findOne({ _id: roomId, type: 'discussion', members: clerkId });
+        if (discussionRoom) {
+          const updated = await ChatRoom.findOneAndUpdate(
+            { _id: roomId, type: 'discussion', members: clerkId },
+            { $pull: { members: clerkId }, $inc: { memberCount: -1 } },
+            { new: true }
+          );
+          if (updated) {
+            io.to(roomId).emit('room:user_left', { alias, memberCount: updated.memberCount });
+          }
+        } else {
+          io.to(roomId).emit('room:user_left', { alias });
+        }
       }
       console.log(`❌ Socket: ${socket.id} disconnected`);
     });
