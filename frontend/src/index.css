@@ -1,5 +1,6 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Outfit:wght@400;500;600;700;800;900&display=swap');
 @import "tailwindcss";
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
 @import "leaflet/dist/leaflet.css";
 
 /* ─────────────────────────────────────────────────────── */
@@ -10,16 +11,16 @@
   --font-sans: 'Inter', system-ui, sans-serif;
   --font-display: 'Outfit', system-ui, sans-serif;
 
-  /* Background layers - Light Slate (White Theme) by default */
-  --bg-base: #f5f7fa;
-  --bg-surface: #ffffff;
-  --bg-elevated: #edf1f7;
-  --bg-overlay: #e2e8f0;
+  /* Background layers - Glassmorphism Light Theme */
+  --bg-base: transparent;
+  --bg-surface: rgba(255, 255, 255, 0.92);
+  --bg-elevated: rgba(255, 255, 255, 0.84);
+  --bg-overlay: rgba(255, 255, 255, 0.88);
 
   /* Borders */
-  --border-subtle: rgba(15, 23, 42, 0.04);
-  --border-default: rgba(15, 23, 42, 0.08);
-  --border-strong: rgba(15, 23, 42, 0.14);
+  --border-subtle: rgba(255, 255, 255, 0.2);
+  --border-default: rgba(255, 255, 255, 0.35);
+  --border-strong: rgba(255, 255, 255, 0.5);
 
   /* Brand — Teal */
   --teal-50: #f0fdfa;
@@ -61,7 +62,7 @@
   --shadow-lg: 0 16px 40px rgba(15, 23, 42, 0.06), 0 4px 12px rgba(15, 23, 42, 0.03);
   --shadow-teal: 0 8px 24px rgba(13, 148, 136, 0.12);
 
-  --bg-translucent: rgba(255, 255, 255, 0.72);
+  --bg-translucent: rgba(255, 255, 255, 0.45);
 }
 
 @theme {
@@ -85,12 +86,7 @@
   }
 
   body {
-    background-color: var(--bg-base);
-    background-image: 
-      radial-gradient(at 0% 0%, rgba(20, 184, 166, 0.03) 0px, transparent 50%),
-      radial-gradient(at 100% 0%, rgba(124, 58, 237, 0.03) 0px, transparent 50%),
-      radial-gradient(at 50% 100%, rgba(20, 184, 166, 0.02) 0px, transparent 50%);
-    background-attachment: fixed;
+    position: relative;
     color: var(--text-primary);
     font-family: var(--font-sans);
     font-size: 14px;
@@ -98,6 +94,20 @@
     overflow-x: hidden;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+  }
+
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    background-color: #0b221a;
+    background-image: url('/mountain_road_bg.png');
+    background-size: cover;
+    background-position: center top;
+    background-repeat: no-repeat;
+    pointer-events: none;
+    transform: translate3d(0, 0, 0); /* Force GPU acceleration */
   }
 
   h1,
@@ -144,6 +154,8 @@
   border: 1px solid var(--border-default);
   border-radius: 14px;
   box-shadow: var(--shadow-md);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
 }
 
 .card-header {
@@ -160,6 +172,8 @@
   border: 1px solid var(--border-subtle);
   border-radius: 14px;
   box-shadow: var(--shadow-sm);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
 }
 
 .glass-card {
@@ -167,6 +181,8 @@
   border: 1px solid var(--border-subtle);
   border-radius: 12px;
   box-shadow: var(--shadow-sm);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
   transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1), border-color 0.3s ease, box-shadow 0.3s ease;
 }
 
@@ -991,14 +1007,14 @@ html[data-theme='dark'] .leaflet-tile-pane,
 /* 1. Dark Theme Overrides */
 html[data-theme='dark'],
 :root[data-theme='dark'] {
-  --bg-base: #0f172a;
-  --bg-surface: #1e293b;
-  --bg-elevated: #293548;
-  --bg-overlay: #334155;
+  --bg-base: transparent;
+  --bg-surface: rgba(15, 23, 42, 0.92);
+  --bg-elevated: rgba(30, 41, 59, 0.84);
+  --bg-overlay: rgba(51, 65, 85, 0.88);
 
-  --border-subtle: rgba(255, 255, 255, 0.04);
-  --border-default: rgba(255, 255, 255, 0.08);
-  --border-strong: rgba(255, 255, 255, 0.16);
+  --border-subtle: rgba(255, 255, 255, 0.08);
+  --border-default: rgba(255, 255, 255, 0.15);
+  --border-strong: rgba(255, 255, 255, 0.25);
 
   --teal-400: #2dd4bf;
   --teal-500: #14b8a6;
@@ -1034,15 +1050,13 @@ html[data-theme='dark'],
   --shadow-lg: 0 16px 40px rgba(0, 0, 0, 0.5);
   --shadow-teal: 0 8px 24px rgba(20, 184, 166, 0.15);
 
-  --bg-translucent: rgba(15, 23, 42, 0.75);
+  --bg-translucent: rgba(15, 23, 42, 0.45);
 }
 
-html[data-theme='dark'] body,
-:root[data-theme='dark'] body {
-  background-image: 
-    radial-gradient(at 0% 0%, rgba(20, 184, 166, 0.06) 0px, transparent 55%),
-    radial-gradient(at 100% 0%, rgba(124, 58, 237, 0.06) 0px, transparent 55%),
-    radial-gradient(at 50% 100%, rgba(20, 184, 166, 0.03) 0px, transparent 55%);
+html[data-theme='dark'] body::before,
+:root[data-theme='dark'] body::before {
+  background-color: #050d0a;
+  background-image: linear-gradient(rgba(11, 15, 25, 0.75), rgba(11, 15, 25, 0.75)), url('/mountain_road_bg.png');
 }
 
 /* 2. High Contrast Theme Override */
@@ -1240,6 +1254,8 @@ html[data-text-size='xlarge'] h3,
   overflow: hidden;
   margin-bottom: 56px;
   box-shadow: var(--shadow-md);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
 }
 
 @media (max-width: 768px) {

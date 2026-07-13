@@ -1016,6 +1016,13 @@ router.get('/contacts/by-location', requireAuth, asyncHandler(async (req, res) =
 // ANALYTICS
 // ═══════════════════════════════════════════
 
+// GET /api/analytics/public-stats — public stats for landing page
+router.get('/analytics/public-stats', asyncHandler(async (req, res) => {
+  const distinctDistricts = await Post.distinct('district', { isDeleted: false });
+  const count = distinctDistricts.filter(d => d && d !== 'Unknown').length;
+  res.json({ districts: Math.max(25, count) });
+}));
+
 // GET /api/analytics/dashboard — overall stats
 router.get('/analytics/dashboard', requireAuth, attachUser, asyncHandler(async (req, res) => {
   const [

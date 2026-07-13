@@ -76,9 +76,9 @@ const METRICS = [
 ];
 
 const TAMIL_NADU_DISTRICTS = [
-  'Chennai', 'Coimbatore', 'Madurai', 'Tiruchirappalli', 'Salem', 
-  'Tirunelveli', 'Vellore', 'Erode', 'Thoothukudi', 'Kancheepuram', 
-  'Thanjavur', 'Tiruppur', 'Dindigul', 'Namakkal', 'Krishnagiri', 
+  'Chennai', 'Coimbatore', 'Madurai', 'Tiruchirappalli', 'Salem',
+  'Tirunelveli', 'Vellore', 'Erode', 'Thoothukudi', 'Kancheepuram',
+  'Thanjavur', 'Tiruppur', 'Dindigul', 'Namakkal', 'Krishnagiri',
   'Dharmapuri', 'Villupuram', 'Cuddalore'
 ];
 
@@ -224,7 +224,7 @@ export default function Landing() {
     <div className="max-w-5xl mx-auto px-4 pb-16">
 
       {/* ── HERO ── */}
-      <section className="text-center py-16 md:py-20 animate-slideInUp">
+      <section className="text-center py-12 md:py-16 px-6 md:px-12 animate-slideInUp rounded-3xl bg-white/40 dark:bg-slate-950/45 backdrop-blur-md border border-white/20 dark:border-slate-800/40 shadow-xl mb-12 mt-6">
         {/* Platform badge */}
         <div className="inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full border border-[var(--border-strong)] bg-[var(--teal-glow)] text-[var(--teal-500)] text-xs font-semibold uppercase tracking-wider mb-6">
           <ShieldCheck size={13} className="text-[var(--teal-500)]" />
@@ -282,19 +282,19 @@ export default function Landing() {
 
       {/* ── CIVIC & INFRASTRUCTURE INTELLIGENCE HUB ── */}
       <section className="my-16 animate-slideInUp">
-        <div className="text-center mb-10">
+        <div className="text-center mb-10 bg-white/40 dark:bg-slate-950/45 backdrop-blur-md border border-white/20 dark:border-slate-800/40 px-6 py-6 rounded-2xl max-w-2xl mx-auto shadow-md">
           <div className="section-label mb-2">Real-Time Insights</div>
           <h2 className="font-display text-2xl md:text-3xl font-extrabold text-[var(--text-primary)]">
             Civic & Infrastructure Intelligence Hub
           </h2>
-          <p className="text-xs text-[var(--text-secondary)] mt-2 max-w-lg mx-auto">
+          <p className="text-xs text-[var(--text-secondary)] mt-2 leading-relaxed">
             Stay updated with live infrastructure reports, government projects, and local news across Tamil Nadu.
           </p>
         </div>
 
         {/* Dashboard Box */}
         <div className="card p-6 md:p-8 relative overflow-hidden bg-gradient-to-br from-[var(--bg-surface)] to-[var(--bg-elevated)] border border-[var(--border-default)] rounded-2xl shadow-md">
-          
+
           {/* Guest or Logged In without location */}
           {(!isSignedIn || locationStatus === 'idle') && (
             <div>
@@ -341,7 +341,7 @@ export default function Landing() {
                   </div>
                 </div>
               )}
-              
+
               {loadingNews ? (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {[1, 2, 3, 4].map(n => (
@@ -436,30 +436,30 @@ export default function Landing() {
                         </span>
                       </div>
                     </div>
-                    
+
                     {/* Navigation tabs */}
                     <div className="flex flex-wrap gap-1.5 items-center">
-                      <button 
-                        onClick={() => setActiveTab('news')} 
+                      <button
+                        onClick={() => setActiveTab('news')}
                         className={`filter-pill ${activeTab === 'news' ? 'active' : ''}`}
                       >
                         <Newspaper size={12} /> News Updates
                       </button>
-                      <button 
-                        onClick={() => setActiveTab('gov')} 
+                      <button
+                        onClick={() => setActiveTab('gov')}
                         className={`filter-pill ${activeTab === 'gov' ? 'active' : ''}`}
                       >
                         <Building2 size={12} /> Gov Projects
                       </button>
-                      <button 
-                        onClick={() => setActiveTab('posts')} 
+                      <button
+                        onClick={() => setActiveTab('posts')}
                         className={`filter-pill ${activeTab === 'posts' ? 'active' : ''}`}
                       >
                         <Activity size={12} /> Local Alerts
                       </button>
-                      
+
                       <div className="h-4 w-px bg-[var(--border-default)] mx-1 hidden sm:block"></div>
-                      
+
                       {/* Manual switcher dropdown */}
                       <select onChange={handleDistrictChange} value={district} className="text-[11px] font-medium bg-[var(--bg-elevated)] border border-[var(--border-default)] text-[var(--text-secondary)] rounded-lg px-2.5 py-1.5 outline-none cursor-pointer">
                         {TAMIL_NADU_DISTRICTS.map(d => (
@@ -579,8 +579,8 @@ export default function Landing() {
                                       </span>
                                       {proj.sanctioned_cost && (
                                         <span className="text-[10px] font-bold text-[var(--text-primary)] whitespace-nowrap">
-                                          ₹{proj.sanctioned_cost >= 10000000 
-                                            ? `${(proj.sanctioned_cost / 10000000).toFixed(2)} Cr` 
+                                          ₹{proj.sanctioned_cost >= 10000000
+                                            ? `${(proj.sanctioned_cost / 10000000).toFixed(2)} Cr`
                                             : `${(proj.sanctioned_cost / 100000).toFixed(1)} Lakh`
                                           }
                                         </span>
@@ -666,7 +666,7 @@ export default function Landing() {
 
       {/* ── HOW IT WORKS ── */}
       <section className="mb-16">
-        <div className="text-center mb-10">
+        <div className="text-center mb-10 bg-white/40 dark:bg-slate-950/45 backdrop-blur-md border border-white/20 dark:border-slate-800/40 px-6 py-5 rounded-2xl max-w-md mx-auto shadow-md">
           <div className="section-label mb-2">Process</div>
           <h2 className="font-display text-2xl md:text-3xl font-extrabold text-[var(--text-primary)]">
             How CivicTN Works
@@ -704,7 +704,7 @@ export default function Landing() {
 
       {/* ── FEATURE GRID ── */}
       <section className="mb-16">
-        <div className="text-center mb-10">
+        <div className="text-center mb-10 bg-white/40 dark:bg-slate-950/45 backdrop-blur-md border border-white/20 dark:border-slate-800/40 px-6 py-5 rounded-2xl max-w-md mx-auto shadow-md">
           <div className="section-label mb-2">Platform Capabilities</div>
           <h2 className="font-display text-2xl md:text-3xl font-extrabold text-[var(--text-primary)]">
             Built for Impact
