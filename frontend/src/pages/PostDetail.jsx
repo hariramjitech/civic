@@ -219,9 +219,12 @@ export default function PostDetail() {
       setWitnessNote('');
       toast.success(`Nearby witness confirmed (${res.data.witness.distanceMeters}m away).`);
     } catch (err) {
-      const message = err.code === 1
-        ? 'Location permission is required to confirm nearby.'
-        : err.response?.data?.error || 'Could not confirm witness status.';
+      let message = err.response?.data?.error || 'Could not confirm witness status.';
+      if (err.code === 1) {
+        message = 'Location permission is required to confirm nearby.';
+      } else if (err.response?.status === 404 && String(message).includes('/witness')) {
+        message = 'Witness API is not loaded yet. Restart the backend server and try again.';
+      }
       toast.error(message);
     } finally {
       setWitnessLoading(false);

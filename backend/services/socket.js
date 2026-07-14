@@ -17,12 +17,23 @@ const initSocket = (io) => {
     console.log(`🔌 Socket: ${socket.id} connected`);
 
     // ── JOIN ROOM ─────────────────────────────
-    socket.on('room:join', async ({ roomId }) => {
+    socket.on('room:join', async ({ roomId } = {}) => {
+      if (!roomId) {
+        return socket.emit('room:error', { message: 'Room id is required' });
+      }
+
       const room = await ChatRoom.findOne({ _id: roomId, isActive: true });
-      if (!room) return socket.emit('error', { message: 'Room not found' });
+      if (!room) return socket.emit('room:error', { message: 'Room not found' });
 
       socket.join(roomId);
-      socket.data = { roomId, clerkId, alias: generateChatAlias(clerkId, roomId) };
+      const alias = generateChatAlias(clerkId, roomId);
+      socket.data.rooms = {
+        ...(socket.data.rooms || {}),
+        [roomId]: { alias },
+      };
+      socket.data.roomId = roomId;
+      socket.data.clerkId = clerkId;
+      socket.data.alias = alias;
 
       let liveCount = room.memberCount;
 
@@ -35,45 +46,107 @@ const initSocket = (io) => {
         if (updated) liveCount = updated.memberCount;
       }
 
-      io.to(roomId).emit('room:user_joined', { alias: socket.data.alias, memberCount: liveCount });
-      socket.emit('room:joined', { roomId, alias: socket.data.alias, memberCount: liveCount });
+      io.to(roomId).emit('room:user_joined', { roomId, alias, memberCount: liveCount });
+      socket.emit('room:joined', { roomId, alias, memberCount: liveCount });
     });
 
     // ── SEND MESSAGE ─────────────────────────
-    socket.on('message:send', async ({ roomId, text }) => {
-      if (!text?.trim() || text.length > 1000) return;
+    socket.on('message:send', async ({ roomId, text } = {}, ack) => {
+      const hasAck = typeof ack === 'function';
+      const reply = (payload) => {
+        if (hasAck) ack(payload);
+        return payload;
+      };
 
-      // Censor improper words
-      const censoredText = censorText(text.trim());
+      const fail = (error, eventName = 'message:error', eventPayload = {}) => {
+        if (!hasAck) {
+          socket.emit(eventName, {
+            message: error,
+            ...eventPayload,
+          });
+        }
+        return reply({ ok: false, error });
+      };
 
-      const mod = await moderateContent(censoredText);
-      if (!mod.safe) return socket.emit('message:rejected', { reason: mod.reason });
+      try {
+        const cleanText = typeof text === 'string' ? text.trim() : '';
+        if (!roomId) {
+          return fail('Select a room before sending.');
+        }
+        if (!cleanText) {
+          return fail('Message cannot be empty.');
+        }
+        if (cleanText.length > 1000) {
+          return fail('Message is too long.');
+        }
 
-      const msg = await Message.create({
-        roomId,
-        senderAlias: socket.data.alias || generateChatAlias(clerkId, roomId),
-        text: censoredText,
-        type: 'text',
-      });
+        const room = await ChatRoom.findOne({ _id: roomId, isActive: true });
+        if (!room) {
+          return fail('Room not found or inactive.');
+        }
 
-      io.to(roomId).emit('message:new', {
-        _id:         msg._id,
-        senderAlias: msg.senderAlias,
-        text:        msg.text,
-        createdAt:   msg.createdAt,
-      });
+        if (!socket.rooms.has(String(roomId))) {
+          socket.join(roomId);
+        }
+
+        const alias = socket.data.rooms?.[roomId]?.alias || generateChatAlias(clerkId, roomId);
+        socket.data.rooms = {
+          ...(socket.data.rooms || {}),
+          [roomId]: { alias },
+        };
+
+        // Censor improper words before moderation and persistence.
+        const censoredText = censorText(cleanText);
+        const mod = await moderateContent(censoredText);
+        if (!mod.safe) {
+          const reason = mod.reason || 'Message failed moderation.';
+          return fail(reason, 'message:rejected', { reason });
+        }
+
+        const msg = await Message.create({
+          roomId,
+          senderAlias: alias,
+          text: censoredText,
+          type: 'text',
+        });
+
+        const payload = {
+          _id: msg._id,
+          roomId,
+          senderAlias: msg.senderAlias,
+          text: msg.text,
+          createdAt: msg.createdAt,
+        };
+
+        io.to(roomId).emit('message:new', payload);
+        return reply({ ok: true, message: payload });
+      } catch (err) {
+        console.error('Socket message send failed:', err);
+        return fail('Message could not be sent.');
+      }
     });
 
     // ── TYPING INDICATORS ────────────────────
-    socket.on('message:typing',      ({ roomId }) => socket.to(roomId).emit('message:typing',      { alias: socket.data.alias }));
-    socket.on('message:stop_typing', ({ roomId }) => socket.to(roomId).emit('message:stop_typing', { alias: socket.data.alias }));
+    socket.on('message:typing', ({ roomId }) => {
+      if (!roomId) return;
+      const alias = socket.data.rooms?.[roomId]?.alias || socket.data.alias;
+      socket.to(roomId).emit('message:typing', { roomId, alias });
+    });
+
+    socket.on('message:stop_typing', ({ roomId }) => {
+      if (!roomId) return;
+      const alias = socket.data.rooms?.[roomId]?.alias || socket.data.alias;
+      socket.to(roomId).emit('message:stop_typing', { roomId, alias });
+    });
 
     // ── LEAVE ROOM (ephemeral — delete messages) ──
     socket.on('room:leave', async ({ roomId }) => {
+      if (!roomId) return;
       socket.leave(roomId);
+      const alias = socket.data.rooms?.[roomId]?.alias || socket.data.alias;
       const room = await ChatRoom.findOne({ _id: roomId, isActive: true });
       if (room?.type === 'strike') {
-        await Message.updateMany({ roomId, senderAlias: socket.data.alias }, { isDeleted: true });
+        await Message.updateMany({ roomId, senderAlias: alias }, { isDeleted: true });
       }
       const discussionRoom = await ChatRoom.findOne({ _id: roomId, type: 'discussion', members: clerkId });
       if (discussionRoom) {
@@ -83,10 +156,10 @@ const initSocket = (io) => {
           { new: true }
         );
         if (updated) {
-          io.to(roomId).emit('room:user_left', { alias: socket.data.alias, memberCount: updated.memberCount });
+          io.to(roomId).emit('room:user_left', { roomId, alias, memberCount: updated.memberCount });
         }
       } else {
-        io.to(roomId).emit('room:user_left', { alias: socket.data.alias });
+        io.to(roomId).emit('room:user_left', { roomId, alias });
       }
     });
 
@@ -118,8 +191,9 @@ const initSocket = (io) => {
 
     // ── DISCONNECT (ephemeral cleanup) ───────
     socket.on('disconnect', async () => {
-      const { roomId, alias } = socket.data || {};
-      if (roomId && alias) {
+      const joinedRooms = socket.data?.rooms || {};
+      for (const [roomId, roomData] of Object.entries(joinedRooms)) {
+        const alias = roomData?.alias || generateChatAlias(clerkId, roomId);
         const room = await ChatRoom.findOne({ _id: roomId, isActive: true });
         if (room?.type === 'strike') {
           await Message.updateMany({ roomId, senderAlias: alias }, { isDeleted: true });
@@ -129,13 +203,13 @@ const initSocket = (io) => {
           const updated = await ChatRoom.findOneAndUpdate(
             { _id: roomId, type: 'discussion', members: clerkId },
             { $pull: { members: clerkId }, $inc: { memberCount: -1 } },
-            { new: true }
-          );
+          { new: true }
+        );
           if (updated) {
-            io.to(roomId).emit('room:user_left', { alias, memberCount: updated.memberCount });
+            io.to(roomId).emit('room:user_left', { roomId, alias, memberCount: updated.memberCount });
           }
         } else {
-          io.to(roomId).emit('room:user_left', { alias });
+          io.to(roomId).emit('room:user_left', { roomId, alias });
         }
       }
       console.log(`❌ Socket: ${socket.id} disconnected`);

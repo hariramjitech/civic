@@ -110,31 +110,33 @@ export default function ChatRooms() {
     };
     fetchRecentMessages();
 
-    // Listeners
-    socket.on('room:joined', ({ alias, memberCount: count }) => {
+    const handleRoomJoined = ({ roomId, alias, memberCount: count }) => {
+      if (roomId && roomId !== activeRoom._id) return;
       setUserAlias(alias);
       if (typeof count === 'number') {
         setMemberCount(count);
       }
       console.log('Joined room. Assigned alias:', alias);
-    });
+    };
 
-    socket.on('room:user_joined', ({ alias, memberCount: count }) => {
+    const handleUserJoined = ({ roomId, memberCount: count }) => {
+      if (roomId && roomId !== activeRoom._id) return;
       if (typeof count === 'number') setMemberCount(count);
-      // Optional: append system log message
-    });
+    };
 
-    socket.on('room:user_left', ({ alias, memberCount: count }) => {
+    const handleUserLeft = ({ roomId, memberCount: count }) => {
+      if (roomId && roomId !== activeRoom._id) return;
       if (typeof count === 'number') setMemberCount(count);
-      // Optional: append system log
-    });
+    };
 
-    socket.on('message:new', (msg) => {
+    const handleNewMessage = (msg) => {
+      if (msg.roomId && msg.roomId !== activeRoom._id) return;
       setMessages((prev) => [...prev, msg]);
       scrollToBottom();
-    });
+    };
 
-    socket.on('message:typing', ({ alias }) => {
+    const handleTyping = ({ roomId, alias }) => {
+      if (roomId && roomId !== activeRoom._id) return;
       if (alias) {
         setTypingUsers((prev) => {
           const next = new Set(prev);
@@ -142,9 +144,10 @@ export default function ChatRooms() {
           return next;
         });
       }
-    });
+    };
 
-    socket.on('message:stop_typing', ({ alias }) => {
+    const handleStopTyping = ({ roomId, alias }) => {
+      if (roomId && roomId !== activeRoom._id) return;
       if (alias) {
         setTypingUsers((prev) => {
           const next = new Set(prev);
@@ -152,11 +155,29 @@ export default function ChatRooms() {
           return next;
         });
       }
-    });
+    };
 
-    socket.on('message:rejected', ({ reason }) => {
+    const handleRejected = ({ reason }) => {
       toast.error(`Message Blocked: ${reason}`);
-    });
+    };
+
+    const handleMessageError = ({ message }) => {
+      toast.error(message || 'Message could not be sent.');
+    };
+
+    const handleRoomError = ({ message }) => {
+      toast.error(message || 'Could not join chat room.');
+    };
+
+    socket.on('room:joined', handleRoomJoined);
+    socket.on('room:user_joined', handleUserJoined);
+    socket.on('room:user_left', handleUserLeft);
+    socket.on('message:new', handleNewMessage);
+    socket.on('message:typing', handleTyping);
+    socket.on('message:stop_typing', handleStopTyping);
+    socket.on('message:rejected', handleRejected);
+    socket.on('message:error', handleMessageError);
+    socket.on('room:error', handleRoomError);
 
     // Join immediately if possible, otherwise wait for the socket to connect.
     if (socket.connected) {
@@ -169,13 +190,15 @@ export default function ChatRooms() {
       // Cleanup on active room change
       socket.off('connect', joinRoom);
       socket.emit('room:leave', { roomId: activeRoom._id });
-      socket.off('room:joined');
-      socket.off('room:user_joined');
-      socket.off('room:user_left');
-      socket.off('message:new');
-      socket.off('message:typing');
-      socket.off('message:stop_typing');
-      socket.off('message:rejected');
+      socket.off('room:joined', handleRoomJoined);
+      socket.off('room:user_joined', handleUserJoined);
+      socket.off('room:user_left', handleUserLeft);
+      socket.off('message:new', handleNewMessage);
+      socket.off('message:typing', handleTyping);
+      socket.off('message:stop_typing', handleStopTyping);
+      socket.off('message:rejected', handleRejected);
+      socket.off('message:error', handleMessageError);
+      socket.off('room:error', handleRoomError);
       setMessages([]);
       setTypingUsers(new Set());
     };
@@ -211,17 +234,31 @@ export default function ChatRooms() {
   const handleSendMessage = (e) => {
     e.preventDefault();
     if (!inputText.trim() || !socket || !activeRoom) return;
+    if (!socket.connected) {
+      toast.error('Chat is reconnecting. Try again in a moment.');
+      return;
+    }
 
     // Send stop typing
     socket.emit('message:stop_typing', { roomId: activeRoom._id });
     if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
 
-    socket.emit('message:send', { 
-      roomId: activeRoom._id, 
-      text: inputText.trim() 
+    socket.timeout(8000).emit('message:send', {
+      roomId: activeRoom._id,
+      text: inputText.trim(),
+    }, (err, response) => {
+      if (err) {
+        toast.error('Message send timed out. Please retry.');
+        return;
+      }
+
+      if (!response?.ok) {
+        toast.error(response?.error || 'Message could not be sent.');
+        return;
+      }
+
+      setInputText('');
     });
-    
-    setInputText('');
   };
 
   const handleCreateRoom = async (e) => {

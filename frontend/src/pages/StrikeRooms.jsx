@@ -173,35 +173,71 @@ export default function StrikeRooms() {
   useEffect(() => {
     if (!socket || !activeRoom) return;
 
-    socket.emit('room:join', { roomId: activeRoom._id });
+    const joinRoom = () => {
+      socket.emit('room:join', { roomId: activeRoom._id });
+    };
 
-    socket.on('room:joined', ({ alias }) => {
+    const handleRoomJoined = ({ roomId, alias, memberCount: count }) => {
+      if (roomId && roomId !== activeRoom._id) return;
       setUserAlias(alias);
-    });
+      if (typeof count === 'number') setMemberCount(count);
+    };
 
-    socket.on('room:user_joined', ({ alias, memberCount: count }) => {
-      setMemberCount(count);
-    });
+    const handleUserJoined = ({ roomId, memberCount: count }) => {
+      if (roomId && roomId !== activeRoom._id) return;
+      if (typeof count === 'number') setMemberCount(count);
+    };
 
     // Global strike counts broadcaster
-    socket.on('strike:count_update', ({ roomId, memberCount: count }) => {
+    const handleStrikeCountUpdate = ({ roomId, memberCount: count }) => {
       setRooms(prev => prev.map(r => r._id === roomId ? { ...r, memberCount: count } : r));
       if (activeRoom?._id === roomId) {
         setMemberCount(count);
       }
-    });
+    };
 
-    socket.on('message:new', (msg) => {
+    const handleNewMessage = (msg) => {
+      if (msg.roomId && msg.roomId !== activeRoom._id) return;
       setMessages((prev) => [...prev, msg]);
       scrollToBottom();
-    });
+    };
+
+    const handleRejected = ({ reason }) => {
+      toast.error(`Message Blocked: ${reason}`);
+    };
+
+    const handleMessageError = ({ message }) => {
+      toast.error(message || 'Message could not be sent.');
+    };
+
+    const handleRoomError = ({ message }) => {
+      toast.error(message || 'Could not join strike room.');
+    };
+
+    socket.on('room:joined', handleRoomJoined);
+    socket.on('room:user_joined', handleUserJoined);
+    socket.on('strike:count_update', handleStrikeCountUpdate);
+    socket.on('message:new', handleNewMessage);
+    socket.on('message:rejected', handleRejected);
+    socket.on('message:error', handleMessageError);
+    socket.on('room:error', handleRoomError);
+
+    if (socket.connected) {
+      joinRoom();
+    } else {
+      socket.on('connect', joinRoom);
+    }
 
     return () => {
+      socket.off('connect', joinRoom);
       socket.emit('room:leave', { roomId: activeRoom._id });
-      socket.off('room:joined');
-      socket.off('room:user_joined');
-      socket.off('strike:count_update');
-      socket.off('message:new');
+      socket.off('room:joined', handleRoomJoined);
+      socket.off('room:user_joined', handleUserJoined);
+      socket.off('strike:count_update', handleStrikeCountUpdate);
+      socket.off('message:new', handleNewMessage);
+      socket.off('message:rejected', handleRejected);
+      socket.off('message:error', handleMessageError);
+      socket.off('room:error', handleRoomError);
     };
   }, [activeRoom, socket]);
 
@@ -218,12 +254,27 @@ export default function StrikeRooms() {
   const handleSendMessage = (e) => {
     e.preventDefault();
     if (!inputText.trim() || !socket || !activeRoom) return;
+    if (!socket.connected) {
+      toast.error('Chat is reconnecting. Try again in a moment.');
+      return;
+    }
 
-    socket.emit('message:send', { 
-      roomId: activeRoom._id, 
-      text: inputText.trim() 
+    socket.timeout(8000).emit('message:send', {
+      roomId: activeRoom._id,
+      text: inputText.trim(),
+    }, (err, response) => {
+      if (err) {
+        toast.error('Message send timed out. Please retry.');
+        return;
+      }
+
+      if (!response?.ok) {
+        toast.error(response?.error || 'Message could not be sent.');
+        return;
+      }
+
+      setInputText('');
     });
-    setInputText('');
   };
 
   const handleJoinStrike = async () => {
