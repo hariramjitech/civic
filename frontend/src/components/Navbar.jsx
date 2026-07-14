@@ -3,7 +3,7 @@ import { Link, useLocation } from 'react-router-dom';
 import { UserButton, SignedIn, SignedOut, SignInButton } from '@clerk/clerk-react';
 import {
   Megaphone, Map, MessageSquare, Flame,
-  PlusCircle, User, Shield, Menu, X, Bell
+  PlusCircle, User, Shield, Menu, X
 } from 'lucide-react';
 
 export default function Navbar({ role }) {
@@ -78,13 +78,6 @@ export default function Navbar({ role }) {
           {/* Right Side — Auth */}
           <div className="flex items-center gap-2.5 flex-shrink-0">
             <SignedIn>
-              {/* Notification bell — UI only */}
-              <div className="relative hidden lg:block">
-                <button className="bg-[var(--bg-elevated)] hover:bg-[var(--bg-overlay)] border border-[var(--border-subtle)] rounded-xl p-2 text-[var(--text-secondary)] hover:text-[var(--text-primary)] cursor-pointer flex items-center transition-colors duration-150">
-                  <Bell size={14} />
-                </button>
-              </div>
-
               {/* Role chip + avatar */}
               <div className="hidden lg:flex items-center gap-2 bg-[var(--bg-elevated)] border border-[var(--border-subtle)] rounded-full py-1 pr-2.5 pl-1.5">
                 {role && role !== 'citizen' && (

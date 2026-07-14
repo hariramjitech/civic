@@ -9,6 +9,38 @@ import {
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
+function renderMarkdownText(text = '') {
+  const lines = String(text).split(/\n+/).filter(Boolean);
+  const boldPattern = /\*\*(.+?)\*\*/g;
+
+  return lines.map((line, lineIndex) => {
+    const parts = [];
+    let lastIndex = 0;
+    let match;
+
+    while ((match = boldPattern.exec(line)) !== null) {
+      if (match.index > lastIndex) {
+        parts.push(line.slice(lastIndex, match.index));
+      }
+      parts.push(<strong key={`b-${lineIndex}-${match.index}`}>{match[1]}</strong>);
+      lastIndex = match.index + match[0].length;
+    }
+
+    if (lastIndex < line.length) {
+      parts.push(line.slice(lastIndex));
+    }
+
+    return (
+      <span key={`line-${lineIndex}`}>
+        {parts.map((part, partIndex) =>
+          typeof part === 'string' ? <React.Fragment key={`t-${lineIndex}-${partIndex}`}>{part}</React.Fragment> : part
+        )}
+        {lineIndex < lines.length - 1 && <br />}
+      </span>
+    );
+  });
+}
+
 export default function StrikeRooms() {
   const { isSignedIn, loadingProfile, socket, userProfile, fetchProfile } = useCivic();
   const location = useLocation();
@@ -304,9 +336,6 @@ export default function StrikeRooms() {
                     Protest Strike
                   </span>
                 </div>
-                {linkedPost && (
-                  <p className="text-[10px] text-gray-400 truncate max-w-sm sm:max-w-md">{linkedPost.description}</p>
-                )}
               </div>
 
               <div className="flex items-center space-x-2.5">

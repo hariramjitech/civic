@@ -261,13 +261,23 @@ export default function SubmitPost() {
   const canProceed = () => {
     if (step === 1) return title.trim() && description.trim();
     if (step === 2) return !!position;
-    if (step === 3) return selectedFiles.length > 0; // Require image proof
+    if (step === 3) {
+      if (selectedFiles.length === 0) return false;
+      if (aiLoading) return false;
+      if (!aiResult) return false;
+      if (aiResult.originalityStatus && aiResult.originalityStatus !== 'authentic' && aiResult.originalityStatus !== 'unknown') return false;
+      if (aiResult.allImagesRelevant === false) return false;
+      return true;
+    }
     return true;
   };
 
   const isSubmitDisabled = () => {
     if (selectedFiles.length === 0) return true;
     if (aiResult?.originalityStatus && aiResult.originalityStatus !== 'authentic' && aiResult.originalityStatus !== 'unknown') {
+      return true;
+    }
+    if (aiResult?.allImagesRelevant === false) {
       return true;
     }
     return false;
@@ -278,6 +288,11 @@ export default function SubmitPost() {
     if (!title.trim() || !description.trim()) { toast.error('Title and description required.'); return; }
     if (!position) { toast.error('Please pin the issue location.'); return; }
     
+    if (aiResult?.allImagesRelevant === false) {
+      toast.error(`Submission blocked: ${aiResult.relevanceExplanation || 'Uploaded images do not match the reported issue.'}`);
+      return;
+    }
+
     if (isSubmitDisabled()) {
       toast.error('Submission blocked: Non-authentic media detected.');
       return;
@@ -1208,7 +1223,30 @@ export default function SubmitPost() {
         {step < 4 ? (
           <button
             type="button"
-            onClick={() => canProceed() ? setStep(s => s + 1) : toast.error(step === 2 ? 'Pin a location on the map first.' : step === 3 ? 'At least one photo proof is required.' : 'Fill in title and description.')}
+            onClick={() => {
+              if (canProceed()) {
+                setStep(s => s + 1);
+                return;
+              }
+
+              if (step === 1) {
+                toast.error('Fill in title and description.');
+              } else if (step === 2) {
+                toast.error('Pin a location on the map first.');
+              } else if (step === 3) {
+                if (aiLoading) {
+                  toast.error('Wait for AI analysis to finish before continuing.');
+                } else if (selectedFiles.length === 0) {
+                  toast.error('At least one photo proof is required.');
+                } else if (!aiResult) {
+                  toast.error('Run AI analysis on the uploaded image first.');
+                } else if (aiResult.allImagesRelevant === false) {
+                  toast.error(`Submission blocked: ${aiResult.relevanceExplanation || 'Uploaded images do not match the reported issue.'}`);
+                } else {
+                  toast.error('Image must pass AI validation before review.');
+                }
+              }
+            }}
             className="btn btn-primary"
             style={{ flex: 1 }}
           >

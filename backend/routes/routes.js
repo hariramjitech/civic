@@ -359,7 +359,7 @@ GPS Match Status: ${imageMetadata.gpsMatchStatus}`;
     }
 
     // Verify all images are relevant to the civic issue
-    if (aiResult.allImagesRelevant === false) {
+    if (aiResult.allImagesRelevant !== true) {
       return res.status(400).json({
         error: `Relevance check failed: ${aiResult.relevanceExplanation || 'One or more uploaded images do not appear relevant to the described civic issue.'}`,
         code: 'IRRELEVANT_IMAGE'

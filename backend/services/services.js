@@ -98,7 +98,7 @@ const classifyIssue = async (images, description = '', metadataContext = '') => 
     }
 
     const prompt = `You are a civic issue classifier, forensic image validator, and municipal assistant for Tamil Nadu, India.
-Analyze the uploaded infrastructure/civic problem image(s).
+Analyze the uploaded infrastructure/civic problem image(s). The images must show the actual civic issue or direct evidence of it; do not treat unrelated people, offices, selfies, group photos, ceremonies, landscapes, or generic street scenes as relevant just because they were taken nearby.
 
 1. Classify into ONE category:
 roads | sanitation | water | electricity | municipal | other
@@ -112,7 +112,7 @@ Provide:
 - originalityAnalysis: A short, 1-2 sentence explanation of your assessment.
 
 4. Verify relevance:
-Ensure that ALL uploaded images are relevant to the infrastructure/civic problem described in the user description. If any image is irrelevant, completely unrelated, or inappropriate (e.g. random pet photo, meme, text document, or food picture that has nothing to do with the civic issue), set "allImagesRelevant" to false and provide a clear explanation in "relevanceExplanation". Otherwise, set "allImagesRelevant" to true and leave "relevanceExplanation" empty.
+Ensure that ALL uploaded images are relevant to the infrastructure/civic problem described in the user description. If any image is irrelevant, completely unrelated, or inappropriate (e.g. random pet photo, meme, text document, food picture, office group photo, ceremony photo, or generic portrait that does not show the civic issue), set "allImagesRelevant" to false and provide a clear explanation in "relevanceExplanation". Otherwise, set "allImagesRelevant" to true and leave "relevanceExplanation" empty.
 
 Respond ONLY with valid JSON (no markdown, no code blocks, no backticks):
 {

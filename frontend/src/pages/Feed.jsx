@@ -49,6 +49,38 @@ const SEV_BORDER = {
   low: 'var(--sev-low)',
 };
 
+function renderMarkdownText(text = '') {
+  const lines = String(text).split(/\n+/).filter(Boolean);
+  const boldPattern = /\*\*(.+?)\*\*/g;
+
+  return lines.map((line, lineIndex) => {
+    const parts = [];
+    let lastIndex = 0;
+    let match;
+
+    while ((match = boldPattern.exec(line)) !== null) {
+      if (match.index > lastIndex) {
+        parts.push(line.slice(lastIndex, match.index));
+      }
+      parts.push(<strong key={`b-${lineIndex}-${match.index}`}>{match[1]}</strong>);
+      lastIndex = match.index + match[0].length;
+    }
+
+    if (lastIndex < line.length) {
+      parts.push(line.slice(lastIndex));
+    }
+
+    return (
+      <span key={`line-${lineIndex}`}>
+        {parts.map((part, partIndex) =>
+          typeof part === 'string' ? <React.Fragment key={`t-${lineIndex}-${partIndex}`}>{part}</React.Fragment> : part
+        )}
+        {lineIndex < lines.length - 1 && <br />}
+      </span>
+    );
+  });
+}
+
 export default function Feed() {
   const { isSignedIn, role, userProfile, socket } = useCivic();
   const navigate = useNavigate();
@@ -637,7 +669,7 @@ export default function Feed() {
                     >
                       {post.title}
                     </Link>
-                    {post.description}
+                    {renderMarkdownText(post.description)}
                   </p>
 
                   {/* Tags */}
