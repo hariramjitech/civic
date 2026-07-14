@@ -9,7 +9,7 @@ export default function Layout({ children }) {
   const { role, loadingProfile, isSignedIn } = useCivic();
 
   return (
-    <div className="min-h-screen flex flex-col bg-[var(--bg-base)] text-[var(--text-primary)] transition-colors duration-200">
+    <div className="min-h-screen flex flex-col bg-transparent text-[var(--text-primary)] transition-colors duration-200">
       {/* Subtle ambient gradient */}
       <div className="fixed inset-0 z-0 pointer-events-none overflow-hidden">
         <div className="absolute -top-[20%] left-[30%] w-[600px] h-[600px] rounded-full bg-[radial-gradient(circle,_rgba(20,184,166,0.04)_0%,_transparent_70%)]" />
