@@ -35,6 +35,17 @@ function MapSync({ center, zoom }) {
 const CATEGORIES = ['', 'roads', 'sanitation', 'water', 'electricity', 'municipal', 'other'];
 const SEVERITIES  = ['', 'critical', 'high', 'medium', 'low'];
 
+const getPlainTextPreview = (value = '', maxLength = 100) => {
+  const plain = String(value)
+    .replace(/\*\*(.*?)\*\*/g, '$1')
+    .replace(/\*(.*?)\*/g, '$1')
+    .replace(/[_`#>]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  return plain.length > maxLength ? `${plain.slice(0, maxLength)}...` : plain;
+};
+
 export default function MapView() {
   const [points, setPoints]             = useState([]);
   const [loading, setLoading]           = useState(true);
@@ -226,13 +237,14 @@ export default function MapView() {
             <MapSync center={focus} zoom={zoom} />
             {filtered.map(p => {
               const [lng, lat] = p.location.coordinates;
+              const descriptionPreview = getPlainTextPreview(p.description);
               return (
                 <Marker key={p._id} position={[lat, lng]} icon={createIcon(p.severity)}>
                   <Popup>
                     <div style={{ fontSize: 12, minWidth: 160, fontFamily: 'var(--font-sans)' }}>
                       <div style={{ fontWeight: 700, marginBottom: 4, color: 'var(--text-primary)' }}>{p.title}</div>
                       <p style={{ fontSize: 11, color: 'var(--text-secondary)', lineHeight: 1.5, marginBottom: 8 }}>
-                        {p.description?.slice(0, 100)}{p.description?.length > 100 ? '...' : ''}
+                        {descriptionPreview}
                       </p>
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                         <SeverityBadge severity={p.severity} showIcon={false} />

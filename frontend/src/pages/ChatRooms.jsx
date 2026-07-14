@@ -328,13 +328,13 @@ export default function ChatRooms() {
           {/* Search/Filter Controls */}
           <div className="space-y-2">
             <div className="relative">
-              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-500" size={14} />
+              <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" size={14} />
               <input
                 type="text"
                 placeholder="Search channels..."
                 value={roomSearch}
                 onChange={(e) => setRoomSearch(e.target.value)}
-                className="w-full pl-8 pr-3 py-1.5 text-xs rounded-lg glass-input focus:ring-1 focus:ring-teal-500"
+                className="w-full !pl-10 pr-3 py-1.5 text-xs rounded-lg glass-input focus:ring-1 focus:ring-teal-500"
               />
             </div>
             
