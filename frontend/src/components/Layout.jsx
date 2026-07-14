@@ -45,7 +45,7 @@ export default function Layout({ children }) {
       <Navbar role={isSignedIn ? role : null} />
 
       {/* Main content */}
-      <main id="main-content" className="flex-1 relative z-10 w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 md:py-8">
+      <main id="main-content" className="flex-1 relative z-10 w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-24 md:pt-28 pb-6 md:pb-8">
         {loadingProfile && isSignedIn ? (
           <div className="h-[60vh] flex flex-col items-center justify-center gap-3">
             <Loader2

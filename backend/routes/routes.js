@@ -9,7 +9,7 @@ const express = require('express');
 const crypto = require('crypto');
 const router = express.Router();
 
-const { User, Post, Comment, Poll, ChatRoom, Message, Contact, AuditLog } = require('../models/models');
+const { User, Post, Comment, Poll, ChatRoom, Message, WitnessConfirmation, Contact, AuditLog } = require('../models/models');
 const {
   requireAuth, attachUser, requireRole,
   upload, uploadToCloudinary,
@@ -201,8 +201,11 @@ router.get('/posts/:id', requireAuth, attachUser, asyncHandler(async (req, res) 
   const polls = await Poll.find({ postId: post._id, isActive: true }).lean();
   const strikeRoom = await ChatRoom.findOne({ postId: post._id, type: 'strike', isActive: true })
     .select('name memberCount escalationLevel').lean();
+  const userWitness = await WitnessConfirmation.findOne({ postId: post._id, userId: req.user._id })
+    .select('status note distanceMeters isLocal createdAt')
+    .lean();
 
-  res.json({ post, polls, strikeRoom });
+  res.json({ post, polls, strikeRoom, userWitness });
 }));
 
 // POST /api/posts — create anonymous post
@@ -630,6 +633,95 @@ router.post('/posts/:id/support', requireAuth, attachUser, asyncHandler(async (r
     intensityScore: newScore,
     isLocal,
     distance
+  });
+}));
+
+// POST /api/posts/:id/witness - nearby community confirmation
+router.post('/posts/:id/witness', requireAuth, attachUser, asyncHandler(async (req, res) => {
+  const { lat, lng, note = '', status = 'confirmed' } = req.body;
+  const validStatuses = ['confirmed', 'not_found', 'needs_review'];
+
+  if (!validStatuses.includes(status)) {
+    return res.status(400).json({ error: 'Invalid witness status' });
+  }
+  if (lat === undefined || lng === undefined) {
+    return res.status(400).json({ error: 'Current GPS location is required' });
+  }
+
+  const post = await Post.findOne({ _id: req.params.id, isDeleted: false });
+  if (!post) return res.status(404).json({ error: 'Post not found' });
+  if (!post.location?.coordinates?.length) {
+    return res.status(400).json({ error: 'This report has no pinned location to verify against' });
+  }
+
+  const userLat = parseFloat(lat);
+  const userLng = parseFloat(lng);
+  if (Number.isNaN(userLat) || Number.isNaN(userLng)) {
+    return res.status(400).json({ error: 'Invalid GPS coordinates' });
+  }
+
+  const [postLng, postLat] = post.location.coordinates;
+  const distanceMeters = Math.round(getHaversineDistance(userLat, userLng, postLat, postLng));
+  const isLocal = distanceMeters <= 500;
+
+  if (!isLocal) {
+    return res.status(403).json({
+      error: `You must be within 500m of the report to confirm it. Current distance: ${distanceMeters}m.`,
+      distanceMeters,
+      isLocal: false
+    });
+  }
+
+  const existing = await WitnessConfirmation.findOne({ postId: post._id, userId: req.user._id });
+  if (existing) {
+    return res.status(409).json({
+      error: 'You already submitted a witness confirmation for this report',
+      witness: {
+        status: existing.status,
+        note: existing.note,
+        distanceMeters: existing.distanceMeters,
+        isLocal: existing.isLocal,
+        createdAt: existing.createdAt
+      }
+    });
+  }
+
+  const witness = await WitnessConfirmation.create({
+    postId: post._id,
+    userId: req.user._id,
+    clerkId: req.user.clerkId,
+    status,
+    note: censorText(String(note || '').trim()).slice(0, 300),
+    distanceMeters,
+    isLocal,
+  });
+
+  await Post.findByIdAndUpdate(post._id, {
+    $inc: { witnessCount: 1, localWitnessCount: 1 }
+  });
+  await updateIntensityScore(post._id);
+
+  const updatedPost = await Post.findById(post._id)
+    .select('-anonToken')
+    .populate('attachedContacts', 'department officerName phone email portalUrl')
+    .lean();
+
+  const io = req.app.get('io');
+  if (io) {
+    io.to('feed').emit('feed:post_updated', updatedPost);
+    io.to(`post:${updatedPost._id}`).emit('post:updated', updatedPost);
+  }
+
+  res.status(201).json({
+    success: true,
+    witness: {
+      status: witness.status,
+      note: witness.note,
+      distanceMeters: witness.distanceMeters,
+      isLocal: witness.isLocal,
+      createdAt: witness.createdAt
+    },
+    post: updatedPost
   });
 }));
 

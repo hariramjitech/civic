@@ -308,7 +308,8 @@ const updateIntensityScore = async (postId) => {
     (post.likeCount || 0) + 
     ((post.commentCount || 0) * 1.5) + 
     ((post.supportCount || 0) * 3) + 
-    ((post.localSupportCount || 0) * 15)
+    ((post.localSupportCount || 0) * 15) +
+    ((post.localWitnessCount || 0) * 12)
   ) + baseScore;
   
   // Boosts

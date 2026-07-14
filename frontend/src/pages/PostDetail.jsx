@@ -52,6 +52,8 @@ export default function PostDetail() {
   const [replyText, setReplyText] = useState({});
   const [showReplyForm, setShowReplyForm] = useState({});
   const [activeImg, setActiveImg] = useState(0);
+  const [witnessNote, setWitnessNote] = useState('');
+  const [witnessLoading, setWitnessLoading] = useState(false);
 
   // Accessibility speech state
   const [isSpeaking, setIsSpeaking] = useState(false);
@@ -76,6 +78,7 @@ export default function PostDetail() {
     setIsSpeaking(true);
     window.speechSynthesis.speak(utterance);
   };
+
 
   useEffect(() => {
     return () => {
@@ -181,6 +184,50 @@ export default function PostDetail() {
     }
   };
 
+  const handleWitnessConfirm = async () => {
+    if (!isSignedIn) {
+      toast.error('Sign in to confirm as a witness.');
+      return;
+    }
+    if (!navigator.geolocation) {
+      toast.error('Location access is not supported in this browser.');
+      return;
+    }
+
+    try {
+      setWitnessLoading(true);
+      const position = await new Promise((resolve, reject) => {
+        navigator.geolocation.getCurrentPosition(resolve, reject, {
+          enableHighAccuracy: true,
+          timeout: 8000,
+          maximumAge: 0,
+        });
+      });
+
+      const res = await api.post(`/posts/${id}/witness`, {
+        lat: position.coords.latitude,
+        lng: position.coords.longitude,
+        note: witnessNote.trim(),
+        status: 'confirmed',
+      });
+
+      setData(prev => prev ? {
+        ...prev,
+        post: res.data.post || prev.post,
+        userWitness: res.data.witness,
+      } : prev);
+      setWitnessNote('');
+      toast.success(`Nearby witness confirmed (${res.data.witness.distanceMeters}m away).`);
+    } catch (err) {
+      const message = err.code === 1
+        ? 'Location permission is required to confirm nearby.'
+        : err.response?.data?.error || 'Could not confirm witness status.';
+      toast.error(message);
+    } finally {
+      setWitnessLoading(false);
+    }
+  };
+
   const handleCommentSubmit = async (e, parentId = null) => {
     e.preventDefault();
     const text = parentId ? replyText[parentId] : commentText;
@@ -278,7 +325,7 @@ export default function PostDetail() {
     );
   }
 
-  const { post, polls, strikeRoom } = data;
+  const { post, polls, strikeRoom, userWitness } = data;
   const isOwner = myPostIds.has(post._id);
   const showStatusEditControls = isOwner || ['admin', 'department', 'officer'].includes(role);
 
@@ -354,6 +401,7 @@ export default function PostDetail() {
                 </div>
               </div>
               <p className="text-gray-300 text-sm leading-relaxed whitespace-pre-wrap">{renderMarkdownText(post.description)}</p>
+
             </div>
 
             {/* Location Address */}
@@ -400,6 +448,51 @@ export default function PostDetail() {
                 </button>
               )}
             </div>
+          </div>
+
+          <div className="glass-panel p-5 rounded-2xl space-y-4 border border-teal-500/20 bg-teal-950/5">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h3 className="font-display font-bold text-gray-200 flex items-center gap-2">
+                  <CheckCircle size={17} className="text-teal-400" />
+                  <span>Community Witness</span>
+                </h3>
+                <p className="text-xs text-gray-500 mt-1">
+                  {post.localWitnessCount || 0} nearby confirmations
+                </p>
+              </div>
+              {userWitness && (
+                <span className="text-[10px] uppercase font-extrabold px-2.5 py-1 rounded border bg-emerald-500/10 text-emerald-400 border-emerald-500/20">
+                  Confirmed
+                </span>
+              )}
+            </div>
+
+            {userWitness ? (
+              <div className="p-3 bg-gray-900/40 rounded-xl border border-gray-900/60 text-xs text-gray-300">
+                You confirmed this report from {Math.round(userWitness.distanceMeters || 0)}m away.
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <textarea
+                  value={witnessNote}
+                  onChange={(e) => setWitnessNote(e.target.value)}
+                  maxLength={300}
+                  rows={2}
+                  placeholder="Optional witness note"
+                  className="w-full p-3 text-xs rounded-xl glass-input focus:ring-1 focus:ring-teal-500"
+                />
+                <button
+                  type="button"
+                  onClick={handleWitnessConfirm}
+                  disabled={witnessLoading}
+                  className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-teal-500 hover:bg-teal-400 disabled:bg-gray-800 disabled:text-gray-500 text-gray-950 text-xs font-extrabold uppercase tracking-wider transition-colors"
+                >
+                  {witnessLoading ? <Loader2 size={14} className="animate-spin" /> : <MapPin size={14} />}
+                  <span>{witnessLoading ? 'Checking Location' : 'Verify Near Me'}</span>
+                </button>
+              </div>
+            )}
           </div>
 
           {/* Timeline / Status History */}

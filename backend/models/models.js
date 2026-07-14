@@ -73,6 +73,8 @@ const postSchema = new Schema({
   commentCount: { type: Number, default: 0 },
   supportCount: { type: Number, default: 0 },  // cross-city reports
   localSupportCount: { type: Number, default: 0 }, // verified local reports (within 500m)
+  witnessCount: { type: Number, default: 0 },
+  localWitnessCount: { type: Number, default: 0 },
   intensityScore: { type: Number, default: 0 },   // computed score
 
   // Auto-attached official contacts (populated from Contact collection)
@@ -178,6 +180,25 @@ const messageSchema = new Schema({
 }, { timestamps: true });
 
 // ─────────────────────────────────────────────
+// WITNESS CONFIRMATION (nearby user validates a post)
+// ─────────────────────────────────────────────
+const witnessConfirmationSchema = new Schema({
+  postId: { type: Schema.Types.ObjectId, ref: 'Post', required: true, index: true },
+  userId: { type: Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+  clerkId: { type: String, required: true },
+  status: {
+    type: String,
+    enum: ['confirmed', 'not_found', 'needs_review'],
+    default: 'confirmed'
+  },
+  note: { type: String, maxlength: 300 },
+  distanceMeters: { type: Number, required: true },
+  isLocal: { type: Boolean, default: false },
+}, { timestamps: true });
+
+witnessConfirmationSchema.index({ postId: 1, userId: 1 }, { unique: true });
+
+// ─────────────────────────────────────────────
 // OFFICIAL CONTACT (Tamil Nadu district contacts)
 // ─────────────────────────────────────────────
 const contactSchema = new Schema({
@@ -219,7 +240,8 @@ const Comment = mongoose.model('Comment', commentSchema);
 const Poll = mongoose.model('Poll', pollSchema);
 const ChatRoom = mongoose.model('ChatRoom', chatRoomSchema);
 const Message = mongoose.model('Message', messageSchema);
+const WitnessConfirmation = mongoose.model('WitnessConfirmation', witnessConfirmationSchema);
 const Contact = mongoose.model('Contact', contactSchema);
 const AuditLog = mongoose.model('AuditLog', auditLogSchema);
 
-module.exports = { User, Post, Comment, Poll, ChatRoom, Message, Contact, AuditLog };
+module.exports = { User, Post, Comment, Poll, ChatRoom, Message, WitnessConfirmation, Contact, AuditLog };
