@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { UserButton, SignedIn, SignedOut, SignInButton } from '@clerk/clerk-react';
-import { motion, AnimatePresence } from 'framer-motion';
 import {
   Megaphone, Map, MessageSquare, Flame,
   PlusCircle, User, Shield, Menu, X, ArrowRight
@@ -32,12 +31,7 @@ export default function Navbar({ role }) {
   ];
 
   return (
-    <motion.header
-      initial={{ y: -100, opacity: 0 }}
-      animate={{ y: 0, opacity: 1 }}
-      transition={{ duration: 0.5, ease: 'easeOut' }}
-      className="fixed top-0 left-0 right-0 z-50 flex justify-center px-4 md:px-8 pointer-events-none"
-    >
+    <header className="fixed top-0 left-0 right-0 z-50 flex justify-center px-4 md:px-8 pointer-events-none">
       {/* Floating Pill Container Docked to Top */}
       <div
         className={`w-full max-w-6xl rounded-b-[2rem] bg-white/80 dark:bg-slate-900/80 backdrop-blur-md border-b border-l border-r border-slate-200/80 dark:border-slate-800/80 shadow-[0_12px_40px_rgba(0,0,0,0.08)] pointer-events-auto transition-all duration-300 ${
@@ -57,11 +51,7 @@ export default function Navbar({ role }) {
                 <span>{link.label}</span>
                 {/* Active Indicator Underline */}
                 {active && (
-                  <motion.div
-                    layoutId="activeUnderline"
-                    className="absolute -bottom-1 left-0 right-0 h-0.5 bg-emerald-500 rounded-full"
-                    transition={{ type: 'spring', stiffness: 380, damping: 30 }}
-                  />
+                  <span className="absolute -bottom-1 left-0 right-0 h-0.5 bg-emerald-500 rounded-full" />
                 )}
                 {!active && (
                   <span className="absolute -bottom-1 left-0 w-0 h-0.5 bg-emerald-500/50 transition-all duration-200 group-hover:w-full rounded-full" />
@@ -111,21 +101,17 @@ export default function Navbar({ role }) {
                 />
               </div>
 
-            {/* Green CTA Button: Report Issue */}
-            <motion.div
-              whileHover={{ scale: 1.03 }}
-              whileTap={{ scale: 0.97 }}
-              className="hidden md:block"
-            >
-              <Link
-                to="/submit"
-                className="btn bg-[#5bb974] hover:bg-[#4baf65] text-white font-bold px-5 py-2.5 rounded-full text-xs shadow-sm border border-emerald-400/10 flex items-center gap-1.5 no-underline transition-colors duration-200"
-              >
-                Report Issue
-                <ArrowRight size={13} />
-              </Link>
-            </motion.div>
-          </SignedIn>
+              {/* Green CTA Button: Report Issue */}
+              <div className="hidden md:block">
+                <Link
+                  to="/submit"
+                  className="btn bg-[#5bb974] hover:bg-[#4baf65] text-white font-bold px-5 py-2.5 rounded-full text-xs shadow-sm border border-emerald-400/10 flex items-center gap-1.5 no-underline transition-colors duration-200"
+                >
+                  Report Issue
+                  <ArrowRight size={13} />
+                </Link>
+              </div>
+            </SignedIn>
 
           <SignedOut>
             <SignInButton mode="modal">
@@ -134,14 +120,10 @@ export default function Navbar({ role }) {
               </button>
             </SignInButton>
             <SignInButton mode="modal">
-              <motion.button
-                whileHover={{ scale: 1.03 }}
-                whileTap={{ scale: 0.97 }}
-                className="btn bg-[#5bb974] hover:bg-[#4baf65] text-white rounded-full px-5 py-2.5 text-xs font-bold flex items-center gap-1 cursor-pointer transition-colors duration-200 shadow-sm"
-              >
+              <button className="btn bg-[#5bb974] hover:bg-[#4baf65] text-white rounded-full px-5 py-2.5 text-xs font-bold flex items-center gap-1 cursor-pointer transition-colors duration-200 shadow-sm">
                 Join Platform
                 <ArrowRight size={13} />
-              </motion.button>
+              </button>
             </SignInButton>
           </SignedOut>
 
@@ -157,25 +139,13 @@ export default function Navbar({ role }) {
       </div>
 
       {/* Mobile Drawer (Matches Solidroad White Theme Dropdown) */}
-      <AnimatePresence>
-        {isOpen && (
-          <motion.div
-            initial={{ opacity: 0, y: -20 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -20 }}
-            transition={{ duration: 0.2, ease: 'easeOut' }}
-            className="absolute top-20 left-4 right-4 bg-white/90 dark:bg-slate-900/95 backdrop-blur-lg border border-slate-200/80 dark:border-slate-800 rounded-3xl shadow-xl p-4 space-y-1 pointer-events-auto overflow-hidden"
-          >
+      {isOpen && (
+        <div className="absolute top-20 left-4 right-4 bg-white/90 dark:bg-slate-900/95 backdrop-blur-lg border border-slate-200/80 dark:border-slate-800 rounded-3xl shadow-xl p-4 space-y-1 pointer-events-auto overflow-hidden">
             {links.map((link, idx) => {
               const Icon = link.icon;
               const active = isActive(link.path);
               return (
-                <motion.div
-                  key={link.path}
-                  initial={{ opacity: 0, x: -10 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: idx * 0.04 }}
-                >
+                <div key={link.path}>
                   <Link
                     to={link.path}
                     className={`flex items-center gap-3 px-4 py-2.5 rounded-2xl text-sm font-semibold transition-colors ${
@@ -187,7 +157,7 @@ export default function Navbar({ role }) {
                     <Icon size={14} className={active ? 'text-emerald-500' : 'text-slate-400'} />
                     <span>{link.label}</span>
                   </Link>
-                </motion.div>
+                </div>
               );
             })}
 
@@ -210,9 +180,8 @@ export default function Navbar({ role }) {
                 </Link>
               </div>
             </SignedIn>
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </motion.header>
+        </div>
+      )}
+    </header>
   );
 }
