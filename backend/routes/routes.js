@@ -8,6 +8,7 @@
 const express = require('express');
 const crypto = require('crypto');
 const router = express.Router();
+const cache = require('../services/cache');
 
 const { User, Post, Comment, Poll, ChatRoom, Message, WitnessConfirmation, Contact, AuditLog } = require('../models/models');
 const {
@@ -22,6 +23,7 @@ const {
   generateReport, predictRiskZones,
   reverseGeocode, fetchGovRoadData,
   updateIntensityScore, rewriteComplaint,
+  generateLegalPetition,
   getHaversineDistance, censorText,
 } = require('../services/services');
 
@@ -54,7 +56,7 @@ router.patch('/auth/profile', requireAuth, attachUser, asyncHandler(async (req, 
   const user = await User.findByIdAndUpdate(
     req.user._id,
     { district },
-    { new: true }
+    { returnDocument: 'after' }
   );
   res.json({ success: true, district: user.district });
 }));
@@ -113,6 +115,12 @@ router.get('/posts', requireAuth, attachUser, asyncHandler(async (req, res) => {
     page = 1, limit = 20, district, category, severity, status,
     sort = 'feed', lat, lng, radius = 5000
   } = req.query;
+
+  const cacheKey = `posts:${JSON.stringify(req.query)}`;
+  const cachedData = cache.get(cacheKey);
+  if (cachedData) {
+    return res.json({ ...cachedData, cached: true });
+  }
 
   const query = { isDeleted: false, isDuplicate: false };
   if (district) query.district = district;
@@ -186,7 +194,9 @@ router.get('/posts', requireAuth, attachUser, asyncHandler(async (req, res) => {
     total = await Post.countDocuments(query);
   }
 
-  res.json({ posts, total, page: parseInt(page), pages: Math.ceil(total / limit) });
+  const responseData = { posts, total, page: parseInt(page), pages: Math.ceil(total / limit) };
+  cache.set(cacheKey, responseData, 30000); // cache for 30 seconds
+  res.json(responseData);
 }));
 
 // GET /api/posts/:id — single post detail
@@ -198,7 +208,32 @@ router.get('/posts/:id', requireAuth, attachUser, asyncHandler(async (req, res) 
   if (!post) return res.status(404).json({ error: 'Post not found' });
 
   // Get linked polls & strike room
-  const polls = await Poll.find({ postId: post._id, isActive: true }).lean();
+  const rawPolls = await Poll.find({ postId: post._id, isActive: true }).lean();
+  const user = await User.findById(req.user._id);
+  const polls = rawPolls.map(poll => {
+    let votedOptionIndex = null;
+    if (user && user.votedPolls) {
+      for (const m of user.votedPolls) {
+        if (m instanceof Map) {
+          if (m.has(poll._id.toString())) {
+            votedOptionIndex = parseInt(m.get(poll._id.toString()), 10);
+            break;
+          }
+        } else if (m && typeof m === 'object') {
+          if (poll._id.toString() in m) {
+            votedOptionIndex = parseInt(m[poll._id.toString()], 10);
+            break;
+          }
+        }
+      }
+    }
+    return {
+      ...poll,
+      userVotedOptionIndex: votedOptionIndex,
+      userHasVoted: votedOptionIndex !== null
+    };
+  });
+
   const strikeRoom = await ChatRoom.findOne({ postId: post._id, type: 'strike', isActive: true })
     .select('name memberCount escalationLevel').lean();
   const userWitness = await WitnessConfirmation.findOne({ postId: post._id, userId: req.user._id })
@@ -482,6 +517,8 @@ GPS Match Status: ${imageMetadata.gpsMatchStatus}`;
       io.to('feed').emit('feed:post_created', populated);
     }
 
+    cache.invalidatePattern('posts:');
+    cache.invalidatePattern('analytics:');
     res.status(201).json({ post: populated, aiResult });
   })
 );
@@ -502,6 +539,10 @@ router.patch('/posts/:id/status', requireAuth, attachUser, asyncHandler(async (r
   post.statusHistory.push({ status, note: note || '', updatedAt: new Date() });
   await post.save();
 
+  if (['resolved', 'closed'].includes(status)) {
+    await ChatRoom.updateMany({ postId: post._id, type: 'strike' }, { isActive: false });
+  }
+
   const populated = await Post.findById(post._id)
     .select('-anonToken')
     .populate('attachedContacts', 'department officerName phone email portalUrl')
@@ -513,6 +554,8 @@ router.patch('/posts/:id/status', requireAuth, attachUser, asyncHandler(async (r
     io.to(`post:${populated._id}`).emit('post:updated', populated);
   }
 
+  cache.invalidatePattern('posts:');
+  cache.invalidatePattern('analytics:');
   res.json({ success: true, status: post.status, history: post.statusHistory, post: populated });
 }));
 
@@ -525,12 +568,15 @@ router.delete('/posts/:id', requireAuth, attachUser, asyncHandler(async (req, re
   }
   await Post.findByIdAndUpdate(req.params.id, { isDeleted: true });
   await Comment.updateMany({ postId: req.params.id }, { isDeleted: true });
+  await ChatRoom.updateMany({ postId: req.params.id, type: 'strike' }, { isActive: false });
 
   const io = req.app.get('io');
   if (io) {
     io.to('feed').emit('feed:post_deleted', { postId: req.params.id });
   }
 
+  cache.invalidatePattern('posts:');
+  cache.invalidatePattern('analytics:');
   res.json({ success: true });
 }));
 
@@ -569,6 +615,8 @@ router.post('/posts/:id/like', requireAuth, attachUser, asyncHandler(async (req,
     io.to(`post:${populated._id}`).emit('post:updated', populated);
   }
 
+  cache.invalidatePattern('posts:');
+  cache.invalidatePattern('analytics:');
   res.json({ liked: !alreadyLiked, likeCount: populated.likeCount, intensityScore: populated.intensityScore });
 }));
 
@@ -626,6 +674,8 @@ router.post('/posts/:id/support', requireAuth, attachUser, asyncHandler(async (r
     io.to(`post:${populated._id}`).emit('post:updated', populated);
   }
 
+  cache.invalidatePattern('posts:');
+  cache.invalidatePattern('analytics:');
   res.json({
     success: true,
     supportCount: populated.supportCount,
@@ -712,6 +762,8 @@ router.post('/posts/:id/witness', requireAuth, attachUser, asyncHandler(async (r
     io.to(`post:${updatedPost._id}`).emit('post:updated', updatedPost);
   }
 
+  cache.invalidatePattern('posts:');
+  cache.invalidatePattern('analytics:');
   res.status(201).json({
     success: true,
     witness: {
@@ -739,10 +791,22 @@ router.get('/posts/:id/comments', requireAuth, asyncHandler(async (req, res) => 
     .select('-anonToken')
     .lean();
 
-  // Attach replies
+  // Attach replies and handle legacy fallback aliases
   for (const c of comments) {
+    if (!c.senderAlias) {
+      c.senderAlias = 'Anonymous Citizen';
+      c.isPostAuthor = false;
+      c.creatorRole = 'citizen';
+    }
     c.replies = await Comment.find({ parentId: c._id, isDeleted: false })
       .select('-anonToken').sort({ createdAt: 1 }).lean();
+    for (const r of c.replies) {
+      if (!r.senderAlias) {
+        r.senderAlias = 'Anonymous Citizen';
+        r.isPostAuthor = false;
+        r.creatorRole = 'citizen';
+      }
+    }
   }
 
   res.json({ comments });
@@ -762,12 +826,27 @@ router.post('/posts/:id/comments', requireAuth, attachUser, asyncHandler(async (
   const post = await Post.findOne({ _id: req.params.id, isDeleted: false });
   if (!post) return res.status(404).json({ error: 'Post not found' });
 
+  // Determine if commenter is post author
+  const isPostAuthor = req.user.postTokens?.includes(post.anonToken) || false;
+  
+  // Stable hash per user per post
+  const userHash = crypto.createHash('md5').update(`${req.user._id}-${post._id}`).digest('hex').substring(0, 4).toUpperCase();
+  let senderAlias = `Citizen #${userHash}`;
+  if (isPostAuthor) {
+    senderAlias = `Author (Citizen #${userHash})`;
+  } else if (['admin', 'officer', 'department'].includes(req.user.role)) {
+    senderAlias = `${req.user.role.toUpperCase()} (Citizen #${userHash})`;
+  }
+
   const commentAnonToken = crypto.randomBytes(32).toString('hex');
   const comment = await Comment.create({
     postId: req.params.id,
     anonToken: commentAnonToken,
     text: text.trim(),
     parentId: parentId || null,
+    senderAlias,
+    isPostAuthor,
+    creatorRole: req.user.role || 'citizen',
   });
 
   await Post.updateOne({ _id: req.params.id, isDeleted: false }, { $inc: { commentCount: 1 } });
@@ -778,6 +857,8 @@ router.post('/posts/:id/comments', requireAuth, attachUser, asyncHandler(async (
     $addToSet: { commentTokens: commentAnonToken }
   });
 
+  cache.invalidatePattern('posts:');
+  cache.invalidatePattern('analytics:');
   res.status(201).json({ comment: { ...comment.toObject(), anonToken: undefined } });
 }));
 
@@ -798,6 +879,8 @@ router.post('/posts/:id/polls', requireAuth, attachUser, asyncHandler(async (req
     expiresAt: new Date(Date.now() + expiresInHours * 3600 * 1000),
   });
 
+  cache.invalidatePattern('posts:');
+  cache.invalidatePattern('analytics:');
   res.status(201).json({ poll });
 }));
 
@@ -823,6 +906,8 @@ router.post('/polls/:pollId/vote', requireAuth, attachUser, asyncHandler(async (
   await User.findByIdAndUpdate(req.user._id, { $push: { votedPolls: voteMap } });
   await updateIntensityScore(poll.postId);
 
+  cache.invalidatePattern('posts:');
+  cache.invalidatePattern('analytics:');
   res.json({ poll });
 }));
 
@@ -834,6 +919,12 @@ router.post('/polls/:pollId/vote', requireAuth, attachUser, asyncHandler(async (
 // GET /api/rooms — list rooms
 router.get('/rooms', requireAuth, asyncHandler(async (req, res) => {
   const { type, district } = req.query;
+  const cacheKey = `rooms:${type || ''}:${district || ''}`;
+  const cachedData = cache.get(cacheKey);
+  if (cachedData) {
+    return res.json({ rooms: cachedData, cached: true });
+  }
+
   const query = { isActive: true };
   if (type) query.type = type;
   if (district) query.district = district;
@@ -841,6 +932,7 @@ router.get('/rooms', requireAuth, asyncHandler(async (req, res) => {
   const rooms = await ChatRoom.find(query)
     .sort({ memberCount: -1, createdAt: -1 })
     .lean();
+  cache.set(cacheKey, rooms, 60000); // 1 minute cache
   res.json({ rooms });
 }));
 
@@ -859,6 +951,7 @@ router.post('/rooms', requireAuth, attachUser, asyncHandler(async (req, res) => 
     name, description, type, postId, district, category,
     createdBy: req.user.clerkId,
   });
+  cache.invalidatePattern('rooms:');
   res.status(201).json({ room });
 }));
 
@@ -866,6 +959,15 @@ router.post('/rooms', requireAuth, attachUser, asyncHandler(async (req, res) => 
 router.get('/rooms/:id', requireAuth, attachUser, asyncHandler(async (req, res) => {
   const room = await ChatRoom.findOne({ _id: req.params.id, isActive: true });
   if (!room) return res.status(404).json({ error: 'Room not found' });
+
+  // Self-healing: if linked post is deleted or missing, deactivate room
+  if (room.type === 'strike' && room.postId) {
+    const post = await Post.findOne({ _id: room.postId, isDeleted: false });
+    if (!post) {
+      await ChatRoom.findByIdAndUpdate(room._id, { isActive: false });
+      return res.status(404).json({ error: 'Linked post not found, protest room deactivated' });
+    }
+  }
 
   const messageQuery = room.type === 'discussion'
     ? { roomId: room._id }
@@ -882,17 +984,26 @@ router.get('/rooms/:id', requireAuth, attachUser, asyncHandler(async (req, res) 
 // POST /api/rooms/:id/join — join a strike room
 router.post('/rooms/:id/join', requireAuth, attachUser, asyncHandler(async (req, res) => {
   const clerkId = req.user.clerkId;
-  const room = await ChatRoom.findOneAndUpdate(
-    { _id: req.params.id, isActive: true, members: { $ne: clerkId } },
+  const roomExists = await ChatRoom.findOne({ _id: req.params.id, isActive: true });
+  if (!roomExists) return res.status(404).json({ error: 'Protest room not found' });
+
+  if (roomExists.members?.includes(clerkId)) {
+    // Add to user profile just in case it got out of sync
+    await User.findByIdAndUpdate(req.user._id, { $addToSet: { joinedRooms: roomExists._id } });
+    return res.json({ success: true, alreadyJoined: true, memberCount: roomExists.memberCount });
+  }
+
+  const room = await ChatRoom.findByIdAndUpdate(
+    req.params.id,
     { $addToSet: { members: clerkId }, $inc: { memberCount: 1 } },
-    { new: true }
+    { returnDocument: 'after' }
   );
-  if (!room) return res.status(404).json({ error: 'Room not found or already joined' });
 
   // Track for user
   await User.findByIdAndUpdate(req.user._id, { $addToSet: { joinedRooms: room._id } });
   await updateIntensityScore(room.postId);
 
+  cache.invalidatePattern('rooms:');
   res.json({ success: true, memberCount: room.memberCount });
 }));
 
@@ -904,10 +1015,7 @@ router.post('/rooms/:id/leave', requireAuth, attachUser, asyncHandler(async (req
 
   // Strike rooms keep ephemeral cleanup; discussion rooms preserve history.
   if (room?.type === 'strike') {
-    await Message.updateMany(
-      { roomId: req.params.id, senderAlias: alias },
-      { isDeleted: true }
-    );
+    await Message.deleteMany({ roomId: req.params.id, senderAlias: alias });
   }
 
   // Remove from members
@@ -917,7 +1025,46 @@ router.post('/rooms/:id/leave', requireAuth, attachUser, asyncHandler(async (req
   });
 
   await User.findByIdAndUpdate(req.user._id, { $pull: { joinedRooms: req.params.id } });
+  cache.invalidatePattern('rooms:');
   res.json({ success: true });
+}));
+
+// POST /api/rooms/:id/legal-document — generate official legal petition/complaint
+router.post('/rooms/:id/legal-document', requireAuth, attachUser, aiLimiter, asyncHandler(async (req, res) => {
+  const { 
+    representativeName, 
+    addressedAuthority, 
+    customDemands, 
+    destinationType = 'municipal',
+    petitionerFatherSpouseName = '',
+    petitionerAge = '',
+    petitionerResidingAddress = '',
+    statutoryAct = 'district_municipalities'
+  } = req.body;
+  const room = await ChatRoom.findOne({ _id: req.params.id, isActive: true });
+  if (!room) return res.status(404).json({ error: 'Strike room not found' });
+  if (room.type !== 'strike') return res.status(400).json({ error: 'This feature is only available for Strike Rooms' });
+
+  // Get the linked post and populate contacts
+  if (!room.postId) return res.status(400).json({ error: 'No post linked to this strike room' });
+  const post = await Post.findOne({ _id: room.postId, isDeleted: false })
+    .populate('attachedContacts')
+    .lean();
+  if (!post) return res.status(404).json({ error: 'Linked post not found' });
+
+  const extraDetails = { 
+    representativeName, 
+    addressedAuthority, 
+    customDemands, 
+    destinationType,
+    petitionerFatherSpouseName,
+    petitionerAge,
+    petitionerResidingAddress,
+    statutoryAct
+  };
+  const document = await generateLegalPetition(post, room, extraDetails);
+
+  res.json({ document });
 }));
 
 // DELETE /api/rooms/:id — delete room + all messages (admin or creator)
@@ -925,14 +1072,23 @@ router.delete('/rooms/:id', requireAuth, attachUser, asyncHandler(async (req, re
   const room = await ChatRoom.findById(req.params.id);
   if (!room) return res.status(404).json({ error: 'Room not found' });
 
+  let isPostCreator = false;
+  if (room.postId) {
+    const post = await Post.findById(room.postId).lean();
+    if (post && req.user.postTokens?.includes(post.anonToken)) {
+      isPostCreator = true;
+    }
+  }
+
   const isCreator = room.createdBy === req.user.clerkId;
   const isAdmin = req.user.role === 'admin';
-  if (!isCreator && !isAdmin) return res.status(403).json({ error: 'Permission denied' });
+  if (!isCreator && !isAdmin && !isPostCreator) return res.status(403).json({ error: 'Permission denied' });
 
   // Delete all messages (ephemeral)
   await Message.deleteMany({ roomId: room._id });
   await ChatRoom.findByIdAndDelete(room._id);
 
+  cache.invalidatePattern('rooms:');
   res.json({ success: true });
 }));
 
@@ -1084,11 +1240,18 @@ router.get('/ai/gov-data/:district', requireAuth, asyncHandler(async (req, res) 
 // GET /api/contacts — all or by district
 router.get('/contacts', requireAuth, asyncHandler(async (req, res) => {
   const { district, department } = req.query;
+  const cacheKey = `contacts:${district || ''}:${department || ''}`;
+  const cachedData = cache.get(cacheKey);
+  if (cachedData) {
+    return res.json({ contacts: cachedData, cached: true });
+  }
+
   const query = {};
   if (district) query.district = district;
   if (department) query.department = department;
 
   const contacts = await Contact.find(query).lean();
+  cache.set(cacheKey, contacts, 300000); // cache for 5 minutes
   res.json({ contacts });
 }));
 
@@ -1110,13 +1273,27 @@ router.get('/contacts/by-location', requireAuth, asyncHandler(async (req, res) =
 
 // GET /api/analytics/public-stats — public stats for landing page
 router.get('/analytics/public-stats', asyncHandler(async (req, res) => {
+  const cacheKey = 'analytics:public-stats';
+  const cachedData = cache.get(cacheKey);
+  if (cachedData) {
+    return res.json({ ...cachedData, cached: true });
+  }
+
   const distinctDistricts = await Post.distinct('district', { isDeleted: false });
   const count = distinctDistricts.filter(d => d && d !== 'Unknown').length;
-  res.json({ districts: Math.max(25, count) });
+  const responseData = { districts: Math.max(25, count) };
+  cache.set(cacheKey, responseData, 3600000); // cache for 1 hour
+  res.json(responseData);
 }));
 
 // GET /api/analytics/dashboard — overall stats
 router.get('/analytics/dashboard', requireAuth, attachUser, asyncHandler(async (req, res) => {
+  const cacheKey = 'analytics:dashboard';
+  const cachedData = cache.get(cacheKey);
+  if (cachedData) {
+    return res.json({ ...cachedData, cached: true });
+  }
+
   const [
     totalPosts, resolvedPosts, criticalPosts,
     categoryBreakdown, districtBreakdown, recentPosts, topIntensity,
@@ -1141,17 +1318,25 @@ router.get('/analytics/dashboard', requireAuth, attachUser, asyncHandler(async (
 
   const resolutionRate = totalPosts ? Math.round((resolvedPosts / totalPosts) * 100) : 0;
 
-  res.json({
+  const responseData = {
     stats: { totalPosts, resolvedPosts, criticalPosts, resolutionRate },
     categoryBreakdown,
     districtBreakdown,
     recentPosts,
     topIntensity,
-  });
+  };
+  cache.set(cacheKey, responseData, 120000); // cache for 2 minutes
+  res.json(responseData);
 }));
 
 // GET /api/analytics/heatmap — GIS data for map clustering
 router.get('/analytics/heatmap', requireAuth, asyncHandler(async (req, res) => {
+  const cacheKey = 'analytics:heatmap';
+  const cachedData = cache.get(cacheKey);
+  if (cachedData) {
+    return res.json({ ...cachedData, cached: true });
+  }
+
   const points = await Post.find(
     { isDeleted: false, 'location.coordinates': { $exists: true } },
     { 'location.coordinates': 1, severity: 1, category: 1, status: 1 }
@@ -1165,12 +1350,20 @@ router.get('/analytics/heatmap', requireAuth, asyncHandler(async (req, res) => {
     status: p.status,
   }));
 
-  res.json({ heatmapData });
+  const responseData = { heatmapData };
+  cache.set(cacheKey, responseData, 120000); // cache for 2 minutes
+  res.json(responseData);
 }));
 
 // GET /api/analytics/district/:name — district-specific stats
 router.get('/analytics/district/:name', requireAuth, asyncHandler(async (req, res) => {
   const district = req.params.name;
+  const cacheKey = `analytics:district:${district}`;
+  const cachedData = cache.get(cacheKey);
+  if (cachedData) {
+    return res.json({ ...cachedData, cached: true });
+  }
+
   const [posts, contacts, govData] = await Promise.all([
     Post.aggregate([
       { $match: { district, isDeleted: false } },
@@ -1180,7 +1373,9 @@ router.get('/analytics/district/:name', requireAuth, asyncHandler(async (req, re
     fetchGovRoadData(district),
   ]);
 
-  res.json({ district, categoryStats: posts, contacts, govData });
+  const responseData = { district, categoryStats: posts, contacts, govData };
+  cache.set(cacheKey, responseData, 120000); // cache for 2 minutes
+  res.json(responseData);
 }));
 
 
@@ -1200,7 +1395,7 @@ router.patch('/admin/users/:id/role', requireAuth, attachUser, requireRole('admi
   const validRoles = ['citizen', 'officer', 'department', 'admin'];
   if (!validRoles.includes(role)) return res.status(400).json({ error: 'Invalid role' });
 
-  const user = await User.findByIdAndUpdate(req.params.id, { role }, { new: true });
+  const user = await User.findByIdAndUpdate(req.params.id, { role }, { returnDocument: 'after' });
   await AuditLog.create({
     action: 'role_change', targetType: 'user', targetId: user._id,
     performedBy: req.user.clerkId, details: { newRole: role }
@@ -1216,6 +1411,8 @@ router.delete('/admin/posts/:id', requireAuth, attachUser, requireRole('admin'),
     action: 'post_deleted', targetType: 'post', targetId: req.params.id,
     performedBy: req.user.clerkId
   });
+  cache.invalidatePattern('posts:');
+  cache.invalidatePattern('analytics:');
   res.json({ success: true });
 }));
 

@@ -131,6 +131,9 @@ const commentSchema = new Schema({
   text: { type: String, required: true, maxlength: 1000 },
   likeCount: { type: Number, default: 0 },
   parentId: { type: Schema.Types.ObjectId, ref: 'Comment', default: null }, // threading
+  senderAlias: { type: String },
+  isPostAuthor: { type: Boolean, default: false },
+  creatorRole: { type: String, enum: ['citizen', 'officer', 'department', 'admin'], default: 'citizen' },
   isDeleted: { type: Boolean, default: false },
 }, { timestamps: true });
 
@@ -178,6 +181,9 @@ const messageSchema = new Schema({
   type: { type: String, enum: ['text', 'image', 'system'], default: 'text' },
   isDeleted: { type: Boolean, default: false },
 }, { timestamps: true });
+
+messageSchema.index({ createdAt: 1 }, { expireAfterSeconds: 259200 }); // Auto-delete messages older than 3 days
+
 
 // ─────────────────────────────────────────────
 // WITNESS CONFIRMATION (nearby user validates a post)

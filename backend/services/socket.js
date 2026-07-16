@@ -41,13 +41,15 @@ const initSocket = (io) => {
         const updated = await ChatRoom.findOneAndUpdate(
           { _id: roomId, type: 'discussion' },
           { $addToSet: { members: clerkId }, $inc: { memberCount: 1 } },
-          { new: true }
+          { returnDocument: 'after' }
         );
         if (updated) liveCount = updated.memberCount;
       }
 
-      io.to(roomId).emit('room:user_joined', { roomId, alias, memberCount: liveCount });
-      socket.emit('room:joined', { roomId, alias, memberCount: liveCount });
+      const onlineCount = io.sockets.adapter.rooms.get(String(roomId))?.size || 0;
+
+      io.to(roomId).emit('room:user_joined', { roomId, alias, memberCount: liveCount, onlineCount });
+      socket.emit('room:joined', { roomId, alias, memberCount: liveCount, onlineCount });
     });
 
     // ── SEND MESSAGE ─────────────────────────
@@ -146,20 +148,21 @@ const initSocket = (io) => {
       const alias = socket.data.rooms?.[roomId]?.alias || socket.data.alias;
       const room = await ChatRoom.findOne({ _id: roomId, isActive: true });
       if (room?.type === 'strike') {
-        await Message.updateMany({ roomId, senderAlias: alias }, { isDeleted: true });
+        await Message.deleteMany({ roomId, senderAlias: alias });
       }
+      const onlineCount = io.sockets.adapter.rooms.get(String(roomId))?.size || 0;
       const discussionRoom = await ChatRoom.findOne({ _id: roomId, type: 'discussion', members: clerkId });
       if (discussionRoom) {
         const updated = await ChatRoom.findOneAndUpdate(
           { _id: roomId, type: 'discussion', members: clerkId },
           { $pull: { members: clerkId }, $inc: { memberCount: -1 } },
-          { new: true }
+          { returnDocument: 'after' }
         );
         if (updated) {
-          io.to(roomId).emit('room:user_left', { roomId, alias, memberCount: updated.memberCount });
+          io.to(roomId).emit('room:user_left', { roomId, alias, memberCount: updated.memberCount, onlineCount });
         }
       } else {
-        io.to(roomId).emit('room:user_left', { roomId, alias });
+        io.to(roomId).emit('room:user_left', { roomId, alias, onlineCount });
       }
     });
 
@@ -168,7 +171,7 @@ const initSocket = (io) => {
       const room = await ChatRoom.findOneAndUpdate(
         { _id: roomId, type: 'strike', members: { $ne: clerkId } },
         { $addToSet: { members: clerkId }, $inc: { memberCount: 1 } },
-        { new: true }
+        { returnDocument: 'after' }
       );
       if (room) io.emit('strike:count_update', { roomId, memberCount: room.memberCount });
     });
@@ -196,20 +199,21 @@ const initSocket = (io) => {
         const alias = roomData?.alias || generateChatAlias(clerkId, roomId);
         const room = await ChatRoom.findOne({ _id: roomId, isActive: true });
         if (room?.type === 'strike') {
-          await Message.updateMany({ roomId, senderAlias: alias }, { isDeleted: true });
+          await Message.deleteMany({ roomId, senderAlias: alias });
         }
+        const onlineCount = io.sockets.adapter.rooms.get(String(roomId))?.size || 0;
         const discussionRoom = await ChatRoom.findOne({ _id: roomId, type: 'discussion', members: clerkId });
         if (discussionRoom) {
           const updated = await ChatRoom.findOneAndUpdate(
             { _id: roomId, type: 'discussion', members: clerkId },
             { $pull: { members: clerkId }, $inc: { memberCount: -1 } },
-          { new: true }
-        );
+            { returnDocument: 'after' }
+          );
           if (updated) {
-            io.to(roomId).emit('room:user_left', { roomId, alias, memberCount: updated.memberCount });
+            io.to(roomId).emit('room:user_left', { roomId, alias, memberCount: updated.memberCount, onlineCount });
           }
         } else {
-          io.to(roomId).emit('room:user_left', { roomId, alias });
+          io.to(roomId).emit('room:user_left', { roomId, alias, onlineCount });
         }
       }
       console.log(`❌ Socket: ${socket.id} disconnected`);

@@ -222,6 +222,22 @@ export default function Landing() {
 
   return (
     <div className="max-w-5xl mx-auto px-4 pb-16">
+      {/* ── LANDING-ONLY BACKGROUND ── */}
+      <div
+        aria-hidden="true"
+        style={{
+          position: 'fixed',
+          inset: 0,
+          zIndex: -1,
+          backgroundColor: '#0b221a',
+          backgroundImage: "url('/mountain_road_bg.png')",
+          backgroundSize: 'cover',
+          backgroundPosition: 'center top',
+          backgroundRepeat: 'no-repeat',
+          pointerEvents: 'none',
+          transform: 'translate3d(0,0,0)',
+        }}
+      />
 
       {/* ── HERO ── */}
       <section className="text-center py-12 md:py-16 px-6 md:px-12 animate-slideInUp rounded-3xl bg-white/40 dark:bg-slate-950/45 backdrop-blur-md border border-white/20 dark:border-slate-800/40 shadow-xl mb-12 mt-6">

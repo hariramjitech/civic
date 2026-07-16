@@ -385,9 +385,156 @@ User complaint:
   }
 };
 
+const generateLegalPetition = async (postData, roomData, extraDetails) => {
+  try {
+    const contactsText = postData.attachedContacts && postData.attachedContacts.length > 0
+      ? postData.attachedContacts.map(c => `  - Officer: ${c.officerName || 'N/A'} (${c.designation || 'N/A'}), Dept: ${c.department}, Phone: ${c.phone?.join(', ') || 'N/A'}, Email: ${c.email || 'N/A'}, Address: ${c.address || 'N/A'}`).join('\n')
+      : '  - No official contact mapped yet. (Placeholder: Municipal Commissioner / District Collector)';
+
+    const coordinatesText = postData.location?.coordinates
+      ? `Latitude: ${postData.location.coordinates[1]}, Longitude: ${postData.location.coordinates[0]}`
+      : 'N/A';
+
+    const postDateText = postData.createdAt 
+      ? new Date(postData.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })
+      : 'N/A';
+
+    const currentDateText = new Date().toLocaleDateString('en-IN', {
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric'
+    });
+
+    const isCourt = extraDetails.destinationType === 'court';
+    
+    // Dynamic statutory reference matching based on Tamil Nadu laws and active category
+    const getDetailedLegalGrounds = (category, statutoryAct) => {
+      const grounds = [];
+      
+      grounds.push("Article 21 of the Constitution of India: Right to life and personal liberty, which the Hon'ble Supreme Court of India and the Hon'ble Madras High Court have consistently held to encompass the right to safe, hazard-free public infrastructure, motorable pothole-free roads, functional street lighting, and a clean, healthy, and non-hazardous municipal environment.");
+
+      if (category === 'roads') {
+        if (statutoryAct === 'highways') {
+          grounds.push("Section 28 of the Tamil Nadu Highways Act, 2001: Express statutory obligation of the Highways Department authorities to keep all highways clear of obstructions, prevent unlawful encroachments, and maintain road surfaces in motorable, safe condition.");
+        } else if (statutoryAct === 'chennai_corporation') {
+          grounds.push("Section 379A and relevant sections under Chapter X of the Chennai City Municipal Corporation Act, 1919: Obligatory municipal duty of the Greater Chennai Corporation to regularly maintain, repair, pave, and clear public streets and adjacent pavements.");
+        } else {
+          grounds.push("Section 162 of the Tamil Nadu District Municipalities Act, 1920: Absolute statutory duty of the Municipal Council and local administration to maintain, repair, resurface, and manage all public streets vesting in them.");
+        }
+        grounds.push("Madras High Court precedents (e.g., W.P. No. 13791 of 2020): Confirming that civic body negligence in repairing dangerous potholes constitutes a direct violation of fundamental rights, rendering authorities liable for public compensation.");
+      } else if (category === 'sanitation') {
+        if (statutoryAct === 'chennai_corporation') {
+          grounds.push("Section 195 & 201 of the Chennai City Municipal Corporation Act, 1919: Mandatory duties of the GCC to collect, transport, scavenge, and scientifically dispose of all municipal solid waste and garbage.");
+        } else {
+          grounds.push("Section 153 and 154 of the Tamil Nadu District Municipalities Act, 1920: Mandatory municipal obligation for scavenging, public street cleaning, and building rubbish/filth collection systems.");
+        }
+        grounds.push("Solid Waste Management Rules, 2016: Local bodies are bound to carry out daily waste clearances and establish sanitary landfill facilities under federal environmental guidelines.");
+      } else if (category === 'water') {
+        if (statutoryAct === 'water_drainage') {
+          grounds.push("Section 22 of the Tamil Nadu Water Supply and Drainage Board Act, 1970: Mandatory mandate for execution and maintenance of water supply and sewage schemes for public health protection.");
+        } else if (statutoryAct === 'chennai_corporation') {
+          grounds.push("Relevant chapters of the Chennai City Municipal Corporation Act, 1919: Governing Corporation's absolute duty to prevent sewerage overflows, repair water line leakages, and construct functional public sewers.");
+        } else {
+          grounds.push("Section 137 of the Tamil Nadu District Municipalities Act, 1920: Statutory duty of municipal corporations to build, clear, flush, and maintain storm water drains and public drainage channels to prevent accumulation of wastewater.");
+        }
+      } else if (category === 'electricity') {
+        grounds.push("Section 121 of the Tamil Nadu District Municipalities Act, 1920: Absolute municipal obligation to provide and maintain adequate street lighting in all declared public streets and residential wards.");
+        grounds.push("Section 43 of the Indian Electricity Act, 2003: Binding distribution licensees (TANGEDCO) to secure live hanging overhead cables, maintain electrical transformers, and prevent high-voltage hazards in public spaces.");
+      }
+
+      if (statutoryAct === 'public_nuisance') {
+        grounds.push("Section 133 of the Code of Criminal Procedure, 1973 (CrPC) / Section 152 of the Bharatiya Nagarik Suraksha Sanhita, 2023 (BNSS): Giving the Executive Magistrate power to order the immediate removal or repair of public hazards, dangerous structures, or obstructions causing imminent danger to citizens.");
+      }
+
+      return grounds.map((g, i) => `${i + 1}. ${g}`).join('\n');
+    };
+
+    const legalGroundsText = getDetailedLegalGrounds(postData.category || 'other', extraDetails.statutoryAct || 'district_municipalities');
+
+    const prompt = `
+Generate a formal, legally structured, and professional document regarding a public infrastructure hazard in Tamil Nadu, India.
+This document is generated on behalf of mobilized citizens so they can print it, sign it, and submit it directly to municipal officials or court registrars.
+
+CRITICAL REQUIREMENT FOR SUBMISSION AUTHENTICITY:
+Do NOT output any template brackets like "[Insert Date]", "[Name]", "[Residing Address]", or "___" in the main body. Replace every single field with the actual facts provided below. The current date is "${currentDateText}". If a detail is missing, infer a realistic, legally sound statement rather than leaving placeholder brackets.
+
+Choose the format, tone, and legal structure based on the target destination:
+
+${isCourt ? `
+- **Destination Type**: COURT OF LAW (PIL Writ Petition)
+- **Formatting Style**: A formal Public Interest Writ Petition (PIL) under Article 226 of the Constitution of India.
+- **Header Structure**:
+  IN THE HIGH COURT OF JUDICATURE AT MADRAS
+  (SPECIAL ORIGINAL JURISDICTION)
+  W.P. No. ________ of 2026
+
+  IN THE MATTER OF:
+  A Writ Petition under Article 226 of the Constitution of India for the issuance of a Writ of Mandamus.
+
+  BETWEEN:
+  ${extraDetails.representativeName || 'Concerned Resident'}, aged ${extraDetails.petitionerAge || '40'} years, S/o or D/o or W/o ${extraDetails.petitionerFatherSpouseName || 'Concerned Parent'}, residing at ${extraDetails.petitionerResidingAddress || 'Tamil Nadu'}.
+  (...PETITIONER)
+
+  AND:
+  1. The State of Tamil Nadu, Represented by the Secretary to Government, Municipal Administration & Water Supply Department, Fort St. George, Chennai - 600009.
+  2. ${extraDetails.addressedAuthority || 'The District Collector / Municipal Commissioner'}.
+  (...RESPONDENTS)
+
+- **Petition Body**:
+  - Start with a formal "AFFIDAVIT" section: "I, ${extraDetails.representativeName || 'Concerned Resident'}, son/daughter/wife of ${extraDetails.petitionerFatherSpouseName || 'Concerned Parent'}, aged ${extraDetails.petitionerAge || '40'} years, residing at ${extraDetails.petitionerResidingAddress || 'Tamil Nadu'}, do hereby solemnly affirm and sincerely state as follows..."
+  - Draft paragraphs sequentially:
+    1. Introduction of the petitioner as a public-spirited citizen representing local residents.
+    2. Statement of Facts: Describe the infrastructure hazard ("${postData.title}" - "${postData.description}"), its exact coordinates (${coordinatesText}), the district (${postData.district}), and the specific location address ("${postData.address}").
+    3. Community Verification: Explicitly state that the report was logged on ${postDateText}, verified by ${postData.localWitnessCount} physical local witnesses, and is supported by ${postData.supportCount} citizens, indicating widespread public distress.
+    4. Grounds: Detail that the negligence of the respondents violates the constitutional and statutory provisions listed under the grounds section.
+    5. Previous Representations: State that representations were logged via CivicTN monitoring system but no action was taken.
+    6. **PRAYER**: Conclude with a formal prayer asking the High Court of Madras to issue a Writ of Mandamus or any other appropriate Writ, order, or direction, directing the respondents to immediately repair the hazard and restore safety.
+` : `
+- **Destination Type**: MUNICIPAL / ADMINISTRATIVE GRIEVANCE FORM
+- **Formatting Style**: A formal administrative complaint representation letter.
+- **Header Structure**:
+  FORMAL STATUTORY COMPLAINT & GRIEVANCE REPRESENTATION
+  SUBMITTED UNDER:
+  ${legalGroundsText}
+
+  Date: ${currentDateText}
+  
+  TO:
+  ${extraDetails.addressedAuthority || 'The Municipal Commissioner / District Collector'}
+  Office of the Corporation/District Administration, ${postData.district || 'Tamil Nadu'}.
+
+  FROM:
+  Lead Petitioner: ${extraDetails.representativeName || 'Concerned Resident'} (Age: ${extraDetails.petitionerAge || 'N/A'}),
+  S/o / W/o / D/o: ${extraDetails.petitionerFatherSpouseName || 'N/A'},
+  Residing at: ${extraDetails.petitionerResidingAddress || 'Tamil Nadu'}.
+
+- **Representation Body**:
+  - **Subject**: Statutory Complaint and Demand for Emergency Repairs of Public Infrastructure Hazard regarding "${postData.title}" (Ref: CivicTN Grievance ID: ${postData._id}).
+  - **Reference**: Form 1 Grievance Rules under the Tamil Nadu District Municipalities Act, 1920 / Chennai City Municipal Corporation Act, 1919.
+  - **Statement of Facts**: State the details of the hazard, location coordinates (${coordinatesText}), and its extreme severity (${postData.severity}).
+  - **Verified Public Impact**: Cite that the grievance has ${postData.commentCount} comments, ${postData.localWitnessCount} local witnesses, and is backed by ${roomData.memberCount} active signed coordinators in the ward, showing severe impact.
+  - **Legal Demand Notice**: Formally demand that the department initiate repairs/inspections within 7 days, failing which the community reserves the right to initiate legal proceedings under Section 133 of CrPC / 152 of BNSS for public nuisance, or file a PIL before the Madras High Court.
+  - Include a signature block for the Lead Petitioner and a list of ward supporters.
+`}
+
+Incorporate the following **Applicable Legal & Statutory Grounds** directly into the grounds of the petition or complaint, explaining how the failure of the authorities to act is a violation of these specific laws and regulations:
+${legalGroundsText}
+
+Ensure the tone is highly formal, strictly legal, and formatted in clean Markdown. Do not output any conversational introduction or instructions—start directly with the Markdown petition header. Do not write generic remarks like "(Signature of Petitioner)". Include a realistic signature section using the lead petitioner name.
+`;
+
+    const result = await generateContentWithFallback(prompt);
+    return result.response.text().trim();
+  } catch (err) {
+    console.error('Error generating legal petition:', err);
+    return '## Legal Document Generation Failed\n\nUnable to generate the legal petition draft at this time. Please try again.';
+  }
+};
+
 // ─────────────────────────────────────────────
 // Forensics: Haversine distance calculator
 // ─────────────────────────────────────────────
+
 const getHaversineDistance = (lat1, lon1, lat2, lon2) => {
   const R = 6371e3; // Earth radius in meters
   const phi1 = lat1 * Math.PI / 180;
@@ -439,6 +586,7 @@ module.exports = {
   fetchGovRoadData,
   updateIntensityScore,
   rewriteComplaint,
+  generateLegalPetition,
   getHaversineDistance,
   censorText,
 };
