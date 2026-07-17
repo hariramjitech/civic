@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useCivic } from '../context/CivicContext';
 import api from '../lib/api';
-import { MapContainer, TileLayer, Marker, useMapEvents } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, useMapEvents, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import {
   Camera, MapPin, EyeOff, Sparkles, Upload, Check,
@@ -21,6 +22,16 @@ L.Icon.Default.mergeOptions({
 
 function MapClickHandler({ setPosition }) {
   useMapEvents({ click(e) { setPosition({ lat: e.latlng.lat, lng: e.latlng.lng }); } });
+  return null;
+}
+
+function MapCenterHandler({ center }) {
+  const map = useMap();
+  useEffect(() => {
+    if (center) {
+      map.setView(center, map.getZoom());
+    }
+  }, [center, map]);
   return null;
 }
 
@@ -113,16 +124,46 @@ export default function SubmitPost() {
   // Submit
   const [submitting, setSubmitting] = useState(false);
 
-  // Auto-detect location on mount
-  useEffect(() => {
-    navigator.geolocation?.getCurrentPosition(
+  // Geolocation & Duplicate States
+  const [detectingLocation, setDetectingLocation] = useState(false);
+  const [showDuplicateModal, setShowDuplicateModal] = useState(false);
+  const [newPostId, setNewPostId] = useState('');
+  const [duplicateOfId, setDuplicateOfId] = useState('');
+  const [duplicatePostDetails, setDuplicatePostDetails] = useState(null);
+  const [loadingDuplicateDetails, setLoadingDuplicateDetails] = useState(false);
+  const [resolvingDuplicate, setResolvingDuplicate] = useState(false);
+
+  const detectLocation = () => {
+    if (!navigator.geolocation) {
+      toast.error('Geolocation is not supported by your browser.');
+      return;
+    }
+    setDetectingLocation(true);
+    const options = {
+      enableHighAccuracy: true,
+      timeout: 10000,
+      maximumAge: 0
+    };
+    navigator.geolocation.getCurrentPosition(
       pos => {
         const c = { lat: pos.coords.latitude, lng: pos.coords.longitude };
         setPosition(c);
         setMapCenter([c.lat, c.lng]);
+        setDetectingLocation(false);
+        toast.success('Location detected successfully!');
       },
-      () => { }
+      err => {
+        console.error('Geolocation error:', err);
+        setDetectingLocation(false);
+        toast.error(`Unable to retrieve location: ${err.message || 'Permission denied or timeout.'}`);
+      },
+      options
     );
+  };
+
+  // Auto-detect location on mount
+  useEffect(() => {
+    detectLocation();
   }, []);
 
   // Reverse geocode when position changes
@@ -333,15 +374,74 @@ export default function SubmitPost() {
       
       selectedFiles.forEach(f => fd.append('images', f));
       const res = await api.post('/posts', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
-      toast.success('Report submitted anonymously!');
+      
       if (res.data.post?.isDuplicate) {
-        toast('⚠️ Similar report detected nearby — merged to avoid duplicates.', { duration: 5000 });
+        setNewPostId(res.data.post._id);
+        const dupOfId = res.data.post.duplicateOf;
+        setDuplicateOfId(dupOfId);
+        setShowDuplicateModal(true);
+        setLoadingDuplicateDetails(true);
+        try {
+          const dupRes = await api.get(`/posts/${dupOfId}`);
+          setDuplicatePostDetails(dupRes.data.post);
+        } catch (err) {
+          console.error("Failed to load duplicate post details:", err);
+        } finally {
+          setLoadingDuplicateDetails(false);
+        }
+      } else {
+        toast.success('Report submitted successfully!');
+        navigate('/feed');
       }
-      navigate('/feed');
     } catch (err) {
       toast.error(err.response?.data?.error || 'Submission failed.');
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const handleConfirmSameIssue = async () => {
+    if (!newPostId || !duplicateOfId) return;
+    try {
+      setResolvingDuplicate(true);
+      
+      // 1. Upvote the original post
+      try {
+        await api.post(`/posts/${duplicateOfId}/like`);
+      } catch (err) {
+        console.error("Failed to upvote original post:", err);
+      }
+      
+      // 2. Delete our temporary duplicate post
+      await api.delete(`/posts/${newPostId}`);
+      
+      toast.success('Your vote was added to the existing report. Duplicate report discarded.');
+      setShowDuplicateModal(false);
+      navigate(`/posts/${duplicateOfId}`);
+    } catch (err) {
+      toast.error('An error occurred while resolving duplicate.');
+      console.error(err);
+    } finally {
+      setResolvingDuplicate(false);
+    }
+  };
+
+  const handleConfirmDifferentIssue = async () => {
+    if (!newPostId) return;
+    try {
+      setResolvingDuplicate(true);
+      
+      // 1. Mark our post as non-duplicate/publish
+      await api.post(`/posts/${newPostId}/resolve-duplicate`);
+      
+      toast.success('Your report has been published separately!');
+      setShowDuplicateModal(false);
+      navigate(`/posts/${newPostId}`);
+    } catch (err) {
+      toast.error('An error occurred while publishing report.');
+      console.error(err);
+    } finally {
+      setResolvingDuplicate(false);
     }
   };
 
@@ -856,10 +956,42 @@ export default function SubmitPost() {
           Click anywhere on the map to pin the exact issue location
         </div>
 
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
+          <button
+            type="button"
+            onClick={detectLocation}
+            disabled={detectingLocation}
+            className="btn btn-secondary btn-sm"
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6,
+              fontSize: 12,
+              padding: '8px 14px',
+              borderRadius: 8,
+              cursor: 'pointer',
+              border: '1px solid rgba(20, 184, 166, 0.25)',
+              background: 'rgba(20, 184, 166, 0.04)',
+              color: 'var(--teal-400)',
+            }}
+          >
+            {detectingLocation ? (
+              <Loader2 size={13} className="animate-spin" />
+            ) : (
+              <RefreshCw size={13} />
+            )}
+            <span>{detectingLocation ? 'Detecting GPS...' : 'Auto-Detect Location'}</span>
+          </button>
+          <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+            Or click on the map to manually pin
+          </span>
+        </div>
+
         <div style={{ height: 340, borderRadius: 12, overflow: 'hidden', border: '1px solid var(--border-subtle)' }}>
           <MapContainer center={mapCenter} zoom={11} style={{ height: '100%', width: '100%' }}>
             <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
             <MapClickHandler setPosition={setPosition} />
+            <MapCenterHandler center={mapCenter} />
             {position && <Marker position={[position.lat, position.lng]} />}
           </MapContainer>
         </div>
@@ -1593,6 +1725,149 @@ export default function SubmitPost() {
           </div>
         </div>
       )}
+
+      {/* Duplicate detection modal */}
+      <AnimatePresence>
+        {showDuplicateModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-4">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              transition={{ duration: 0.2 }}
+              className="glass-panel p-6 rounded-2xl max-w-lg w-full space-y-4 shadow-2xl bg-[var(--bg-surface)] border border-[var(--border-default)]"
+              style={{ maxHeight: '90vh', overflowY: 'auto' }}
+            >
+              <div className="flex items-center justify-between border-b border-[var(--border-subtle)] pb-3">
+                <h3 className="font-display font-extrabold text-[var(--teal-500)] text-base flex items-center gap-2">
+                  <MapPin size={16} />
+                  <span>Similar Report Detected Nearby</span>
+                </h3>
+              </div>
+
+              {loadingDuplicateDetails ? (
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '36px 0', gap: 12 }}>
+                  <Loader2 className="animate-spin text-[var(--teal-500)]" size={24} style={{ color: 'var(--teal-400)' }} />
+                  <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Fetching existing report details...</span>
+                </div>
+              ) : duplicatePostDetails ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                  <p style={{ fontSize: 13, color: 'var(--text-secondary)', margin: 0, lineHeight: 1.5 }}>
+                    Another citizen has already reported a very similar issue in this immediate vicinity. Please review it:
+                  </p>
+
+                  <div style={{
+                    padding: 16,
+                    borderRadius: 12,
+                    border: '1px solid var(--border-default)',
+                    background: 'var(--bg-elevated)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 10
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <span style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', color: 'var(--teal-400)', letterSpacing: '0.05em' }}>
+                        {duplicatePostDetails.category}
+                      </span>
+                      <span className={`status-pill status-${duplicatePostDetails.status}`} style={{ textTransform: 'uppercase', fontSize: 9 }}>
+                        {duplicatePostDetails.status}
+                      </span>
+                    </div>
+
+                    <h4 style={{ margin: 0, fontSize: 14, fontWeight: 700, color: 'var(--text-primary)' }}>
+                      {duplicatePostDetails.title}
+                    </h4>
+
+                    <p style={{ margin: 0, fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.5, display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                      {duplicatePostDetails.description}
+                    </p>
+
+                    {duplicatePostDetails.images && duplicatePostDetails.images.length > 0 && (
+                      <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 4 }}>
+                        {duplicatePostDetails.images.map((imgUrl, i) => (
+                          <img
+                            key={i}
+                            src={imgUrl}
+                            alt="Duplicate report evidence"
+                            style={{ width: 64, height: 64, objectFit: 'cover', borderRadius: 8, border: '1px solid var(--border-subtle)', flexShrink: 0 }}
+                          />
+                        ))}
+                      </div>
+                    )}
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 12, fontSize: 10, color: 'var(--text-muted)', borderTop: '1px solid var(--border-subtle)', paddingTop: 10, marginTop: 4 }}>
+                      <span>👍 {duplicatePostDetails.likeCount || 0} Upvotes</span>
+                      <span>💬 {duplicatePostDetails.commentCount || 0} Comments</span>
+                      {duplicatePostDetails.address && (
+                        <span style={{ marginLeft: 'auto', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap', maxWidth: '55%' }}>
+                          📍 {duplicatePostDetails.address}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', textAlign: 'center', padding: '4px 0' }}>
+                    Is your report about the same issue as this one?
+                  </div>
+
+                  <div style={{ display: 'flex', gap: 12 }}>
+                    <button
+                      type="button"
+                      onClick={handleConfirmSameIssue}
+                      disabled={resolvingDuplicate}
+                      className="btn btn-primary"
+                      style={{ flex: 1, padding: '10px 16px', fontSize: 12, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
+                    >
+                      {resolvingDuplicate ? (
+                        <Loader2 size={14} className="animate-spin" />
+                      ) : (
+                        "Yes, it's the same (Upvote & View Original)"
+                      )}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleConfirmDifferentIssue}
+                      disabled={resolvingDuplicate}
+                      className="btn btn-secondary"
+                      style={{ flex: 1, padding: '10px 16px', fontSize: 12, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
+                    >
+                      {resolvingDuplicate ? (
+                        <Loader2 size={14} className="animate-spin" />
+                      ) : (
+                        'No, post mine anyway'
+                      )}
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div style={{ textAlign: 'center', padding: '16px 0', display: 'flex', flexDirection: 'column', gap: 16 }}>
+                  <p style={{ fontSize: 12, color: 'var(--text-muted)', margin: 0 }}>
+                    Unable to load original report details. You can publish yours anyway.
+                  </p>
+                  <div style={{ display: 'flex', gap: 12 }}>
+                    <button
+                      type="button"
+                      onClick={handleConfirmDifferentIssue}
+                      className="btn btn-primary"
+                      style={{ flex: 1, padding: '8px 16px', fontSize: 12 }}
+                    >
+                      Publish Mine Anyway
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setShowDuplicateModal(false)}
+                      className="btn btn-secondary"
+                      style={{ flex: 1, padding: '8px 16px', fontSize: 12 }}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              )}
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

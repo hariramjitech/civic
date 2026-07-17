@@ -238,6 +238,32 @@ const auditLogSchema = new Schema({
 }, { timestamps: true });
 
 // ─────────────────────────────────────────────
+// CAMPAIGN (self-fix / volunteer cleanup campaign)
+// ─────────────────────────────────────────────
+const campaignSchema = new Schema({
+  postId: { type: Schema.Types.ObjectId, ref: 'Post', required: true, unique: true, index: true },
+  meetingDate: { type: Date, required: true },
+  meetingTime: { type: String, required: true },
+  meetingPoint: { type: String, required: true },
+  targetVolunteers: { type: Number, default: 5 },
+  volunteers: [{
+    clerkId: { type: String, required: true },
+    displayName: { type: String, default: 'Anonymous Volunteer' }
+  }],
+  materials: [{
+    item: { type: String, required: true }, // e.g. "Trash Bags", "Brooms", "Paint"
+    targetCount: { type: Number, default: 0 },
+    pledges: [{
+      clerkId: { type: String, required: true },
+      displayName: { type: String },
+      quantity: { type: Number, default: 1 }
+    }]
+  }],
+  status: { type: String, enum: ['scheduled', 'completed', 'cancelled'], default: 'scheduled' },
+  createdBy: { type: String } // clerkId
+}, { timestamps: true });
+
+// ─────────────────────────────────────────────
 // EXPORTS
 // ─────────────────────────────────────────────
 const User = mongoose.model('User', userSchema);
@@ -249,5 +275,6 @@ const Message = mongoose.model('Message', messageSchema);
 const WitnessConfirmation = mongoose.model('WitnessConfirmation', witnessConfirmationSchema);
 const Contact = mongoose.model('Contact', contactSchema);
 const AuditLog = mongoose.model('AuditLog', auditLogSchema);
+const Campaign = mongoose.model('Campaign', campaignSchema);
 
-module.exports = { User, Post, Comment, Poll, ChatRoom, Message, WitnessConfirmation, Contact, AuditLog };
+module.exports = { User, Post, Comment, Poll, ChatRoom, Message, WitnessConfirmation, Contact, AuditLog, Campaign };

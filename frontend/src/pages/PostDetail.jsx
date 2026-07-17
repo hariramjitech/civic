@@ -6,9 +6,36 @@ import {
   Heart, MessageSquare, Phone, Mail, Globe, MapPin,
   AlertTriangle, ArrowLeft, Send, Plus, Flame, Clock,
   CheckCircle, Loader2, Trash2, Volume2, VolumeX,
-  Share2, Eye, Sparkles
+  Share2, Eye, Sparkles, Calendar, Users, Wrench
 } from 'lucide-react';
 import toast from 'react-hot-toast';
+
+function highlightPlaceholders(text) {
+  if (typeof text !== 'string') return text;
+  const parts = [];
+  const placeholderRegex = /(\[.+?\])/g;
+  let lastIndex = 0;
+  let match;
+
+  while ((match = placeholderRegex.exec(text)) !== null) {
+    if (match.index > lastIndex) {
+      parts.push(text.substring(lastIndex, match.index));
+    }
+    parts.push(
+      <span 
+        key={`p-${match.index}`} 
+        className="mx-1 px-2 py-0.5 rounded bg-amber-500/10 text-amber-500 border border-amber-500/20 text-[11px] font-mono font-bold select-all inline-block hover:bg-amber-500/15 transition-colors"
+      >
+        {match[1]}
+      </span>
+    );
+    lastIndex = match.index + match[0].length;
+  }
+  if (lastIndex < text.length) {
+    parts.push(text.substring(lastIndex));
+  }
+  return parts.length > 0 ? parts : [text];
+}
 
 function renderMarkdownText(text = '') {
   const lines = String(text).split(/\n+/).filter(Boolean);
@@ -21,22 +48,21 @@ function renderMarkdownText(text = '') {
 
     while ((match = boldPattern.exec(line)) !== null) {
       if (match.index > lastIndex) {
-        parts.push(line.slice(lastIndex, match.index));
+        parts.push(...highlightPlaceholders(line.slice(lastIndex, match.index)));
       }
-      parts.push(<strong key={`b-${lineIndex}-${match.index}`}>{match[1]}</strong>);
+      parts.push(<strong key={`b-${lineIndex}-${match.index}`}>{highlightPlaceholders(match[1])}</strong>);
       lastIndex = match.index + match[0].length;
     }
 
     if (lastIndex < line.length) {
-      parts.push(line.slice(lastIndex));
+      parts.push(...highlightPlaceholders(line.slice(lastIndex)));
     }
 
     return (
-      <span key={`line-${lineIndex}`}>
+      <span key={`line-${lineIndex}`} className="block mb-2 last:mb-0">
         {parts.map((part, partIndex) =>
           typeof part === 'string' ? <React.Fragment key={`t-${lineIndex}-${partIndex}`}>{part}</React.Fragment> : part
         )}
-        {lineIndex < lines.length - 1 && <br />}
       </span>
     );
   });
@@ -88,6 +114,7 @@ export default function PostDetail() {
   const polls = data?.polls;
   const strikeRoom = data?.strikeRoom;
   const userWitness = data?.userWitness;
+  const similarPosts = data?.similarPosts || [];
 
   // Status edit state (for owners/admin/officers)
   const [updatingStatus, setUpdatingStatus] = useState(false);
@@ -97,6 +124,22 @@ export default function PostDetail() {
   // Poll creation state
   const [showPollForm, setShowPollForm] = useState(false);
   const [creatingStrikeRoom, setCreatingStrikeRoom] = useState(false);
+
+  // Campaign State
+  const [campaign, setCampaign] = useState(null);
+  const [showCampaignForm, setShowCampaignForm] = useState(false);
+  const [campaignForm, setCampaignForm] = useState({
+    meetingDate: '',
+    meetingTime: '',
+    meetingPoint: '',
+    targetVolunteers: 5,
+    materialsInput: 'Trash Bags, Brooms'
+  });
+  const [campaignSubmitting, setCampaignSubmitting] = useState(false);
+  const [pledgingItem, setPledgingItem] = useState(null);
+  const [pledgeQty, setPledgeQty] = useState(1);
+  const [pledgingLoading, setPledgingLoading] = useState(false);
+  const [volunteeringLoading, setVolunteeringLoading] = useState(false);
 
   const isOwner = post ? myPostIds.has(post._id) : false;
   const showStatusEditControls = post ? (isOwner || ['admin', 'department', 'officer'].includes(role)) : false;
@@ -184,6 +227,89 @@ export default function PostDetail() {
     }
   };
 
+  const handleCampaignCreate = async (e) => {
+    e.preventDefault();
+    if (!isSignedIn) {
+      toast.error('Please sign in to start a self-fix campaign.');
+      return;
+    }
+    try {
+      setCampaignSubmitting(true);
+      const materialsArray = campaignForm.materialsInput
+        .split(',')
+        .map(m => m.trim())
+        .filter(m => m.length > 0);
+
+      const res = await api.post(`/posts/${id}/campaign`, {
+        meetingDate: campaignForm.meetingDate,
+        meetingTime: campaignForm.meetingTime,
+        meetingPoint: campaignForm.meetingPoint,
+        targetVolunteers: campaignForm.targetVolunteers,
+        requestedMaterials: materialsArray
+      });
+
+      setCampaign(res.data.campaign);
+      setShowCampaignForm(false);
+      toast.success('Community Self-Fix Campaign initiated successfully!');
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Failed to start campaign.');
+    } finally {
+      setCampaignSubmitting(false);
+    }
+  };
+
+  const handleVolunteerClick = async () => {
+    if (!isSignedIn) {
+      toast.error('Please sign in to volunteer.');
+      return;
+    }
+    try {
+      setVolunteeringLoading(true);
+      const res = await api.post(`/posts/${id}/campaign/volunteer`);
+      setCampaign(res.data.campaign);
+      const isVolunteered = res.data.campaign.volunteers.some(v => v.clerkId === userProfile?.clerkId);
+      toast.success(isVolunteered ? 'You have signed up as a volunteer!' : 'Removed from volunteer list.');
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Failed to volunteer.');
+    } finally {
+      setVolunteeringLoading(false);
+    }
+  };
+
+  const handlePledgeClick = async (e) => {
+    e.preventDefault();
+    if (!isSignedIn) {
+      toast.error('Please sign in to pledge items.');
+      return;
+    }
+    try {
+      setPledgingLoading(true);
+      const res = await api.post(`/posts/${id}/campaign/pledge`, {
+        item: pledgingItem,
+        quantity: pledgeQty
+      });
+      setCampaign(res.data.campaign);
+      toast.success(`Successfully pledged ${pledgeQty} ${pledgingItem}!`);
+      setPledgingItem(null);
+      setPledgeQty(1);
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Failed to submit pledge.');
+    } finally {
+      setPledgingLoading(false);
+    }
+  };
+
+  const handleCampaignCancel = async () => {
+    if (!window.confirm('Are you sure you want to cancel this campaign?')) return;
+    try {
+      const res = await api.post(`/posts/${id}/campaign/cancel`);
+      setCampaign(res.data.campaign);
+      toast.success('Campaign has been cancelled.');
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Failed to cancel campaign.');
+    }
+  };
+
   const [pollForm, setPollForm] = useState({
     question: '',
     option1: '',
@@ -204,6 +330,14 @@ export default function PostDetail() {
       // Fetch comments
       const commentRes = await api.get(`/posts/${id}/comments`);
       setComments(commentRes.data.comments);
+
+      // Fetch campaign
+      try {
+        const campaignRes = await api.get(`/posts/${id}/campaign`);
+        setCampaign(campaignRes.data.campaign);
+      } catch (cErr) {
+        console.warn('Failed to load campaign:', cErr.message);
+      }
     } catch (err) {
       console.error(err);
       toast.error('Failed to load post details.');
@@ -420,28 +554,33 @@ export default function PostDetail() {
   }
 
   return (
-    <div className="space-y-6">
-      {/* Back Button */}
-      <Link to="/feed" className="inline-flex items-center gap-2 text-[var(--text-muted)] hover:text-[var(--teal-500)] font-semibold text-sm transition-colors mb-2">
-        <ArrowLeft size={16} />
-        <span>Return to Feed</span>
-      </Link>
+    <div className="space-y-6 max-w-7xl mx-auto px-1">
+      {/* Return to Feed Nav */}
+      <div className="flex items-center justify-between">
+        <Link 
+          to="/feed" 
+          className="group inline-flex items-center gap-2 text-[var(--text-muted)] hover:text-[var(--teal-500)] font-bold text-sm transition-all duration-200"
+        >
+          <ArrowLeft size={16} className="group-hover:-translate-x-1 transition-transform" />
+          <span>Return to Feed</span>
+        </Link>
+      </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
         {/* Left Column - Main Details */}
         <div className="lg:col-span-2 space-y-6">
-          <div className="glass-panel p-6 rounded-2xl space-y-6 relative overflow-hidden">
-            {/* Meta & Status Indicators */}
-            <div className="flex items-center justify-between flex-wrap gap-3 pb-4 border-b border-[var(--border-subtle)]">
+          <div className="glass-panel p-6 sm:p-8 rounded-3xl space-y-6 relative overflow-hidden shadow-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)]">
+            {/* Header Meta & Status Indicators */}
+            <div className="flex items-center justify-between flex-wrap gap-4 pb-5 border-b border-[var(--border-subtle)]">
               {/* Reporter Profile Info */}
-              <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-full bg-gradient-to-tr from-teal-500 to-emerald-500 flex items-center justify-center font-bold text-white text-xs uppercase shadow-sm">
+              <div className="flex items-center gap-3.5">
+                <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-[var(--teal-500)]/15 to-emerald-500/10 border border-[var(--teal-500)]/20 flex items-center justify-center font-extrabold text-[var(--teal-500)] text-sm shadow-sm select-none">
                   {post.category?.substring(0, 2).toUpperCase()}
                 </div>
                 <div>
-                  <div className="text-sm font-bold text-[var(--text-primary)]">@{reporterHandle}</div>
-                  <div className="text-[10px] text-[var(--text-muted)] uppercase tracking-wider font-extrabold flex items-center gap-1.5 mt-0.5">
-                    <span>Citizen Reporter</span>
+                  <div className="text-sm font-bold text-[var(--text-primary)] hover:text-[var(--teal-500)] transition-colors cursor-default">@{reporterHandle}</div>
+                  <div className="text-[10px] text-[var(--text-muted)] uppercase tracking-wider font-extrabold flex items-center gap-1.5 mt-0.5 select-none">
+                    <span className="bg-[var(--bg-elevated)] px-1.5 py-0.5 rounded text-[9px] border border-[var(--border-subtle)]">Citizen Reporter</span>
                     <span>·</span>
                     <span>{new Date(post.createdAt).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })}</span>
                   </div>
@@ -449,38 +588,38 @@ export default function PostDetail() {
               </div>
 
               {/* Status Badge */}
-              <div className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold uppercase border ${
-                post.status === 'resolved' ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' :
-                post.status === 'in_progress' ? 'bg-amber-500/10 border-amber-500/20 text-amber-400' :
+              <div className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-wider border shadow-sm select-none ${
+                post.status === 'resolved' ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400 shadow-emerald-500/5' :
+                post.status === 'in_progress' ? 'bg-amber-500/10 border-amber-500/30 text-amber-400 shadow-amber-500/5 animate-pulse' :
                 'bg-[var(--bg-elevated)] border-[var(--border-default)] text-[var(--text-secondary)]'
               }`}>
-                <span className={`w-2 h-2 rounded-full ${post.status === 'resolved' ? 'bg-emerald-400' : post.status === 'in_progress' ? 'bg-amber-400' : 'bg-teal-400'}`} />
+                <span className={`w-1.5 h-1.5 rounded-full ${post.status === 'resolved' ? 'bg-emerald-400 animate-ping' : post.status === 'in_progress' ? 'bg-amber-400 animate-pulse' : 'bg-teal-400'}`} />
                 <span>{post.status.replace('_', ' ')}</span>
               </div>
             </div>
 
-            {/* Live viewer count badge */}
-            <div className="flex items-center gap-2 text-[10px] text-[var(--text-muted)] select-none">
-              <span className="flex items-center gap-1.5 font-semibold">
-                <span className="relative flex h-2 w-2">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-                </span>
-                <span className="text-teal-400 font-bold">{liveViewers} citizens</span> reviewing this right now
+            {/* Live viewer count banner */}
+            <div className="flex items-center gap-2.5 text-[11px] text-[var(--text-secondary)] select-none bg-[var(--teal-glow)]/45 border border-[var(--teal-500)]/15 px-3 py-2 rounded-xl w-fit">
+              <span className="relative flex h-2 w-2 shrink-0">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+              </span>
+              <span>
+                <strong className="text-[var(--teal-500)] font-extrabold">{liveViewers} active citizens</strong> reviewing this hazard report
               </span>
             </div>
 
             {/* Images Gallery */}
             {post.images && post.images.length > 0 && (
               <div className="space-y-3">
-                <div className="w-full aspect-video rounded-xl overflow-hidden border border-[var(--border-subtle)] bg-gray-950 relative group">
+                <div className="w-full aspect-[16/10] rounded-2xl overflow-hidden border border-[var(--border-default)] bg-gray-950 relative group shadow-inner">
                   <img 
                     src={post.images[activeImg] || post.images[0]} 
                     alt={post.title} 
-                    className="w-full h-full object-cover transition-all duration-500 group-hover:scale-[1.03]" 
+                    className="w-full h-full object-cover transition-all duration-700 group-hover:scale-[1.02]" 
                   />
                   {post.images.length > 1 && (
-                    <div className="absolute bottom-3 right-3 bg-gray-950/80 backdrop-blur-md text-[10px] text-gray-300 px-3 py-1.5 rounded-full font-bold uppercase border border-gray-800 tracking-wider">
+                    <div className="absolute bottom-3 right-3 bg-gray-950/80 backdrop-blur-md text-[10px] text-gray-300 px-3.5 py-1.5 rounded-xl font-bold uppercase border border-gray-800 tracking-wider">
                       Image {activeImg + 1} of {post.images.length}
                     </div>
                   )}
@@ -493,7 +632,11 @@ export default function PostDetail() {
                       <button
                         key={idx}
                         onClick={() => setActiveImg(idx)}
-                        className={`relative w-20 aspect-video rounded-lg overflow-hidden border-2 transition-all flex-shrink-0 cursor-pointer ${activeImg === idx ? 'border-teal-500 scale-95 shadow-lg shadow-teal-500/10' : 'border-transparent hover:border-gray-800'}`}
+                        className={`relative w-20 aspect-video rounded-lg overflow-hidden border-2 transition-all duration-200 flex-shrink-0 cursor-pointer ${
+                          activeImg === idx 
+                            ? 'border-[var(--teal-500)] scale-[0.98] shadow-md shadow-[var(--teal-500)]/20' 
+                            : 'border-transparent opacity-70 hover:opacity-100 hover:scale-[1.02]'
+                        }`}
                       >
                         <img src={img} alt={`Thumbnail ${idx + 1}`} className="w-full h-full object-cover" />
                       </button>
@@ -504,39 +647,48 @@ export default function PostDetail() {
             )}
 
             {/* Title & Desc */}
-            <div className="space-y-3">
-              <div className="flex items-center justify-between gap-3">
-                <h1 className="text-2xl sm:text-3xl font-extrabold font-display text-[var(--text-primary)]">{post.title}</h1>
-                <div className="inline-flex items-center gap-1 px-3 py-1 rounded bg-orange-500/10 border border-orange-500/20 text-xs font-bold text-orange-400 shrink-0">
-                  <Flame size={12} className="text-orange-400" />
-                  <span>{post.intensityScore} 🔥</span>
+            <div className="space-y-4">
+              <div className="flex items-center justify-between gap-4 flex-wrap sm:flex-nowrap">
+                <h1 className="text-2xl sm:text-3xl font-extrabold font-display text-[var(--text-primary)] leading-tight tracking-tight">
+                  {post.title}
+                </h1>
+                <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-orange-500/10 border border-orange-500/20 text-xs font-bold text-orange-400 shrink-0 select-none shadow-sm">
+                  <Flame size={13} className="text-orange-400 animate-pulse" />
+                  <span>{post.intensityScore} 🔥 Intensity</span>
                 </div>
               </div>
-              <p className="text-[var(--text-secondary)] text-sm leading-relaxed whitespace-pre-wrap">{renderMarkdownText(post.description)}</p>
+              
+              <div className="bg-[var(--bg-elevated)]/50 p-4 sm:p-5 rounded-2xl border border-[var(--border-subtle)] text-[var(--text-secondary)] text-sm leading-relaxed whitespace-pre-wrap font-sans">
+                {renderMarkdownText(post.description)}
+              </div>
             </div>
 
             {/* Unified Metadata Dashboard Grid */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-[var(--bg-elevated)] p-4 rounded-xl border border-[var(--border-subtle)]">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-[var(--bg-elevated)] p-4 sm:p-5 rounded-2xl border border-[var(--border-default)]">
               {/* Location Details */}
-              <div className="flex gap-2.5 items-start">
-                <MapPin className="text-[var(--teal-500)] mt-0.5 shrink-0" size={16} />
-                <div>
-                  <div className="text-[9px] uppercase text-[var(--text-muted)] tracking-wider font-extrabold">Location Address</div>
-                  <div className="text-xs font-bold text-[var(--text-primary)]">{post.district} District</div>
-                  {post.address && <div className="text-[11px] text-[var(--text-secondary)] mt-0.5 leading-normal">{post.address}</div>}
+              <div className="flex gap-3 items-start">
+                <div className="p-2 rounded-xl bg-[var(--teal-glow)]/45 text-[var(--teal-500)] shrink-0 border border-[var(--teal-500)]/15">
+                  <MapPin size={18} />
+                </div>
+                <div className="space-y-0.5">
+                  <div className="text-[9px] uppercase text-[var(--text-muted)] tracking-wider font-extrabold select-none">Location Details</div>
+                  <div className="text-xs font-extrabold text-[var(--text-primary)]">{post.district} District</div>
+                  {post.address && <div className="text-[11px] text-[var(--text-secondary)] mt-0.5 leading-snug">{post.address}</div>}
                 </div>
               </div>
 
               {/* Severity & Category Details */}
-              <div className="flex gap-2.5 items-start">
-                <AlertTriangle className="text-[var(--teal-500)] mt-0.5 shrink-0" size={16} />
+              <div className="flex gap-3 items-start sm:border-l sm:border-[var(--border-subtle)] sm:pl-4">
+                <div className="p-2 rounded-xl bg-[var(--teal-glow)]/45 text-[var(--teal-500)] shrink-0 border border-[var(--teal-500)]/15">
+                  <AlertTriangle size={18} />
+                </div>
                 <div>
-                  <div className="text-[9px] uppercase text-[var(--text-muted)] tracking-wider font-extrabold">Civic Classification</div>
+                  <div className="text-[9px] uppercase text-[var(--text-muted)] tracking-wider font-extrabold select-none">Civic Classification</div>
                   <div className="flex flex-wrap items-center gap-1.5 mt-1">
-                    <span className={`severity-badge severity-${post.severity} text-[10px]`}>
+                    <span className={`severity-badge severity-${post.severity} text-[10px] shadow-sm select-none`}>
                       {post.severity} severity
                     </span>
-                    <span className="text-[10px] uppercase bg-[var(--bg-overlay)] border border-[var(--border-default)] text-[var(--text-secondary)] px-2 py-0.5 rounded font-bold">
+                    <span className="text-[10px] uppercase bg-[var(--bg-overlay)] border border-[var(--border-default)] text-[var(--text-secondary)] px-2 py-0.5 rounded-md font-bold select-none">
                       {post.category}
                     </span>
                   </div>
@@ -545,39 +697,39 @@ export default function PostDetail() {
             </div>
 
             {/* Feed interaction & Share Buttons */}
-            <div className="flex flex-wrap items-center gap-3 pt-4 border-t border-[var(--border-subtle)] text-sm w-full">
+            <div className="flex flex-wrap items-center gap-3 pt-5 border-t border-[var(--border-subtle)] text-xs w-full">
               <button
                 onClick={handleLike}
-                className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-[var(--bg-elevated)] hover:bg-red-500/10 text-[var(--text-secondary)] hover:text-red-400 border border-[var(--border-default)] hover:border-red-500/20 transition-all cursor-pointer"
+                className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-red-500/5 to-rose-500/5 hover:from-red-500/10 hover:to-rose-500/10 text-[var(--text-secondary)] hover:text-rose-500 border border-[var(--border-default)] hover:border-rose-500/30 transition-all duration-300 shadow-sm cursor-pointer hover:shadow-rose-500/5"
                 aria-label="Toggle affected vote (like)"
               >
-                <Heart size={16} className="text-red-500 fill-red-500/10 hover:fill-red-500" />
-                <span className="font-bold">Affected Too ({post.likeCount || 0})</span>
+                <Heart size={15} className="text-rose-500 fill-rose-500/10 hover:fill-rose-500 transition-colors" />
+                <span className="font-bold font-display">Affected Too ({post.likeCount || 0})</span>
               </button>
 
               <button
                 onClick={speakPost}
-                className={`flex items-center gap-1.5 px-4 py-2.5 rounded-xl transition-all border cursor-pointer ${
+                className={`flex items-center gap-2 px-4 py-2.5 rounded-xl transition-all duration-300 border font-bold font-display cursor-pointer ${
                   isSpeaking
-                    ? 'bg-[var(--teal-glow)] text-[var(--teal-500)] border-[rgba(13,148,136,0.3)] font-bold'
-                    : 'bg-[var(--bg-elevated)] hover:bg-[var(--bg-overlay)] text-[var(--text-secondary)] border-[var(--border-default)]'
+                    ? 'bg-[var(--teal-500)] text-white border-[var(--teal-500)] shadow-md shadow-teal-500/20'
+                    : 'bg-gradient-to-r from-teal-500/5 to-emerald-500/5 hover:from-teal-500/10 hover:to-emerald-500/10 text-[var(--text-secondary)] hover:text-[var(--teal-500)] border-[var(--border-default)] hover:border-teal-500/30 shadow-sm'
                 }`}
                 aria-label={isSpeaking ? "Stop narration" : "Read post aloud"}
               >
-                {isSpeaking ? <VolumeX size={16} className="animate-bounce" /> : <Volume2 size={16} />}
+                {isSpeaking ? <VolumeX size={15} className="animate-pulse" /> : <Volume2 size={15} className="text-[var(--teal-500)]" />}
                 <span>{isSpeaking ? 'Stop Reading' : 'Read Aloud'}</span>
               </button>
 
               {/* Share actions */}
-              <div className="relative flex items-center gap-1.5">
+              <div className="relative flex items-center gap-2">
                 <button
                   onClick={() => handleShare('copy')}
-                  className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-[var(--bg-elevated)] hover:bg-[var(--bg-overlay)] text-[var(--text-secondary)] border border-[var(--border-default)] hover:border-[var(--border-strong)] transition-all cursor-pointer relative"
+                  className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-blue-500/5 to-indigo-500/5 hover:from-blue-500/10 hover:to-indigo-500/10 text-[var(--text-secondary)] hover:text-blue-500 border border-[var(--border-default)] hover:border-blue-500/30 transition-all duration-300 shadow-sm cursor-pointer relative font-bold font-display"
                 >
-                  <Share2 size={16} />
+                  <Share2 size={15} className="text-blue-500" />
                   <span>Share</span>
                   {showShareTooltip && (
-                    <span className="absolute -top-10 left-1/2 -translate-x-1/2 bg-gray-950 border border-gray-800 text-[10px] text-teal-400 font-bold px-2 py-1 rounded shadow-lg whitespace-nowrap animate-bounce z-50">
+                    <span className="absolute -top-11 left-1/2 -translate-x-1/2 bg-[var(--bg-surface)] border border-[var(--teal-500)]/30 text-[10px] text-[var(--teal-500)] font-bold px-2.5 py-1 rounded-lg shadow-lg whitespace-nowrap animate-bounce z-50">
                       Link copied!
                     </span>
                   )}
@@ -585,10 +737,10 @@ export default function PostDetail() {
 
                 <button
                   onClick={() => handleShare('whatsapp')}
-                  className="p-2.5 rounded-xl bg-[var(--bg-elevated)] hover:bg-emerald-500/10 text-[var(--text-secondary)] hover:text-emerald-400 border border-[var(--border-default)] hover:border-emerald-500/20 transition-all cursor-pointer"
+                  className="p-2.5 rounded-xl bg-gradient-to-r from-emerald-500/5 to-teal-500/5 hover:from-emerald-500/10 hover:to-teal-500/10 text-[var(--text-secondary)] hover:text-emerald-500 border border-[var(--border-default)] hover:border-emerald-500/30 transition-all duration-300 shadow-sm cursor-pointer"
                   title="Share to WhatsApp"
                 >
-                  <svg className="w-4 h-4 fill-current" viewBox="0 0 24 24">
+                  <svg className="w-4 h-4 text-emerald-500 fill-current" viewBox="0 0 24 24">
                     <path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946C.06 5.348 5.397.01 12.008.01c3.202.001 6.212 1.246 8.477 3.514 2.266 2.268 3.507 5.28 3.505 8.484-.004 6.657-5.34 11.997-11.953 11.997-2.005-.001-3.973-.502-5.724-1.457L0 24zm6.59-4.846c1.6.95 3.188 1.449 4.625 1.451 5.436 0 9.86-4.42 9.864-9.864.002-2.637-1.03-5.114-2.905-6.99C16.358 1.875 13.882 1.84 11.252 1.84c-5.438 0-9.862 4.42-9.866 9.865-.002 1.94.508 3.826 1.48 5.516L1.83 22.18l5.244-1.376z"/>
                   </svg>
                 </button>
@@ -597,89 +749,148 @@ export default function PostDetail() {
               {(isOwner || role === 'admin') && (
                 <button
                   onClick={handleDeletePost}
-                  className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 text-red-400 transition-all cursor-pointer ml-auto"
+                  className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-red-500/5 hover:bg-red-500/10 border border-red-500/20 text-red-500 hover:text-red-600 transition-all duration-300 cursor-pointer ml-auto font-bold font-display"
                 >
-                  <Trash2 size={16} />
+                  <Trash2 size={15} />
                   <span>Delete Report</span>
                 </button>
               )}
             </div>
 
             {/* Resolution Timeline & Audit Log embedded inside Main Card */}
-            <div className="pt-6 border-t border-[var(--border-subtle)] space-y-4">
-              <h3 className="text-sm font-extrabold font-display flex items-center gap-2 text-[var(--text-primary)]">
-                <Clock size={15} className="text-[var(--teal-500)]" />
+            <div className="pt-6 border-t border-[var(--border-subtle)] space-y-5">
+              <h3 className="text-sm font-bold font-display flex items-center gap-2 text-[var(--text-primary)]">
+                <Clock size={16} className="text-[var(--teal-500)]" />
                 <span>Resolution Timeline & Audit Log</span>
               </h3>
 
               {post.statusHistory && post.statusHistory.length > 0 ? (
-                <div className="relative pl-5 space-y-4 border-l border-[var(--border-default)]">
-                  {post.statusHistory.map((h, i) => (
-                    <div key={i} className="relative">
-                      {/* Point */}
-                      <span className={`absolute -left-[26px] top-1.5 w-2.5 h-2.5 rounded-full border-2 bg-[var(--bg-surface)] flex items-center justify-center ${
-                        h.status === 'resolved' ? 'border-emerald-500 bg-emerald-500' : h.status === 'in_progress' ? 'border-amber-500 bg-amber-500' : 'border-[var(--teal-500)] bg-[var(--teal-500)]'
-                      }`} />
+                <div className="relative pl-6 space-y-6 before:absolute before:left-2 before:top-2 before:bottom-2 before:w-[2px] before:bg-gradient-to-b before:from-[var(--teal-500)]/40 before:to-slate-500/10">
+                  {post.statusHistory.map((h, i) => {
+                    const isResolved = h.status === 'resolved';
+                    const isInProgress = h.status === 'in_progress';
+                    const isClosed = h.status === 'closed';
 
-                      <div className="space-y-1">
-                        <div className="flex items-center gap-2">
-                          <span className={`text-[9px] uppercase font-extrabold tracking-wider px-1.5 py-0.2 rounded border ${
-                            h.status === 'resolved' ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' :
-                            h.status === 'in_progress' ? 'bg-amber-500/10 border-amber-500/20 text-amber-400' :
-                            'bg-[var(--bg-elevated)] border-[var(--border-default)] text-[var(--text-secondary)]'
-                          }`}>
-                            {h.status.replace('_', ' ')}
-                          </span>
-                          <span className="text-[10px] text-[var(--text-muted)] font-semibold">
-                            {new Date(h.updatedAt || post.createdAt).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}
-                          </span>
+                    const dotColor = isResolved ? 'bg-emerald-500 ring-emerald-500/20' : isInProgress ? 'bg-amber-500 ring-amber-500/20' : isClosed ? 'bg-slate-500 ring-slate-500/20' : 'bg-[var(--teal-500)] ring-teal-500/20';
+                    const badgeStyle = isResolved ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400 shadow-emerald-500/5' : isInProgress ? 'bg-amber-500/10 border-amber-500/20 text-amber-400 shadow-amber-500/5' : isClosed ? 'bg-slate-500/10 border-slate-500/20 text-slate-400' : 'bg-teal-500/10 border-teal-500/20 text-[var(--teal-500)]';
+
+                    return (
+                      <div key={i} className="relative group select-text">
+                        {/* Stepper Node dot */}
+                        <div className={`absolute -left-[22px] top-1.5 w-3 h-3 rounded-full ${dotColor} ring-4 transition-all duration-300 group-hover:scale-125`} />
+
+                        <div className="space-y-1.5 pl-2">
+                          <div className="flex items-center gap-2.5 flex-wrap">
+                            <span className={`text-[9px] uppercase font-bold tracking-widest px-2 py-0.5 rounded-md border ${badgeStyle}`}>
+                              {h.status.replace('_', ' ')}
+                            </span>
+                            <span className="text-[11px] text-[var(--text-muted)] font-semibold">
+                              {new Date(h.updatedAt || post.createdAt).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}
+                            </span>
+                          </div>
+                          {h.note && (
+                            <div className="bg-[var(--bg-elevated)] p-3 rounded-lg border border-[var(--border-subtle)] max-w-xl">
+                              <p className="text-xs text-[var(--text-secondary)] italic leading-relaxed">
+                                "{h.note}"
+                              </p>
+                            </div>
+                          )}
                         </div>
-                        {h.note && (
-                          <p className="text-xs text-[var(--text-secondary)] italic pl-0.5">
-                            "{h.note}"
-                          </p>
-                        )}
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               ) : (
-                <p className="text-xs text-[var(--text-muted)] italic">No updates recorded yet.</p>
+                <div className="flex items-center gap-2.5 text-xs text-[var(--text-muted)] italic bg-[var(--bg-elevated)] p-3 rounded-xl border border-[var(--border-subtle)]">
+                  <Clock size={14} className="opacity-60 text-[var(--teal-500)]" />
+                  <span>No resolution logs or updates recorded yet for this complaint.</span>
+                </div>
               )}
-            </div>
           </div>
+        </div>
+
+          {similarPosts && similarPosts.length > 0 && (
+            <div className="glass-panel p-6 rounded-3xl space-y-4 shadow-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)]">
+              <div>
+                <h3 className="font-display font-extrabold text-sm text-[var(--teal-500)] flex items-center gap-2">
+                  <MapPin size={16} /> Related Reports Nearby
+                </h3>
+                <p className="text-[10px] text-[var(--text-muted)] mt-0.5">
+                  Other reports matching the same or very similar issue coordinates and details.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {similarPosts.map(simPost => (
+                  <Link
+                    key={simPost._id}
+                    to={`/posts/${simPost._id}`}
+                    className="p-4 rounded-2xl border border-[var(--border-default)] bg-[var(--bg-elevated)] hover:border-[var(--teal-500)]/40 transition-all flex flex-col justify-between gap-3 group"
+                  >
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[9px] uppercase tracking-wider font-extrabold text-[var(--teal-400)]">
+                          {simPost.category}
+                        </span>
+                        <span className={`status-pill status-${simPost.status}`} style={{ fontSize: 8 }}>
+                          {simPost.status.replace('_', ' ')}
+                        </span>
+                      </div>
+                      <h4 className="font-display font-bold text-xs text-[var(--text-primary)] group-hover:text-[var(--teal-500)] transition-colors line-clamp-2">
+                        {simPost.title}
+                      </h4>
+                    </div>
+
+                    <div className="flex items-center justify-between text-[9px] text-[var(--text-muted)] pt-2 border-t border-[var(--border-subtle)]">
+                      <span className="truncate max-w-[70%]">📍 {simPost.address || 'Address not specified'}</span>
+                      <span className="shrink-0 font-bold text-orange-400">⚡ {simPost.severity}</span>
+                    </div>
+                  </Link>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Comments Section */}
-          <div className="glass-panel p-6 rounded-2xl space-y-6" id="comments">
+          <div className="glass-panel p-6 sm:p-8 rounded-3xl space-y-6 shadow-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)]" id="comments">
             <h3 className="text-base font-bold font-display flex items-center gap-2 text-[var(--text-primary)]">
               <MessageSquare size={18} className="text-[var(--teal-500)]" />
-              <span>Anonymous Discussion ({post.commentCount || 0})</span>
+              <span>Anonymous Discussion</span>
+              <span className="text-xs bg-[var(--bg-overlay)] border border-[var(--border-default)] text-[var(--text-secondary)] px-2 py-0.5 rounded-full font-bold select-none">
+                {post.commentCount || 0}
+              </span>
             </h3>
 
             {/* Comment Form */}
-            <form onSubmit={(e) => handleCommentSubmit(e)} className="flex items-start gap-3">
+            <form onSubmit={(e) => handleCommentSubmit(e)} className="flex items-start gap-3 bg-[var(--bg-elevated)] p-3 rounded-2xl border border-[var(--border-default)]">
               <div className="flex-1">
                 <textarea
                   value={commentText}
                   onChange={(e) => setCommentText(e.target.value)}
                   placeholder="Share details or updates anonymously..."
                   rows={2}
-                  className="w-full p-3 text-xs rounded-xl glass-input"
+                  className="w-full p-3 text-xs bg-transparent border-0 focus:ring-0 focus:outline-none resize-none text-[var(--text-primary)] placeholder-[var(--text-muted)]"
                 />
               </div>
               <button
                 type="submit"
-                className="p-3 bg-[var(--teal-500)] text-white rounded-xl hover:bg-[var(--teal-400)] transition-colors flex-shrink-0 cursor-pointer"
+                className="p-3 bg-[var(--teal-500)] hover:bg-[var(--teal-400)] text-white rounded-xl shadow-md shadow-teal-500/10 hover:shadow-teal-500/20 hover:scale-[1.03] transition-all flex-shrink-0 cursor-pointer self-end"
+                title="Post Comment"
               >
-                <Send size={16} />
+                <Send size={15} />
               </button>
             </form>
 
             {/* Empty Comments Placeholder */}
             {comments.length === 0 && (
-              <div className="text-center py-8 space-y-2 select-none">
-                <MessageSquare size={32} className="text-[var(--text-muted)] mx-auto opacity-20" />
-                <p className="text-xs text-[var(--text-muted)] italic">No comments posted yet. Start the conversation!</p>
+              <div className="text-center py-10 space-y-3 select-none">
+                <div className="w-12 h-12 rounded-full bg-[var(--bg-overlay)] flex items-center justify-center mx-auto border border-[var(--border-subtle)]">
+                  <MessageSquare size={20} className="text-[var(--text-muted)] opacity-60" />
+                </div>
+                <div>
+                  <p className="text-xs font-bold text-[var(--text-primary)]">No comments posted yet</p>
+                  <p className="text-[11px] text-[var(--text-muted)] mt-0.5">Start the conversation anonymously to share details.</p>
+                </div>
               </div>
             )}
 
@@ -690,59 +901,62 @@ export default function PostDetail() {
                 const avatarColorClass = getAvatarColor(c.senderAlias || 'Anonymous');
 
                 return (
-                  <div key={c._id} className="p-4 rounded-xl bg-[var(--bg-elevated)] border border-[var(--border-default)] space-y-3 relative">
+                  <div key={c._id} className="p-4 sm:p-5 rounded-2xl bg-[var(--bg-elevated)] border border-[var(--border-default)] space-y-3 relative group transition-all hover:border-[var(--border-strong)]">
                     <div className="flex items-center justify-between text-[10px] text-[var(--text-muted)] font-semibold uppercase tracking-wider">
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
                         {/* Custom visual avatar */}
-                        <div className={`w-6 h-6 rounded-full flex items-center justify-center font-bold text-xs border ${avatarColorClass} shadow-inner`}>
+                        <div className={`w-6 h-6 rounded-lg flex items-center justify-center font-bold text-[10px] border ${avatarColorClass} shadow-sm select-none`}>
                           {commentLetter}
                         </div>
-                        <span className="font-bold text-[var(--text-primary)]">{c.senderAlias || 'Anonymous'}</span>
+                        <span className="font-extrabold text-[var(--text-primary)]">{c.senderAlias || 'Anonymous'}</span>
                         
                         {c.isPostAuthor && (
-                          <span className="text-[8px] uppercase tracking-wider bg-teal-500/10 text-teal-400 border border-teal-500/20 px-2 py-0.5 rounded font-extrabold flex items-center gap-1">
+                          <span className="text-[8px] uppercase tracking-wider bg-teal-500/10 text-teal-500 border border-teal-500/20 px-2 py-0.5 rounded font-extrabold flex items-center gap-1">
                             <Sparkles size={8} /> Author
                           </span>
                         )}
                         {['admin', 'officer', 'department'].includes(c.creatorRole) && !c.isPostAuthor && (
-                          <span className="text-[8px] uppercase tracking-wider bg-amber-500/10 text-amber-400 border border-amber-500/20 px-2 py-0.5 rounded font-extrabold">
+                          <span className="text-[8px] uppercase tracking-wider bg-amber-500/10 text-amber-500 border border-amber-500/20 px-2 py-0.5 rounded font-extrabold">
                             {c.creatorRole}
                           </span>
                         )}
                       </div>
-                      <span>{new Date(c.createdAt).toLocaleDateString([], { month: 'short', day: 'numeric' })}</span>
+                      <span className="text-[9px] font-bold text-[var(--text-muted)] select-none">
+                        {new Date(c.createdAt).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })}
+                      </span>
                     </div>
 
-                    <p className="text-[var(--text-primary)] text-xs leading-relaxed pl-8">{c.text}</p>
+                    <p className="text-[var(--text-primary)] text-xs leading-relaxed pl-8 whitespace-pre-wrap select-text">{c.text}</p>
 
                     {/* Reply trigger button */}
                     <div className="flex items-center justify-between pt-1 text-[10px] pl-8">
                       <button
                         onClick={() => setShowReplyForm(prev => ({ ...prev, [c._id]: !prev[c._id] }))}
-                        className="text-[var(--teal-500)] font-bold hover:underline cursor-pointer"
+                        className="text-[var(--teal-500)] font-extrabold hover:text-[var(--teal-600)] flex items-center gap-1 transition-colors cursor-pointer"
                       >
-                        Reply
+                        <MessageSquare size={11} />
+                        <span>Reply</span>
                       </button>
                     </div>
 
                     {/* Replies Rendering */}
                     {c.replies && c.replies.length > 0 && (
-                      <div className="space-y-3 pl-8 pt-2 relative">
+                      <div className="space-y-3 pl-6 pt-2 relative">
                         {c.replies.map(r => {
                           const replyLetter = r.senderAlias ? r.senderAlias.replace('Citizen #', '')[0] || r.senderAlias[0] : 'A';
                           const replyAvatarClass = getAvatarColor(r.senderAlias || 'Anonymous');
 
                           return (
-                            <div key={r._id} className="relative p-3 bg-[var(--bg-overlay)] rounded-xl border border-[var(--border-default)] space-y-2 ml-4">
+                            <div key={r._id} className="relative p-3.5 bg-[var(--bg-overlay)] rounded-xl border border-[var(--border-subtle)] space-y-2 ml-4">
                               {/* Thread connector line */}
-                              <div className="absolute left-[-16px] top-[-10px] bottom-1/2 w-4 border-l-2 border-b-2 border-slate-700/40 rounded-bl-lg pointer-events-none"></div>
+                              <div className="absolute left-[-16px] top-[-10px] bottom-1/2 w-4 border-l-2 border-b-2 border-[var(--border-default)] rounded-bl-lg pointer-events-none"></div>
 
-                              <div className="flex items-center justify-between text-[9px] text-[var(--text-muted)] font-semibold uppercase tracking-widest">
-                                <div className="flex items-center gap-2">
-                                  <div className={`w-5 h-5 rounded-full flex items-center justify-center font-bold text-[10px] border ${replyAvatarClass}`}>
+                              <div className="flex items-center justify-between text-[9px] text-[var(--text-muted)] font-semibold uppercase tracking-wider">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <div className={`w-5 h-5 rounded-md flex items-center justify-center font-bold text-[9px] border ${replyAvatarClass}`}>
                                     {replyLetter}
                                   </div>
-                                  <span className="font-bold text-[var(--text-secondary)]">{r.senderAlias || 'Anonymous'}</span>
+                                  <span className="font-extrabold text-[var(--text-secondary)]">{r.senderAlias || 'Anonymous'}</span>
                                   {r.isPostAuthor && (
                                     <span className="text-[7px] uppercase tracking-wider bg-teal-500/10 text-teal-400 border border-teal-500/20 px-1.5 py-0.2 rounded font-extrabold">
                                       Author
@@ -756,7 +970,7 @@ export default function PostDetail() {
                                 </div>
                                 <span>{new Date(r.createdAt).toLocaleDateString([], { month: 'short', day: 'numeric' })}</span>
                               </div>
-                              <p className="text-[var(--text-secondary)] text-xs pl-7">{r.text}</p>
+                              <p className="text-[var(--text-secondary)] text-xs pl-7 whitespace-pre-wrap select-text">{r.text}</p>
                             </div>
                           );
                         })}
@@ -765,17 +979,17 @@ export default function PostDetail() {
 
                     {/* Reply Form */}
                     {showReplyForm[c._id] && (
-                      <form onSubmit={(e) => handleCommentSubmit(e, c._id)} className="ml-8 mt-3 flex items-start gap-2 relative">
+                      <form onSubmit={(e) => handleCommentSubmit(e, c._id)} className="ml-8 mt-3 flex items-start gap-2 relative bg-[var(--bg-overlay)] p-2 rounded-xl border border-[var(--border-subtle)]">
                         {/* Thread connector for reply form */}
-                        <div className="absolute left-[-16px] top-[-25px] bottom-1/2 w-4 border-l-2 border-b-2 border-slate-700/40 rounded-bl-lg pointer-events-none"></div>
+                        <div className="absolute left-[-16px] top-[-25px] bottom-1/2 w-4 border-l-2 border-b-2 border-[var(--border-default)] rounded-bl-lg pointer-events-none"></div>
                         <input
                           type="text"
                           value={replyText[c._id] || ''}
                           onChange={(e) => setReplyText(prev => ({ ...prev, [c._id]: e.target.value }))}
-                          placeholder="Write a reply..."
-                          className="flex-1 p-2 text-xs rounded-lg glass-input"
+                          placeholder="Write an anonymous reply..."
+                          className="flex-1 p-2 text-xs bg-transparent border-0 focus:ring-0 focus:outline-none text-[var(--text-primary)] placeholder-[var(--text-muted)]"
                         />
-                        <button type="submit" className="p-2 bg-[var(--teal-500)] text-white rounded-lg hover:bg-[var(--teal-400)] cursor-pointer">
+                        <button type="submit" className="p-2 bg-[var(--teal-500)] hover:bg-[var(--teal-400)] text-white rounded-lg shadow-sm cursor-pointer transition-colors shrink-0 self-end">
                           <Send size={12} />
                         </button>
                       </form>
@@ -792,38 +1006,45 @@ export default function PostDetail() {
 
           {/* Strike Banner */}
           {strikeRoom ? (
-            <div className="glass-panel p-4 rounded-xl border border-rose-500/30 bg-rose-500/10 text-center space-y-3">
-              <Flame className="w-6 h-6 text-rose-500 mx-auto animate-pulse" />
-              <div>
-                <h3 className="font-display text-xs font-bold text-rose-400">Escalated Protest Live</h3>
-                <p className="text-[10px] text-gray-400 mt-1">
-                  Active Member Count: {strikeRoom.memberCount} citizens support this strike.
+            <div className="glass-panel p-5 rounded-2xl border border-rose-500/35 bg-gradient-to-br from-rose-500/10 to-orange-500/5 text-center space-y-4 shadow-lg shadow-rose-500/5 animate-pulse">
+              <div className="w-12 h-12 rounded-full bg-rose-500/10 flex items-center justify-center mx-auto border border-rose-500/20">
+                <Flame className="w-6 h-6 text-rose-500" />
+              </div>
+              <div className="space-y-1">
+                <h3 className="font-display text-sm font-extrabold text-rose-400 uppercase tracking-wider">Escalated Protest Live</h3>
+                <p className="text-[11px] text-[var(--text-secondary)] leading-relaxed">
+                  <strong className="text-rose-400">{strikeRoom.memberCount} citizens</strong> are active in the live strike room coordinates.
                 </p>
               </div>
-              <Link to={`/strikes?roomId=${strikeRoom._id}`} className="block w-full py-2 bg-rose-500 hover:bg-rose-400 text-gray-900 font-bold text-[10px] rounded-lg transition-colors uppercase tracking-wider text-center cursor-pointer">
+              <Link 
+                to={`/strikes?roomId=${strikeRoom._id}`} 
+                className="block w-full py-2.5 bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs rounded-xl transition-all duration-300 uppercase tracking-widest text-center shadow-md shadow-rose-600/15 hover:shadow-rose-600/35 hover:scale-[1.01] cursor-pointer"
+              >
                 Enter Strike Room
               </Link>
             </div>
           ) : (
-            <div className="glass-panel p-4 rounded-xl border border-dashed border-rose-500/20 bg-rose-950/5 flex items-center justify-between gap-3">
-              <div className="flex items-center gap-2.5">
-                <Flame className="w-5 h-5 text-gray-500 shrink-0 opacity-55" />
+            <div className="glass-panel p-4.5 rounded-2xl border border-dashed border-rose-500/20 bg-rose-950/5 flex items-center justify-between gap-3 shadow-inner">
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-xl bg-rose-500/5 text-rose-400 shrink-0 opacity-70">
+                  <Flame size={18} />
+                </div>
                 <div>
-                  <h4 className="text-xs font-bold text-gray-400">No Active Strike</h4>
-                  <p className="text-[9px] text-[var(--text-muted)] mt-0.5">Mobilize to demand action</p>
+                  <h4 className="text-xs font-bold text-[var(--text-primary)]">No Active Strike</h4>
+                  <p className="text-[10px] text-[var(--text-muted)] mt-0.5 leading-tight">Mobilize to demand official action</p>
                 </div>
               </div>
               <button
                 onClick={handleCreateStrikeRoom}
                 disabled={creatingStrikeRoom}
-                className="px-3 py-1.5 bg-rose-600 hover:bg-rose-500 text-white font-bold text-[10px] rounded-lg transition-colors uppercase tracking-wider disabled:opacity-50 flex items-center gap-1 cursor-pointer shrink-0"
+                className="px-3.5 py-2 bg-gradient-to-r from-rose-600 to-rose-700 hover:from-rose-500 hover:to-rose-600 text-white font-extrabold text-[10px] rounded-xl transition-all duration-200 uppercase tracking-wider disabled:opacity-50 flex items-center gap-1 shadow-sm cursor-pointer shrink-0"
               >
                 {creatingStrikeRoom ? (
-                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  <Loader2 className="w-3 h-3 animate-spin" />
                 ) : (
                   <>
-                    <Flame size={10} />
-                    <span>Start</span>
+                    <Plus size={11} />
+                    <span>Protest</span>
                   </>
                 )}
               </button>
@@ -832,21 +1053,23 @@ export default function PostDetail() {
 
           {/* Status Editing Form (For Owner or Official) */}
           {showStatusEditControls && (
-            <div className="glass-panel p-5 rounded-2xl space-y-4">
+            <div className="glass-panel p-5 sm:p-6 rounded-2xl space-y-4 shadow-md border border-[var(--border-subtle)] bg-[var(--bg-surface)]">
               <div>
-                <h3 className="font-display font-bold text-[var(--teal-500)]">Status Update</h3>
-                <p className="text-[10px] text-[var(--text-muted)] uppercase tracking-widest mt-0.5">
-                  {isOwner ? 'Citizen Ownership Portal' : 'Official Officer Portal'}
+                <h3 className="font-display font-extrabold text-sm text-[var(--teal-500)] flex items-center gap-2">
+                  <span>⚙️</span> Portal Status Update
+                </h3>
+                <p className="text-[9px] text-[var(--text-muted)] uppercase tracking-widest mt-0.5 font-bold">
+                  {isOwner ? 'Citizen Ownership Panel' : 'Official Officer Panel'}
                 </p>
               </div>
 
-              <form onSubmit={handleStatusUpdate} className="space-y-3">
+              <form onSubmit={handleStatusUpdate} className="space-y-3.5 pt-1">
                 <div>
-                   <label className="block text-[10px] text-[var(--text-muted)] uppercase tracking-wider mb-1">Update Status</label>
+                   <label className="block text-[9px] text-[var(--text-muted)] uppercase font-extrabold tracking-wider mb-1">Update Current Status</label>
                    <select
                      value={statusForm.status}
                      onChange={(e) => setStatusForm(prev => ({ ...prev, status: e.target.value }))}
-                     className="w-full glass-input text-xs"
+                     className="w-full p-2.5 text-xs bg-[var(--bg-elevated)] border border-[var(--border-default)] rounded-xl text-[var(--text-primary)] focus:outline-none focus:border-[var(--teal-500)]/40 transition-colors"
                    >
                      <option value="reported">Reported</option>
                      <option value="in_progress">In Progress</option>
@@ -856,22 +1079,23 @@ export default function PostDetail() {
                  </div>
 
                 <div>
-                  <label className="block text-[10px] text-[var(--text-muted)] uppercase tracking-wider mb-1">Timeline Note</label>
-                  <textarea
-                    value={statusForm.note}
-                    onChange={(e) => setStatusForm(prev => ({ ...prev, note: e.target.value }))}
-                    placeholder="Provide resolution details or work status..."
-                    rows={2}
-                    className="w-full glass-input text-xs"
-                  />
-                </div>
+                   <label className="block text-[9px] text-[var(--text-muted)] uppercase font-extrabold tracking-wider mb-1">Timeline Resolution Note</label>
+                   <textarea
+                     value={statusForm.note}
+                     onChange={(e) => setStatusForm(prev => ({ ...prev, note: e.target.value }))}
+                     placeholder="Provide details about updates, steps taken or resolution state..."
+                     rows={3}
+                     className="w-full p-3 text-xs bg-[var(--bg-elevated)] border border-[var(--border-default)] rounded-xl text-[var(--text-primary)] focus:outline-none focus:border-[var(--teal-500)]/40 transition-colors placeholder-[var(--text-muted)] resize-none"
+                   />
+                 </div>
 
                 <button
                   type="submit"
                   disabled={updatingStatus}
-                  className="btn btn-primary w-full cursor-pointer"
+                  className="w-full py-2 bg-[var(--teal-500)] hover:bg-[var(--teal-400)] text-white font-bold text-xs rounded-xl shadow-md shadow-teal-500/10 hover:shadow-teal-500/20 hover:scale-[1.01] transition-all cursor-pointer flex items-center justify-center gap-1.5"
                 >
-                  {updatingStatus ? 'Saving Status...' : 'Apply Status Update'}
+                  {updatingStatus && <Loader2 size={13} className="animate-spin" />}
+                  <span>{updatingStatus ? 'Saving Status...' : 'Apply Status Update'}</span>
                 </button>
               </form>
             </div>
@@ -880,27 +1104,28 @@ export default function PostDetail() {
           {/* Trust & Witness Audit Card */}
           {post.images && post.images.length > 0 && (() => {
             const trustScore = post.legitimacyScore !== undefined ? post.legitimacyScore : 70;
+            const trustColor = trustScore >= 80 ? 'text-emerald-400 bg-emerald-500' : trustScore >= 50 ? 'text-amber-400 bg-amber-500' : 'text-rose-400 bg-rose-500';
             
             return (
-              <div className="glass-panel p-5 rounded-2xl space-y-4 border border-[var(--border-subtle)] bg-[var(--bg-elevated)] text-[var(--text-primary)] animate-scaleIn">
+              <div className="glass-panel p-5 rounded-2xl space-y-4 border border-[var(--border-subtle)] bg-[var(--bg-surface)] shadow-md select-none">
                 <div>
                   <h3 className="font-display font-extrabold text-sm text-[var(--text-primary)] flex items-center gap-2">
                     <span>🛡️</span> Trust & Witness Audit
                   </h3>
-                  <p className="text-[10px] text-[var(--text-secondary)] uppercase tracking-wider mt-0.5">Legitimacy Verification</p>
+                  <p className="text-[9px] text-[var(--text-muted)] uppercase tracking-wider font-extrabold mt-0.5">Legitimacy & GPS Verification</p>
                 </div>
 
                 {/* Trust Score Progress Bar */}
-                <div className="space-y-1.5">
+                <div className="space-y-2 bg-[var(--bg-elevated)] p-3.5 rounded-xl border border-[var(--border-subtle)]">
                   <div className="flex items-center justify-between text-xs font-bold">
-                    <span className="text-[var(--text-secondary)]">AI Legitimacy Index</span>
-                    <span className={trustScore >= 80 ? 'text-emerald-400' : trustScore >= 50 ? 'text-amber-400' : 'text-rose-400'}>
+                    <span className="text-[var(--text-secondary)] text-[11px]">AI Legitimacy Index</span>
+                    <span className={trustScore >= 80 ? 'text-emerald-500 font-extrabold' : trustScore >= 50 ? 'text-amber-500 font-extrabold' : 'text-rose-500 font-extrabold'}>
                       {trustScore}% Trust
                     </span>
                   </div>
-                  <div className="w-full bg-[var(--bg-overlay)] rounded-full h-1.5 overflow-hidden border border-[var(--border-subtle)]">
+                  <div className="w-full bg-[var(--bg-overlay)] rounded-full h-2 overflow-hidden border border-[var(--border-subtle)]">
                     <div 
-                      className={`h-full rounded-full transition-all duration-500 ${
+                      className={`h-full rounded-full transition-all duration-700 ${
                         trustScore >= 80 ? 'bg-emerald-500' : trustScore >= 50 ? 'bg-amber-500' : 'bg-rose-500'
                       }`} 
                       style={{ width: `${trustScore}%` }} 
@@ -909,24 +1134,24 @@ export default function PostDetail() {
                 </div>
 
                 {/* Witness Verification Section */}
-                <div className="p-3 bg-[var(--bg-overlay)] rounded-xl border border-[var(--border-subtle)] space-y-2">
+                <div className="p-4 bg-[var(--bg-elevated)] rounded-xl border border-[var(--border-default)] space-y-3">
                   <div className="flex items-center justify-between">
-                    <span className="text-[10px] uppercase font-bold text-[var(--text-secondary)] flex items-center gap-1">
-                      <CheckCircle size={11} className="text-[var(--teal-500)]" /> Local Witness
+                    <span className="text-[10px] uppercase font-extrabold text-[var(--text-secondary)] flex items-center gap-1.5">
+                      <CheckCircle size={12} className="text-[var(--teal-500)]" /> Local Witness Logs
                     </span>
                     {userWitness && (
-                      <span className="text-[8px] uppercase font-extrabold px-1.5 py-0.2 rounded border bg-emerald-500/10 text-emerald-400 border-emerald-500/20">
-                        Confirmed
+                      <span className="text-[8px] uppercase font-extrabold px-2 py-0.5 rounded-md border bg-emerald-500/10 text-emerald-400 border-emerald-500/20">
+                        Verified
                       </span>
                     )}
                   </div>
-                  <p className="text-[10px] text-[var(--text-muted)] leading-normal">
-                    {post.localWitnessCount || 0} local citizens confirmed this report nearby (500m radius).
+                  <p className="text-[11px] text-[var(--text-secondary)] leading-relaxed">
+                    <strong className="text-[var(--teal-500)] font-bold">{post.localWitnessCount || 0} local citizens</strong> verified this nearby (500m radius).
                   </p>
 
                   {userWitness ? (
-                    <div className="text-[10px] text-[var(--text-secondary)] italic bg-emerald-500/5 p-2 rounded border border-emerald-500/10">
-                      ✓ You confirmed this from {Math.round(userWitness.distanceMeters || 0)}m away.
+                    <div className="text-[11px] text-emerald-600 dark:text-emerald-400 bg-emerald-500/5 p-2.5 rounded-xl border border-emerald-500/10 italic">
+                      ✓ GPS confirmed your position ({Math.round(userWitness.distanceMeters || 0)}m away).
                     </div>
                   ) : (
                     <div className="space-y-2 pt-1">
@@ -935,31 +1160,31 @@ export default function PostDetail() {
                         value={witnessNote}
                         onChange={(e) => setWitnessNote(e.target.value)}
                         maxLength={150}
-                        placeholder="Optional witness note (heavy traffic...)"
-                        className="w-full p-2 text-[10px] rounded-lg glass-input"
+                        placeholder="Optional witness details (e.g., active issue now...)"
+                        className="w-full p-2.5 text-xs rounded-xl bg-[var(--bg-overlay)] border border-[var(--border-default)] text-[var(--text-primary)] focus:outline-none focus:border-[var(--teal-500)]/40 transition-colors placeholder-[var(--text-muted)]"
                       />
                       <button
                         type="button"
                         onClick={handleWitnessConfirm}
                         disabled={witnessLoading}
-                        className="w-full py-1.5 bg-[var(--teal-500)] hover:bg-[var(--teal-400)] text-white font-bold text-[10px] rounded-lg cursor-pointer flex items-center justify-center gap-1"
+                        className="w-full py-2 bg-[var(--teal-500)] hover:bg-[var(--teal-400)] text-white font-bold text-xs rounded-xl cursor-pointer flex items-center justify-center gap-1.5 transition-all shadow-sm hover:shadow-md hover:scale-[1.01]"
                       >
                         {witnessLoading ? (
-                          <Loader2 size={10} className="animate-spin" />
+                          <Loader2 size={12} className="animate-spin" />
                         ) : (
-                          <MapPin size={10} />
+                          <MapPin size={12} />
                         )}
-                        <span>{witnessLoading ? 'Verifying GPS...' : 'Verify Location (Requires GPS)'}</span>
+                        <span>{witnessLoading ? 'Verifying GPS...' : 'Confirm Witness (Requires GPS)'}</span>
                       </button>
                     </div>
                   )}
                 </div>
 
-                {/* Forensics analysis notes */}
-                <div className="space-y-2 text-xs">
+                {/* AI Forensics analysis notes */}
+                <div className="space-y-3">
                   {post.originalityAnalysis && (
-                    <div className="p-3 bg-[var(--bg-overlay)] rounded-xl border border-[var(--border-subtle)] space-y-1">
-                      <div className="text-[10px] uppercase font-bold text-[var(--text-secondary)]">AI Analysis</div>
+                    <div className="p-4 bg-[var(--bg-elevated)] rounded-xl border border-[var(--border-subtle)] space-y-1.5">
+                      <div className="text-[9px] uppercase font-extrabold text-[var(--text-muted)] tracking-wider">Image Metadata Forensics</div>
                       <p className="text-[var(--text-secondary)] font-sans italic text-[11px] leading-relaxed">
                         "{post.originalityAnalysis}"
                       </p>
@@ -968,23 +1193,23 @@ export default function PostDetail() {
 
                   {/* Compact details table */}
                   {post.imageMetadata && (
-                    <div className="p-2.5 bg-[var(--bg-overlay)] rounded-lg border border-[var(--border-subtle)] text-[10px] space-y-1.5">
-                      <div className="flex justify-between">
-                        <span className="text-[var(--text-secondary)]">Camera:</span>
-                        <span className="text-[var(--text-primary)] font-semibold">{post.imageMetadata.camera || 'Unknown'}</span>
+                    <div className="p-3 bg-[var(--bg-elevated)] rounded-xl border border-[var(--border-default)] text-[10px] space-y-2 font-medium">
+                      <div className="flex justify-between items-center pb-1 border-b border-[var(--border-subtle)]">
+                        <span className="text-[var(--text-muted)] font-bold">CAMERA</span>
+                        <span className="text-[var(--text-primary)] font-bold">{post.imageMetadata.camera || 'Unknown'}</span>
                       </div>
-                      <div className="flex justify-between">
-                        <span className="text-[var(--text-secondary)]">Editor:</span>
-                        <span className="text-[var(--text-primary)] font-semibold">{post.imageMetadata.software || 'None'}</span>
+                      <div className="flex justify-between items-center pb-1 border-b border-[var(--border-subtle)]">
+                        <span className="text-[var(--text-muted)] font-bold">SOFTWARE</span>
+                        <span className="text-[var(--text-primary)] font-bold">{post.imageMetadata.software || 'None'}</span>
                       </div>
                       <div className="flex justify-between items-center">
-                        <span className="text-[var(--text-secondary)]">GPS Tag:</span>
-                        <span className={`text-[8px] uppercase font-bold px-1.5 py-0.2 rounded border ${
+                        <span className="text-[var(--text-muted)] font-bold">GPS METADATA</span>
+                        <span className={`text-[8px] uppercase font-extrabold px-2 py-0.5 rounded border ${
                           post.imageMetadata.gpsMatchStatus === 'matched'
                             ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
                             : post.imageMetadata.gpsMatchStatus === 'mismatch'
                             ? 'bg-rose-500/10 text-rose-400 border-rose-500/20'
-                            : 'bg-[var(--bg-elevated)] text-[var(--text-secondary)] border-[var(--border-default)]'
+                            : 'bg-slate-500/10 text-slate-400 border-slate-500/20'
                         }`}>
                           {post.imageMetadata.gpsMatchStatus === 'matched' ? 'Matched' : post.imageMetadata.gpsMatchStatus === 'mismatch' ? 'Mismatch' : 'None'}
                         </span>
@@ -996,38 +1221,327 @@ export default function PostDetail() {
             );
           })()}
 
+          {/* Community Self-Fix Campaign Card */}
+          {post && ['sanitation', 'roads', 'other', 'municipal'].includes(post.category) && (
+            <div className="glass-panel p-5 rounded-2xl space-y-4 border border-[var(--border-subtle)] bg-[var(--bg-surface)] shadow-md">
+              <div>
+                <h3 className="font-display font-extrabold text-sm text-[var(--text-primary)] flex items-center gap-2">
+                  <span>🛠️</span> Community Self-Fix Campaign
+                </h3>
+                <p className="text-[9px] text-[var(--text-muted)] uppercase tracking-wider font-extrabold mt-0.5">Crowdsourced Meetup</p>
+              </div>
+
+              {!campaign && !showCampaignForm && (
+                <div className="space-y-3 bg-[var(--bg-elevated)] p-4 rounded-xl border border-[var(--border-subtle)]">
+                  <p className="text-[11px] text-[var(--text-secondary)] leading-relaxed font-medium">
+                    This issue has been delayed by official authorities. You can organize an active community meetup to fix it together!
+                  </p>
+                  <button
+                    onClick={() => setShowCampaignForm(true)}
+                    className="w-full py-2 bg-[var(--teal-500)] hover:bg-[var(--teal-400)] text-white font-bold text-xs rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1.5 shadow-sm hover:scale-[1.01]"
+                  >
+                    <Plus size={14} />
+                    <span>Initiate Self-Fix Meetup</span>
+                  </button>
+                </div>
+              )}
+
+              {showCampaignForm && (
+                <form onSubmit={handleCampaignCreate} className="space-y-3 bg-[var(--bg-elevated)] p-4 rounded-xl border border-[var(--border-default)]">
+                  <div className="text-[10px] font-bold text-[var(--text-primary)] uppercase tracking-wider mb-2 border-b border-[var(--border-subtle)] pb-1.5 select-none">Schedule Clean-Up / Repair</div>
+                  
+                  <div>
+                    <label className="block text-[9px] text-[var(--text-muted)] uppercase font-bold mb-1">Meeting Date</label>
+                    <input
+                      type="date"
+                      value={campaignForm.meetingDate}
+                      onChange={(e) => setCampaignForm(prev => ({ ...prev, meetingDate: e.target.value }))}
+                      className="w-full p-2 text-xs rounded-xl bg-[var(--bg-surface)] border border-[var(--border-default)] text-[var(--text-primary)] focus:outline-none"
+                      required
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[9px] text-[var(--text-muted)] uppercase font-bold mb-1">Meeting Time</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. 09:00 AM"
+                      value={campaignForm.meetingTime}
+                      onChange={(e) => setCampaignForm(prev => ({ ...prev, meetingTime: e.target.value }))}
+                      className="w-full p-2 text-xs rounded-xl bg-[var(--bg-surface)] border border-[var(--border-default)] text-[var(--text-primary)] focus:outline-none focus:border-[var(--teal-500)]/30 transition-colors"
+                      required
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[9px] text-[var(--text-muted)] uppercase font-bold mb-1">Meeting Point / Landmark</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Near Water Tank"
+                      value={campaignForm.meetingPoint}
+                      onChange={(e) => setCampaignForm(prev => ({ ...prev, meetingPoint: e.target.value }))}
+                      className="w-full p-2 text-xs rounded-xl bg-[var(--bg-surface)] border border-[var(--border-default)] text-[var(--text-primary)] focus:outline-none focus:border-[var(--teal-500)]/30 transition-colors"
+                      required
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[9px] text-[var(--text-muted)] uppercase font-bold mb-1">Target Volunteers Needed</label>
+                    <input
+                      type="number"
+                      min={2}
+                      value={campaignForm.targetVolunteers}
+                      onChange={(e) => setCampaignForm(prev => ({ ...prev, targetVolunteers: parseInt(e.target.value) || 5 }))}
+                      className="w-full p-2 text-xs rounded-xl bg-[var(--bg-surface)] border border-[var(--border-default)] text-[var(--text-primary)] focus:outline-none"
+                      required
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[9px] text-[var(--text-muted)] uppercase font-bold mb-1">Requested Supplies (comma separated)</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Trash Bags, Brooms, Paint"
+                      value={campaignForm.materialsInput}
+                      onChange={(e) => setCampaignForm(prev => ({ ...prev, materialsInput: e.target.value }))}
+                      className="w-full p-2 text-xs rounded-xl bg-[var(--bg-surface)] border border-[var(--border-default)] text-[var(--text-primary)] focus:outline-none focus:border-[var(--teal-500)]/30 transition-colors"
+                    />
+                  </div>
+
+                  <div className="flex items-center gap-2 justify-end pt-2">
+                    <button
+                      type="button"
+                      onClick={() => setShowCampaignForm(false)}
+                      className="px-3 py-1.5 text-xs text-[var(--text-secondary)] hover:text-[var(--text-primary)] font-bold cursor-pointer transition-colors"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={campaignSubmitting}
+                      className="px-4 py-1.5 text-xs bg-[var(--teal-500)] hover:bg-[var(--teal-400)] text-white font-bold rounded-lg cursor-pointer flex items-center gap-1 transition-all"
+                    >
+                      {campaignSubmitting && <Loader2 size={12} className="animate-spin" />}
+                      <span>Launch Campaign</span>
+                    </button>
+                  </div>
+                </form>
+              )}
+
+              {campaign && !showCampaignForm && (
+                <div className="space-y-4">
+                  {/* Status Banner */}
+                  <div className={`p-4 rounded-xl border flex flex-col gap-2.5 ${
+                    campaign.status === 'cancelled'
+                      ? 'bg-rose-500/10 border-rose-500/20 text-rose-400'
+                      : 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'
+                  }`}>
+                    <div className="flex items-center justify-between border-b border-white/5 pb-1.5 select-none">
+                      <span className="text-xs font-extrabold uppercase tracking-widest">
+                        {campaign.status === 'cancelled' ? '🚫 Campaign Cancelled' : '📅 Meetup Scheduled'}
+                      </span>
+                      <span className="text-[9px] font-extrabold opacity-75 px-1.5 py-0.5 rounded bg-white/5 border border-white/10">
+                        {campaign.createdBy === userProfile?.clerkId ? 'YOURS' : 'COMMUNITY'}
+                      </span>
+                    </div>
+
+                    <div className="text-[11px] space-y-1.5 font-medium">
+                      <div className="flex items-center gap-2 text-[var(--text-primary)] select-text">
+                        <Calendar size={13} className="text-[var(--teal-500)] shrink-0" />
+                        <span>Date: {new Date(campaign.meetingDate).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}</span>
+                      </div>
+                      <div className="flex items-center gap-2 text-[var(--text-primary)] select-text">
+                        <Clock size={13} className="text-[var(--teal-500)] shrink-0" />
+                        <span>Time: {campaign.meetingTime}</span>
+                      </div>
+                      <div className="flex items-center gap-2 text-[var(--text-primary)] select-text">
+                        <MapPin size={13} className="text-[var(--teal-500)] shrink-0" />
+                        <span className="truncate">Meetup: {campaign.meetingPoint}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {campaign.status === 'cancelled' && (
+                    <button
+                      onClick={() => setShowCampaignForm(true)}
+                      className="w-full py-2 bg-[var(--teal-500)] hover:bg-[var(--teal-400)] text-white font-bold text-xs rounded-xl transition-all cursor-pointer flex items-center justify-center gap-2 shadow-sm hover:scale-[1.01]"
+                    >
+                      <Plus size={14} />
+                      <span>Initiate New Meetup Campaign</span>
+                    </button>
+                  )}
+
+                  {campaign.status !== 'cancelled' && (
+                    <>
+                      {/* Volunteer List Progress */}
+                      <div className="space-y-2 bg-[var(--bg-elevated)] p-3.5 rounded-xl border border-[var(--border-subtle)]">
+                        <div className="flex items-center justify-between text-[11px] font-bold select-none">
+                          <span className="text-[var(--text-secondary)] flex items-center gap-1.5">
+                            <Users size={13} className="text-[var(--teal-500)]" /> Volunteers Joined
+                          </span>
+                          <span className="text-[var(--teal-500)]">
+                            {campaign.volunteers.length} / {campaign.targetVolunteers}
+                          </span>
+                        </div>
+                        <div className="w-full bg-[var(--bg-overlay)] rounded-full h-1.5 overflow-hidden border border-[var(--border-subtle)] select-none">
+                          <div 
+                            className="h-full rounded-full bg-[var(--teal-500)] transition-all duration-500" 
+                            style={{ width: `${Math.min(100, (campaign.volunteers.length / campaign.targetVolunteers) * 100)}%` }} 
+                          />
+                        </div>
+
+                        {/* Join / Leave Button */}
+                        <button
+                          onClick={handleVolunteerClick}
+                          disabled={volunteeringLoading}
+                          className={`w-full py-2 rounded-xl text-xs font-bold transition-all duration-200 cursor-pointer flex items-center justify-center gap-1.5 shadow-sm ${
+                            campaign.volunteers.some(v => v.clerkId === userProfile?.clerkId)
+                              ? 'bg-rose-500/10 text-rose-500 border border-rose-500/20 hover:bg-rose-500/20'
+                              : 'bg-[var(--bg-surface)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] border border-[var(--border-default)] hover:border-[var(--border-strong)]'
+                          }`}
+                        >
+                          {volunteeringLoading && <Loader2 size={12} className="animate-spin" />}
+                          <span>
+                            {campaign.volunteers.some(v => v.clerkId === userProfile?.clerkId)
+                              ? '✓ Leave Clean-Up Group'
+                              : '🙋 Join Clean-Up Group'}
+                          </span>
+                        </button>
+
+                        {/* Volunteer Name List */}
+                        {campaign.volunteers && campaign.volunteers.length > 0 && (
+                          <div className="text-[10px] text-[var(--text-secondary)] pl-1 pt-1.5 leading-normal select-text">
+                            <span className="font-bold text-[var(--text-muted)] select-none">Volunteers: </span>
+                            {campaign.volunteers.map(v => v.displayName).join(', ')}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Requested Supplies Checklist */}
+                      {campaign.materials && campaign.materials.length > 0 && (
+                        <div className="space-y-3 pt-1">
+                          <div className="text-[10px] uppercase font-extrabold text-[var(--text-muted)] tracking-wider flex items-center gap-1.5 select-none">
+                            <Wrench size={12} className="text-[var(--teal-500)]" /> Required Supplies Checklist
+                          </div>
+                          
+                          <div className="space-y-2.5">
+                            {campaign.materials.map((mat, mIdx) => {
+                              const pledgedTotal = mat.pledges.reduce((sum, p) => sum + p.quantity, 0);
+                              const isPledgedByUser = mat.pledges.some(p => p.clerkId === userProfile?.clerkId);
+                              const userPledgeQty = mat.pledges.find(p => p.clerkId === userProfile?.clerkId)?.quantity || 0;
+
+                              return (
+                                <div key={mIdx} className="p-3 bg-[var(--bg-elevated)] rounded-xl border border-[var(--border-default)] space-y-2 hover:border-[var(--border-strong)] transition-all">
+                                  <div className="flex items-center justify-between text-xs font-bold select-text">
+                                    <span className="text-[var(--text-primary)] font-bold">{mat.item}</span>
+                                    <span className="text-[var(--text-secondary)]">{pledgedTotal} / {mat.targetCount}</span>
+                                  </div>
+
+                                  <div className="w-full bg-[var(--bg-overlay)] rounded-full h-1.5 overflow-hidden select-none border border-[var(--border-subtle)]">
+                                    <div 
+                                      className="h-full bg-emerald-500 transition-all duration-500" 
+                                      style={{ width: `${Math.min(100, (pledgedTotal / mat.targetCount) * 100)}%` }} 
+                                    />
+                                  </div>
+
+                                  {/* Pledge Input / Stats */}
+                                  <div className="flex items-center justify-between gap-2 pt-1 text-[10px]">
+                                    <span className="text-[var(--text-muted)] italic font-medium select-text">
+                                      {isPledgedByUser ? `Your Pledge: ${userPledgeQty} units` : 'No personal pledge'}
+                                    </span>
+                                    
+                                    {pledgingItem === mat.item ? (
+                                      <form onSubmit={handlePledgeClick} className="flex items-center gap-1.5 animate-fadeIn">
+                                        <input
+                                          type="number"
+                                          min={0}
+                                          value={pledgeQty}
+                                          onChange={(e) => setPledgeQty(parseInt(e.target.value) || 0)}
+                                          className="w-12 p-1 text-[10px] rounded bg-[var(--bg-surface)] border border-[var(--border-default)] text-center font-bold text-[var(--text-primary)]"
+                                        />
+                                        <button
+                                          type="submit"
+                                          disabled={pledgingLoading}
+                                          className="px-2 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded-md font-bold uppercase tracking-wider text-[8px] cursor-pointer"
+                                        >
+                                          Save
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => setPledgingItem(null)}
+                                          className="px-2 py-1 text-[var(--text-muted)] hover:text-[var(--text-secondary)] text-[8px] cursor-pointer"
+                                        >
+                                          Exit
+                                        </button>
+                                      </form>
+                                    ) : (
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setPledgingItem(mat.item);
+                                          setPledgeQty(isPledgedByUser ? userPledgeQty : 1);
+                                        }}
+                                        className="text-[var(--teal-500)] font-extrabold hover:text-[var(--teal-600)] transition-colors cursor-pointer select-none"
+                                      >
+                                        {isPledgedByUser ? 'Edit Pledge' : 'Pledge Items'}
+                                      </button>
+                                    )}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Cancel Campaign Button (Creator Only) */}
+                      {(campaign.createdBy === userProfile?.clerkId || role === 'admin') && (
+                        <button
+                          onClick={handleCampaignCancel}
+                          className="w-full py-2 text-[10px] border border-rose-500/20 hover:border-rose-500/40 bg-rose-500/5 hover:bg-rose-500/10 text-rose-500 font-bold rounded-xl transition-all cursor-pointer text-center font-display uppercase tracking-widest mt-2"
+                        >
+                          Cancel Meetup Campaign
+                        </button>
+                      )}
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Official Contacts Info Card */}
-          <div className="glass-panel p-5 rounded-2xl space-y-4">
+          <div className="glass-panel p-5 rounded-2xl space-y-4 border border-[var(--border-subtle)] bg-[var(--bg-surface)] shadow-md">
             <div>
-              <h3 className="font-display font-bold text-[var(--text-primary)]">Attached Officials</h3>
-              <p className="text-[10px] text-[var(--text-muted)] uppercase tracking-widest mt-0.5">Auto-Linked by District</p>
+              <h3 className="font-display font-extrabold text-sm text-[var(--text-primary)]">Attached Officials</h3>
+              <p className="text-[9px] text-[var(--text-muted)] uppercase tracking-widest mt-0.5 font-bold">Auto-Linked by District</p>
             </div>
 
             {post.attachedContacts && post.attachedContacts.length > 0 ? (
-              <div className="space-y-4">
+              <div className="space-y-3.5">
                 {post.attachedContacts.map((c) => {
                   const phoneNum = c.phone?.[0] || '';
                   const waMessage = `Hello Officer ${c.officerName || ''}, I am alert you regarding this civic hazard on CivicTN: "${post?.title}" at ${post?.address || post?.district}. Please take action. Link: ${window.location.href}`;
                   const waUrl = phoneNum ? `https://wa.me/${phoneNum.replace(/[^0-9]/g, '')}?text=${encodeURIComponent(waMessage)}` : null;
 
                   return (
-                    <div key={c._id} className="p-3.5 bg-[var(--bg-elevated)] rounded-xl border border-[var(--border-subtle)] space-y-2 relative overflow-hidden group">
+                    <div key={c._id} className="p-4 bg-[var(--bg-elevated)] rounded-2xl border border-[var(--border-subtle)] space-y-3 relative overflow-hidden group transition-all hover:border-[var(--border-strong)]">
                       <div className="flex items-center justify-between">
-                        <span className="text-[10px] uppercase font-extrabold tracking-wider bg-emerald-500/10 text-emerald-500 dark:text-emerald-400 border border-emerald-500/20 px-2 py-0.5 rounded">
+                        <span className="text-[9px] uppercase font-bold tracking-widest bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 px-2 py-0.5 rounded select-none">
                           {c.department}
                         </span>
                       </div>
 
-                      <div className="text-xs font-bold text-[var(--text-primary)] flex items-center gap-1.5">
+                      <div className="text-xs font-bold text-[var(--text-primary)] flex items-center gap-1.5 select-text">
                         <span>{c.officerName}</span>
                         {c.designation && <span className="text-[10px] text-[var(--text-muted)] font-normal">({c.designation})</span>}
                       </div>
 
-                      <div className="space-y-1.5 pt-1 text-[11px]">
+                      <div className="space-y-2 pt-1 text-[11px] font-medium border-t border-[var(--border-subtle)] select-text">
                         {c.phone && (
-                          <div className="flex items-center justify-between gap-2">
-                            <a href={`tel:${phoneNum}`} className="flex items-center space-x-1.5 text-[var(--teal-500)] hover:underline">
-                              <Phone size={12} />
+                          <div className="flex items-center justify-between gap-3">
+                            <a href={`tel:${phoneNum}`} className="flex items-center space-x-1.5 text-[var(--teal-500)] hover:text-[var(--teal-600)] transition-colors">
+                              <Phone size={12} className="shrink-0" />
                               <span>{phoneNum}</span>
                             </a>
                             {waUrl && (
@@ -1035,7 +1549,7 @@ export default function PostDetail() {
                                 href={waUrl} 
                                 target="_blank" 
                                 rel="noopener noreferrer" 
-                                className="flex items-center gap-1 text-[9px] bg-emerald-500/10 text-emerald-500 dark:text-emerald-400 hover:bg-emerald-500/20 border border-emerald-500/20 px-2 py-0.5 rounded transition-all cursor-pointer font-bold uppercase tracking-wider"
+                                className="flex items-center gap-1 text-[9px] bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20 border border-emerald-500/20 px-2 py-0.5 rounded-lg transition-all cursor-pointer font-bold uppercase tracking-wider select-none shrink-0"
                               >
                                 WhatsApp DM
                               </a>
@@ -1043,14 +1557,14 @@ export default function PostDetail() {
                           </div>
                         )}
                         {c.email && (
-                          <a href={`mailto:${c.email}`} className="flex items-center space-x-1.5 text-[var(--teal-500)] hover:underline truncate">
-                            <Mail size={12} />
+                          <a href={`mailto:${c.email}`} className="flex items-center space-x-1.5 text-[var(--teal-500)] hover:text-[var(--teal-600)] transition-colors truncate">
+                            <Mail size={12} className="shrink-0" />
                             <span className="truncate">{c.email}</span>
                           </a>
                         )}
                         {c.portalUrl && (
-                          <a href={c.portalUrl} target="_blank" rel="noopener noreferrer" className="flex items-center space-x-1.5 text-[var(--teal-500)] hover:underline">
-                            <Globe size={12} />
+                          <a href={c.portalUrl} target="_blank" rel="noopener noreferrer" className="flex items-center space-x-1.5 text-[var(--teal-500)] hover:text-[var(--teal-600)] transition-colors">
+                            <Globe size={12} className="shrink-0" />
                             <span>Official Website</span>
                           </a>
                         )}
@@ -1060,21 +1574,24 @@ export default function PostDetail() {
                 })}
               </div>
             ) : (
-              <p className="text-xs text-[var(--text-muted)] italic">No officials configured for district: {post.district}</p>
+              <div className="p-3 bg-[var(--bg-elevated)] rounded-xl border border-[var(--border-subtle)] text-xs text-[var(--text-muted)] italic select-none text-center">
+                No officials configured for district: {post.district}
+              </div>
             )}
           </div>
 
           {/* Poll widget */}
-          <div className="glass-panel p-5 rounded-2xl space-y-4">
+          <div className="glass-panel p-5 rounded-2xl space-y-4 border border-[var(--border-subtle)] bg-[var(--bg-surface)] shadow-md">
             <div className="flex items-center justify-between">
               <div>
-                <h3 className="font-display font-bold text-[var(--text-primary)]">Community Polls</h3>
-                <p className="text-[10px] text-[var(--text-muted)] uppercase tracking-widest mt-0.5">Aggregate Intensity</p>
+                <h3 className="font-display font-extrabold text-sm text-[var(--text-primary)]">Community Polls</h3>
+                <p className="text-[9px] text-[var(--text-muted)] uppercase tracking-widest mt-0.5 font-bold select-none">Aggregate Intensity</p>
               </div>
               {!showPollForm && (
                 <button
                   onClick={() => setShowPollForm(true)}
-                  className="p-1 hover:bg-[var(--bg-overlay)] text-[var(--teal-500)] rounded-lg cursor-pointer animate-pulse"
+                  className="p-1 hover:bg-[var(--bg-elevated)] text-[var(--teal-500)] rounded-lg cursor-pointer animate-pulse select-none transition-colors border border-transparent hover:border-[var(--border-subtle)]"
+                  title="Create Poll"
                 >
                   <Plus size={16} />
                 </button>
@@ -1083,14 +1600,14 @@ export default function PostDetail() {
 
             {/* Poll Creation Form */}
             {showPollForm && (
-              <form onSubmit={handlePollCreate} className="p-3 bg-[var(--bg-elevated)] rounded-xl border border-[var(--border-default)] space-y-3">
-                <div className="text-[10px] text-[var(--text-muted)] font-bold uppercase tracking-wider">Create New Poll</div>
+              <form onSubmit={handlePollCreate} className="p-4 bg-[var(--bg-elevated)] rounded-xl border border-[var(--border-default)] space-y-3">
+                <div className="text-[10px] text-[var(--text-muted)] font-extrabold uppercase tracking-wider mb-1 select-none">Create New Poll</div>
                 <input
                   type="text"
                   placeholder="Poll question?"
                   value={pollForm.question}
                   onChange={(e) => setPollForm(prev => ({ ...prev, question: e.target.value }))}
-                  className="w-full p-2 text-xs rounded-lg glass-input focus:ring-1 focus:ring-[var(--teal-500)]"
+                  className="w-full p-2.5 text-xs rounded-xl bg-[var(--bg-surface)] border border-[var(--border-default)] text-[var(--text-primary)] focus:outline-none focus:border-[var(--teal-500)]/30 transition-colors"
                   required
                 />
                 <input
@@ -1098,7 +1615,7 @@ export default function PostDetail() {
                   placeholder="Option 1"
                   value={pollForm.option1}
                   onChange={(e) => setPollForm(prev => ({ ...prev, option1: e.target.value }))}
-                  className="w-full p-2 text-xs rounded-lg glass-input focus:ring-1 focus:ring-[var(--teal-500)]"
+                  className="w-full p-2.5 text-xs rounded-xl bg-[var(--bg-surface)] border border-[var(--border-default)] text-[var(--text-primary)] focus:outline-none focus:border-[var(--teal-500)]/30 transition-colors"
                   required
                 />
                 <input
@@ -1106,7 +1623,7 @@ export default function PostDetail() {
                   placeholder="Option 2"
                   value={pollForm.option2}
                   onChange={(e) => setPollForm(prev => ({ ...prev, option2: e.target.value }))}
-                  className="w-full p-2 text-xs rounded-lg glass-input focus:ring-1 focus:ring-[var(--teal-500)]"
+                  className="w-full p-2.5 text-xs rounded-xl bg-[var(--bg-surface)] border border-[var(--border-default)] text-[var(--text-primary)] focus:outline-none focus:border-[var(--teal-500)]/30 transition-colors"
                   required
                 />
                 <input
@@ -1114,20 +1631,20 @@ export default function PostDetail() {
                   placeholder="Option 3 (Optional)"
                   value={pollForm.option3}
                   onChange={(e) => setPollForm(prev => ({ ...prev, option3: e.target.value }))}
-                  className="w-full p-2 text-xs rounded-lg glass-input focus:ring-1 focus:ring-[var(--teal-500)]"
+                  className="w-full p-2.5 text-xs rounded-xl bg-[var(--bg-surface)] border border-[var(--border-default)] text-[var(--text-primary)] focus:outline-none focus:border-[var(--teal-500)]/30 transition-colors"
                 />
 
-                <div className="flex items-center space-x-2 justify-end">
+                <div className="flex items-center space-x-2 justify-end pt-1 select-none">
                   <button
                     type="button"
                     onClick={() => setShowPollForm(false)}
-                    className="px-2.5 py-1.5 text-xs text-[var(--text-secondary)] hover:text-[var(--text-primary)] cursor-pointer"
+                    className="px-2.5 py-1.5 text-xs text-[var(--text-secondary)] hover:text-[var(--text-primary)] font-bold cursor-pointer transition-colors"
                   >
                     Cancel
                   </button>
                   <button
                     type="submit"
-                    className="px-3 py-1.5 text-xs bg-[var(--teal-500)] hover:bg-[var(--teal-400)] text-white font-bold rounded-lg cursor-pointer"
+                    className="px-4 py-1.5 text-xs bg-[var(--teal-500)] hover:bg-[var(--teal-400)] text-white font-bold rounded-lg cursor-pointer transition-all shadow-sm"
                   >
                     Launch
                   </button>
@@ -1139,11 +1656,11 @@ export default function PostDetail() {
             {polls && polls.length > 0 ? (
               <div className="space-y-4">
                 {polls.map((poll) => (
-                  <div key={poll._id} className="p-3.5 bg-[var(--bg-elevated)] rounded-xl border border-[var(--border-default)] space-y-3">
-                    <div className="text-xs font-bold text-[var(--text-primary)] flex items-center justify-between gap-2">
+                  <div key={poll._id} className="p-4 bg-[var(--bg-elevated)] rounded-2xl border border-[var(--border-default)] space-y-3.5 hover:border-[var(--border-strong)] transition-all">
+                    <div className="text-xs font-bold text-[var(--text-primary)] flex items-center justify-between gap-2 select-text">
                       <span>{poll.question}</span>
                       {poll.userHasVoted && (
-                        <span className="text-[9px] uppercase font-extrabold tracking-wider bg-[var(--teal-glow)] text-[var(--teal-500)] px-2 py-0.5 rounded border border-[var(--teal-500)]/20 animate-fadeIn">
+                        <span className="text-[8px] uppercase font-extrabold tracking-wider bg-[var(--teal-glow)] text-[var(--teal-500)] px-2 py-0.5 rounded-md border border-[var(--teal-500)]/20 animate-fadeIn select-none shrink-0">
                           Voted
                         </span>
                       )}
@@ -1159,44 +1676,46 @@ export default function PostDetail() {
                             key={oIdx}
                             onClick={() => !poll.userHasVoted && handlePollVote(poll._id, oIdx)}
                             disabled={poll.userHasVoted}
-                            className={`w-full text-left relative overflow-hidden p-2.5 text-xs rounded-lg border transition-all ${
+                            className={`w-full text-left relative overflow-hidden p-3 text-xs rounded-xl border transition-all duration-300 ${
                               poll.userHasVoted 
                                 ? isVotedOption
-                                  ? 'border-[var(--teal-500)]/50 bg-[var(--teal-glow)] cursor-default'
-                                  : 'border-[var(--border-subtle)] bg-[var(--bg-elevated)]/50 cursor-default opacity-80'
-                                : 'border-[var(--border-default)] bg-[var(--bg-elevated)] hover:border-[var(--teal-500)]/40 cursor-pointer group'
+                                  ? 'border-[var(--teal-500)] bg-[var(--teal-glow)]/45 cursor-default shadow-sm shadow-[var(--teal-500)]/5'
+                                  : 'border-[var(--border-subtle)] bg-[var(--bg-surface)]/40 cursor-default opacity-70'
+                                : 'border-[var(--border-default)] bg-[var(--bg-surface)] hover:border-[var(--teal-500)]/45 cursor-pointer group hover:shadow-sm'
                             }`}
                           >
                             {/* Bar display */}
                             <div
-                              className={`absolute top-0 bottom-0 left-0 transition-all duration-700 ${
+                              className={`absolute top-0 bottom-0 left-0 transition-all duration-1000 ${
                                 isVotedOption 
                                   ? 'bg-[var(--teal-500)]/15'
-                                  : 'bg-[var(--teal-500)]/5'
+                                  : 'bg-[var(--text-muted)]/5'
                               }`}
                               style={{ width: `${pct}%` }}
                             />
 
                             <div className="relative z-10 flex items-center justify-between text-[var(--text-primary)]">
-                              <span className="flex items-center gap-1.5">
-                                {isVotedOption && <CheckCircle size={12} className="text-[var(--teal-500)]" />}
-                                <span className={isVotedOption ? 'font-bold text-[var(--teal-500)]' : ''}>{opt.text}</span>
+                              <span className="flex items-center gap-2">
+                                {isVotedOption && <CheckCircle size={13} className="text-[var(--teal-500)] shrink-0" />}
+                                <span className={isVotedOption ? 'font-extrabold text-[var(--teal-500)]' : 'font-semibold'}>{opt.text}</span>
                               </span>
-                              <span className="text-[10px] text-[var(--text-secondary)] font-semibold">{pct}% ({opt.voteCount})</span>
+                              <span className="text-[10px] text-[var(--text-secondary)] font-extrabold">{pct}% ({opt.voteCount})</span>
                             </div>
                           </button>
                         );
                       })}
                     </div>
 
-                    <div className="text-[9px] text-[var(--text-muted)] text-right uppercase font-semibold">
+                    <div className="text-[9px] text-[var(--text-muted)] text-right uppercase font-bold select-none border-t border-[var(--border-subtle)] pt-1.5">
                       Total votes: {poll.totalVotes || 0}
                     </div>
                   </div>
                 ))}
               </div>
             ) : (
-              <p className="text-xs text-[var(--text-muted)] italic">No community polls created for this post yet.</p>
+              <div className="p-3 bg-[var(--bg-elevated)] rounded-xl border border-[var(--border-subtle)] text-xs text-[var(--text-muted)] italic select-none text-center">
+                No active community polls for this post yet.
+              </div>
             )}
           </div>
 

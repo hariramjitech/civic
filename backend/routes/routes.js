@@ -10,7 +10,7 @@ const crypto = require('crypto');
 const router = express.Router();
 const cache = require('../services/cache');
 
-const { User, Post, Comment, Poll, ChatRoom, Message, WitnessConfirmation, Contact, AuditLog } = require('../models/models');
+const { User, Post, Comment, Poll, ChatRoom, Message, WitnessConfirmation, Contact, AuditLog, Campaign } = require('../models/models');
 const {
   requireAuth, attachUser, requireRole,
   upload, uploadToCloudinary,
@@ -204,7 +204,7 @@ router.get('/posts', requireAuth, attachUser, asyncHandler(async (req, res) => {
 router.get('/posts/:id', requireAuth, attachUser, asyncHandler(async (req, res) => {
   const post = await Post.findOne({ _id: req.params.id, isDeleted: false })
     .select('-anonToken')
-    .populate('attachedContacts')
+    .populate('attachedContacts duplicateOf')
     .lean();
   if (!post) return res.status(404).json({ error: 'Post not found' });
 
@@ -241,7 +241,27 @@ router.get('/posts/:id', requireAuth, attachUser, asyncHandler(async (req, res) 
     .select('status note distanceMeters isLocal createdAt')
     .lean();
 
-  res.json({ post, polls, strikeRoom, userWitness });
+  // Find related / similar posts
+  let similarPosts = [];
+  if (post.duplicateOf) {
+    similarPosts = await Post.find({
+      $or: [
+        { _id: post.duplicateOf._id },
+        { duplicateOf: post.duplicateOf._id }
+      ],
+      _id: { $ne: post._id },
+      isDuplicate: false,
+      isDeleted: false
+    }).select('title category address status severity').lean();
+  } else {
+    similarPosts = await Post.find({
+      duplicateOf: post._id,
+      isDuplicate: false,
+      isDeleted: false
+    }).select('title category address status severity').lean();
+  }
+
+  res.json({ post, polls, strikeRoom, userWitness, similarPosts });
 }));
 
 // POST /api/posts — create anonymous post
@@ -448,6 +468,7 @@ GPS Match Status: ${imageMetadata.gpsMatchStatus}`;
       const nearby = await Post.find({
         category: aiResult.category,
         isDeleted: false,
+        isDuplicate: false,
         location: {
           $near: {
             $geometry: { type: 'Point', coordinates: [parseFloat(lng), parseFloat(lat)] },
@@ -588,6 +609,35 @@ router.delete('/posts/:id', requireAuth, attachUser, asyncHandler(async (req, re
   cache.invalidatePattern('posts:');
   cache.invalidatePattern('analytics:');
   res.json({ success: true });
+}));
+
+// POST /api/posts/:id/resolve-duplicate — keep the post anyway, marking it as not a duplicate
+router.post('/posts/:id/resolve-duplicate', requireAuth, attachUser, asyncHandler(async (req, res) => {
+  const post = await Post.findById(req.params.id);
+  if (!post || post.isDeleted) return res.status(404).json({ error: 'Post not found' });
+  if (!req.user.postTokens?.includes(post.anonToken) && !['admin'].includes(req.user.role)) {
+    return res.status(403).json({ error: 'Permission denied' });
+  }
+
+  post.isDuplicate = false;
+  await post.save();
+
+  // Run priority algorithm to initialize/update intensity score
+  await updateIntensityScore(post._id);
+
+  const populated = await Post.findById(post._id)
+    .select('-anonToken')
+    .populate('attachedContacts', 'department officerName phone email portalUrl');
+
+  // Broadcast that the post is now live
+  const io = req.app.get('io');
+  if (io) {
+    io.to('feed').emit('feed:post_created', populated);
+  }
+
+  cache.invalidatePattern('posts:');
+  cache.invalidatePattern('analytics:');
+  res.json({ success: true, post: populated });
 }));
 
 
@@ -1464,6 +1514,157 @@ router.get('/news', attachUser, asyncHandler(async (req, res) => {
     locationNews,
     district: resolvedDistrict
   });
+}));
+
+// ═══════════════════════════════════════════
+// COMMUNITY CAMPAIGN ROUTES
+// ═══════════════════════════════════════════
+
+// GET /api/posts/:id/campaign — Fetch campaign details for a post
+router.get('/posts/:id/campaign', asyncHandler(async (req, res) => {
+  const campaign = await Campaign.findOne({ postId: req.params.id });
+  res.json({ campaign });
+}));
+
+// POST /api/posts/:id/campaign — Create a new campaign for a post
+router.post('/posts/:id/campaign', requireAuth, attachUser, asyncHandler(async (req, res) => {
+  const { meetingDate, meetingTime, meetingPoint, targetVolunteers, requestedMaterials } = req.body;
+  const post = await Post.findById(req.params.id);
+  
+  if (!post) {
+    return res.status(404).json({ error: 'Post not found' });
+  }
+
+  // Validate post category (e.g. sanitation, roads, other, municipal)
+  const allowedCategories = ['sanitation', 'roads', 'other', 'municipal'];
+  if (!allowedCategories.includes(post.category)) {
+    return res.status(400).json({ error: `Self-fix campaigns are not permitted for category: ${post.category}` });
+  }
+
+  // Check if campaign already exists
+  const existing = await Campaign.findOne({ postId: post._id });
+  if (existing) {
+    if (existing.status === 'cancelled') {
+      existing.meetingDate = new Date(meetingDate);
+      existing.meetingTime = meetingTime;
+      existing.meetingPoint = meetingPoint;
+      existing.targetVolunteers = targetVolunteers || 5;
+      existing.volunteers = [{
+        clerkId: req.user.clerkId,
+        displayName: req.user.displayName || 'Anonymous Citizen'
+      }];
+      existing.materials = materialsList;
+      existing.status = 'scheduled';
+      existing.createdBy = req.user.clerkId;
+      await existing.save();
+      return res.status(200).json({ campaign: existing });
+    }
+    return res.status(400).json({ error: 'A campaign has already been initiated for this post' });
+  }
+
+  // Format requested materials array of strings to our schema
+  const materialsList = (requestedMaterials || []).map(item => ({
+    item: item.trim(),
+    targetCount: 5, // Default target count of 5 items
+    pledges: []
+  }));
+
+  const campaign = new Campaign({
+    postId: post._id,
+    meetingDate: new Date(meetingDate),
+    meetingTime,
+    meetingPoint,
+    targetVolunteers: targetVolunteers || 5,
+    volunteers: [{
+      clerkId: req.user.clerkId,
+      displayName: req.user.displayName || 'Anonymous Citizen'
+    }], // Creator joins as first volunteer
+    materials: materialsList,
+    createdBy: req.user.clerkId
+  });
+
+  await campaign.save();
+  res.status(201).json({ campaign });
+}));
+
+// POST /api/posts/:id/campaign/volunteer — Volunteer to join/leave cleanup
+router.post('/posts/:id/campaign/volunteer', requireAuth, attachUser, asyncHandler(async (req, res) => {
+  const campaign = await Campaign.findOne({ postId: req.params.id });
+  if (!campaign) {
+    return res.status(404).json({ error: 'Campaign not found' });
+  }
+
+  const clerkId = req.user.clerkId;
+  const isVolunteered = campaign.volunteers.some(v => v.clerkId === clerkId);
+
+  if (isVolunteered) {
+    // Leave campaign
+    campaign.volunteers = campaign.volunteers.filter(v => v.clerkId !== clerkId);
+  } else {
+    // Join campaign
+    campaign.volunteers.push({
+      clerkId,
+      displayName: req.user.displayName || 'Anonymous Citizen'
+    });
+  }
+
+  await campaign.save();
+  res.json({ campaign });
+}));
+
+// POST /api/posts/:id/campaign/pledge — Pledge materials/tools to the campaign
+router.post('/posts/:id/campaign/pledge', requireAuth, attachUser, asyncHandler(async (req, res) => {
+  const { item, quantity } = req.body;
+  const campaign = await Campaign.findOne({ postId: req.params.id });
+  if (!campaign) {
+    return res.status(404).json({ error: 'Campaign not found' });
+  }
+
+  const clerkId = req.user.clerkId;
+  const displayName = req.user.displayName || 'Anonymous Citizen';
+
+  const materialRecord = campaign.materials.find(m => m.item.toLowerCase() === item.toLowerCase());
+  if (!materialRecord) {
+    return res.status(400).json({ error: `Item "${item}" is not requested in this campaign` });
+  }
+
+  // Check if user already pledged for this item, if so, update quantity. If quantity is <= 0, remove pledge.
+  const existingPledge = materialRecord.pledges.find(p => p.clerkId === clerkId);
+  if (existingPledge) {
+    if (quantity <= 0) {
+      materialRecord.pledges = materialRecord.pledges.filter(p => p.clerkId !== clerkId);
+    } else {
+      existingPledge.quantity = quantity;
+    }
+  } else if (quantity > 0) {
+    materialRecord.pledges.push({
+      clerkId,
+      displayName,
+      quantity
+    });
+  }
+
+  await campaign.save();
+  res.json({ campaign });
+}));
+
+// POST /api/posts/:id/campaign/cancel — Cancel campaign
+router.post('/posts/:id/campaign/cancel', requireAuth, attachUser, asyncHandler(async (req, res) => {
+  const campaign = await Campaign.findOne({ postId: req.params.id });
+  if (!campaign) {
+    return res.status(404).json({ error: 'Campaign not found' });
+  }
+
+  const isAdmin = req.user.role === 'admin';
+  const isCreator = campaign.createdBy === req.user.clerkId;
+
+  if (!isCreator && !isAdmin) {
+    return res.status(403).json({ error: 'Permission denied: Only the creator can cancel this campaign' });
+  }
+
+  campaign.status = 'cancelled';
+  await campaign.save();
+  res.json({ campaign });
 }));
 
 module.exports = router;
