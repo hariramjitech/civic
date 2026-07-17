@@ -255,6 +255,16 @@ export default function StrikeRooms() {
       toast.error(`Message Blocked: ${reason}`);
     };
 
+    const handleMessageFlagged = ({ messageId }) => {
+      setMessages((prev) =>
+        prev.map((m) =>
+          m._id === messageId
+            ? { ...m, text: '[Message deleted by AI content moderation]' }
+            : m
+        )
+      );
+    };
+
     const handleMessageError = ({ message }) => {
       toast.error(message || 'Message could not be sent.');
     };
@@ -269,6 +279,7 @@ export default function StrikeRooms() {
     socket.on('strike:count_update', handleStrikeCountUpdate);
     socket.on('message:new', handleNewMessage);
     socket.on('message:rejected', handleRejected);
+    socket.on('message:flagged', handleMessageFlagged);
     socket.on('message:error', handleMessageError);
     socket.on('room:error', handleRoomError);
 
@@ -287,6 +298,7 @@ export default function StrikeRooms() {
       socket.off('strike:count_update', handleStrikeCountUpdate);
       socket.off('message:new', handleNewMessage);
       socket.off('message:rejected', handleRejected);
+      socket.off('message:flagged', handleMessageFlagged);
       socket.off('message:error', handleMessageError);
       socket.off('room:error', handleRoomError);
     };

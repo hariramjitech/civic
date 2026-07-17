@@ -200,6 +200,16 @@ export default function ChatRooms() {
       toast.error(`Message Blocked: ${reason}`);
     };
 
+    const handleMessageFlagged = ({ messageId }) => {
+      setMessages((prev) =>
+        prev.map((m) =>
+          m._id === messageId
+            ? { ...m, text: '[Message deleted by AI content moderation]' }
+            : m
+        )
+      );
+    };
+
     const handleMessageError = ({ message }) => {
       toast.error(message || 'Message could not be sent.');
     };
@@ -215,6 +225,7 @@ export default function ChatRooms() {
     socket.on('message:typing', handleTyping);
     socket.on('message:stop_typing', handleStopTyping);
     socket.on('message:rejected', handleRejected);
+    socket.on('message:flagged', handleMessageFlagged);
     socket.on('message:error', handleMessageError);
     socket.on('room:error', handleRoomError);
 
@@ -236,6 +247,7 @@ export default function ChatRooms() {
       socket.off('message:typing', handleTyping);
       socket.off('message:stop_typing', handleStopTyping);
       socket.off('message:rejected', handleRejected);
+      socket.off('message:flagged', handleMessageFlagged);
       socket.off('message:error', handleMessageError);
       socket.off('room:error', handleRoomError);
       setMessages([]);

@@ -7,7 +7,7 @@
 
 const { Message, ChatRoom } = require('../models/models');
 const { generateChatAlias } = require('../middleware/middleware');
-const { moderateContent, censorText }   = require('./services');
+const { moderateContent, censorText, getProfanityStats, censorCustomWords } = require('./services');
 
 const initSocket = (io) => {
   io.on('connection', (socket) => {
@@ -97,12 +97,19 @@ const initSocket = (io) => {
           [roomId]: { alias },
         };
 
-        // Censor improper words before moderation and persistence.
-        const censoredText = censorText(cleanText);
+        // Censor improper words
+        const textStats = getProfanityStats(cleanText);
+        let censoredText = textStats.censoredText;
+
         const mod = await moderateContent(censoredText);
         if (!mod.safe) {
           const reason = mod.reason || 'Message failed moderation.';
           return fail(reason, 'message:rejected', { reason });
+        }
+
+        // Censor any additional bad words detected by Gemini
+        if (mod.badWords && mod.badWords.length > 0) {
+          censoredText = censorCustomWords(censoredText, mod.badWords);
         }
 
         const msg = await Message.create({

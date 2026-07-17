@@ -40,6 +40,28 @@ const STEPS = [
   { number: 4, label: 'Review' },
 ];
 
+const isSuspiciousImage = (res) => {
+  if (!res) return false;
+  const status = res.originalityStatus;
+  if (!status) return false;
+  
+  // Explicitly block flagged statuses
+  if (['stock_photo_detected', 'suspicious_screenshot', 'manipulated', 'screen_spoof_detected'].includes(status)) {
+    return true;
+  }
+  
+  // If unknown, check if the analysis text indicates it's a photo of a screen, display, or printout
+  if (status === 'unknown' && res.originalityAnalysis) {
+    const analysis = res.originalityAnalysis.toLowerCase();
+    const keywords = ['screen', 'display', 'monitor', 'laptop', 'television', 'printout', 'spoof', 'photograph of a', 'photo of a photo', 'photo of another'];
+    if (keywords.some(k => analysis.includes(k))) {
+      return true;
+    }
+  }
+  
+  return false;
+};
+
 export default function SubmitPost() {
   const navigate = useNavigate();
   const { isSignedIn } = useCivic();
@@ -80,6 +102,11 @@ export default function SubmitPost() {
   const [isValidated, setIsValidated] = useState(false);
   const [cameraDevices, setCameraDevices] = useState([]);
   const [activeCameraId, setActiveCameraId] = useState('');
+  
+  // AI Camera spoof validation states
+  const [isVerifyingScan, setIsVerifyingScan] = useState(false);
+  const [scanVerificationStep, setScanVerificationStep] = useState('');
+  const [scanErrorAlert, setScanErrorAlert] = useState('');
 
   const videoRef = useRef(null);
 
@@ -207,12 +234,9 @@ export default function SubmitPost() {
         }
       }
       
-      // Warning for stock / screenshot / manipulated fakes
-      if (res.data.originalityStatus === 'stock_photo_detected' || 
-          res.data.originalityStatus === 'suspicious_screenshot' || 
-          res.data.originalityStatus === 'manipulated') {
-        
-        const type = res.data.originalityStatus.replace('_', ' ');
+      // Warning for stock / screenshot / manipulated fakes / screen spoofs
+      if (isSuspiciousImage(res.data)) {
+        const type = res.data.originalityStatus?.replace('_', ' ') || 'suspicious replay/spoof';
         toast.error(`Warning: Uploaded image detected as a ${type}. Submission is locked.`, { duration: 6000 });
       } else if (res.data.allImagesRelevant === false) {
         toast.error(`AI Relevance Warning: ${res.data.relevanceExplanation || 'One of the images is not relevant.'}`, { duration: 6000 });
@@ -265,7 +289,7 @@ export default function SubmitPost() {
       if (selectedFiles.length === 0) return false;
       if (aiLoading) return false;
       if (!aiResult) return false;
-      if (aiResult.originalityStatus && aiResult.originalityStatus !== 'authentic' && aiResult.originalityStatus !== 'unknown') return false;
+      if (isSuspiciousImage(aiResult)) return false;
       if (aiResult.allImagesRelevant === false) return false;
       return true;
     }
@@ -274,7 +298,7 @@ export default function SubmitPost() {
 
   const isSubmitDisabled = () => {
     if (selectedFiles.length === 0) return true;
-    if (aiResult?.originalityStatus && aiResult.originalityStatus !== 'authentic' && aiResult.originalityStatus !== 'unknown') {
+    if (isSuspiciousImage(aiResult)) {
       return true;
     }
     if (aiResult?.allImagesRelevant === false) {
@@ -557,15 +581,58 @@ export default function SubmitPost() {
     const ctx = canvas.getContext('2d');
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
     
-    canvas.toBlob((blob) => {
+    canvas.toBlob(async (blob) => {
       if (!blob) return;
       const file = new File([blob], `camera-capture-${Date.now()}.jpg`, { type: 'image/jpeg' });
-      const newFiles = [...selectedFiles, file].slice(0, 5);
-      setSelectedFiles(newFiles);
-      setPreviews(newFiles.map(f => URL.createObjectURL(f)));
-      analyzeImages(newFiles);
-      closeScanner();
-      toast.success('Evidence photo captured!');
+      
+      setIsVerifyingScan(true);
+      setScanErrorAlert('');
+      
+      try {
+        setScanVerificationStep('Checking luminance variance...');
+        await new Promise(r => setTimeout(r, 600));
+        
+        setScanVerificationStep('Analyzing Moire interference patterns...');
+        await new Promise(r => setTimeout(r, 600));
+        
+        setScanVerificationStep('Detecting bezel/frame spoofing...');
+        await new Promise(r => setTimeout(r, 600));
+        
+        setScanVerificationStep('Running Gemini AI Forensic originality validation...');
+        
+        const fd = new FormData();
+        fd.append('images', file);
+        if (description) fd.append('description', description);
+        
+        const res = await api.post('/ai/classify', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+        const aiData = res.data;
+        
+        if (isSuspiciousImage(aiData)) {
+          const type = aiData.originalityStatus?.replace('_', ' ') || 'suspicious display/spoof';
+          setScanErrorAlert(`Authenticity Validation Failed: Replay attack detected. The image appears to be a ${type}. Please point your camera at a real, live physical civic issue.`);
+          setIsVerifyingScan(false);
+          return;
+        }
+        
+        const newFiles = [...selectedFiles, file].slice(0, 5);
+        setSelectedFiles(newFiles);
+        setPreviews(newFiles.map(f => URL.createObjectURL(f)));
+        setAiResult(aiData);
+        if (aiData.category) {
+          setCategory(aiData.category);
+          if (!title.trim() && aiData.summary) {
+            setTitle(`Reported ${aiData.category.toUpperCase()}: ${aiData.summary}`);
+          }
+        }
+        
+        closeScanner();
+        toast.success('Evidence photo verified and captured!');
+      } catch (err) {
+        console.error('Camera validation failed:', err);
+        setScanErrorAlert('AI forensic analysis failed to connect. Please try capturing again.');
+      } finally {
+        setIsVerifyingScan(false);
+      }
     }, 'image/jpeg', 0.9);
   };
 
@@ -695,18 +762,28 @@ export default function SubmitPost() {
                 AI Suggested Version
               </div>
               
-              <p style={{
-                fontSize: 13,
-                color: 'var(--text-secondary)',
-                lineHeight: 1.6,
-                padding: '10px 12px',
-                background: 'var(--bg-overlay)',
-                border: '1px solid var(--border-subtle)',
-                borderRadius: 8,
-                whiteSpace: 'pre-wrap'
-              }}>
-                {rewrittenText}
-              </p>
+              <textarea
+                value={rewrittenText}
+                onChange={e => setRewrittenText(e.target.value)}
+                className="glass-input"
+                rows={6}
+                style={{
+                  fontSize: 13,
+                  color: 'var(--text-secondary)',
+                  lineHeight: 1.6,
+                  padding: '10px 12px',
+                  background: 'var(--bg-overlay)',
+                  border: '1px solid var(--border-subtle)',
+                  borderRadius: 8,
+                  width: '100%',
+                  resize: 'vertical',
+                  fontFamily: 'inherit'
+                }}
+                maxLength={1000}
+              />
+              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: -4 }}>
+                💡 You can edit the polished version above (e.g. fill in [Street Name]) before applying.
+              </div>
 
               <div style={{ display: 'flex', gap: 8, justifySelf: 'flex-end', justifyContent: 'flex-end' }}>
                 <button
@@ -954,7 +1031,11 @@ export default function SubmitPost() {
                       <span style={{ 
                         fontWeight: 800, 
                         textTransform: 'uppercase', 
-                        color: aiResult.originalityStatus === 'authentic' ? '#4ade80' : '#f43f5e'
+                        color: aiResult.originalityStatus === 'authentic' 
+                          ? '#4ade80' 
+                          : isSuspiciousImage(aiResult) 
+                            ? '#f43f5e' 
+                            : '#fbbf24'
                       }}>
                         {aiResult.originalityStatus?.replace('_', ' ')}
                       </span>
@@ -1099,7 +1180,11 @@ export default function SubmitPost() {
                   <span style={{ 
                     fontSize: 12, 
                     fontWeight: 700, 
-                    color: aiResult.originalityStatus === 'authentic' ? '#4ade80' : '#f43f5e'
+                    color: aiResult.originalityStatus === 'authentic' 
+                      ? '#4ade80' 
+                      : isSuspiciousImage(aiResult) 
+                        ? '#f43f5e' 
+                        : '#fbbf24'
                   }}>
                     {aiResult.originalityStatus?.replace('_', ' ').toUpperCase()}
                   </span>
@@ -1116,7 +1201,7 @@ export default function SubmitPost() {
         </div>
 
         {/* Fake Rejection Warning Banner */}
-        {aiResult && (aiResult.originalityStatus === 'stock_photo_detected' || aiResult.originalityStatus === 'suspicious_screenshot' || aiResult.originalityStatus === 'manipulated') && (
+        {aiResult && isSuspiciousImage(aiResult) && (
           <div style={{
             padding: '14px 18px',
             background: 'rgba(244, 63, 94, 0.08)',
@@ -1134,7 +1219,7 @@ export default function SubmitPost() {
             <span style={{ fontSize: 16 }}>⚠️</span>
             <div>
               <strong style={{ display: 'block', marginBottom: 2, fontSize: 14 }}>Media Legitimacy Block</strong>
-              This upload was flagged as a {aiResult.originalityStatus.replace('_', ' ')}. To protect the platform against fake/spam reports, submissions containing non-authentic media are strictly blocked. Please go back and capture an original image in-situ.
+              This upload was flagged as a {aiResult.originalityStatus?.replace('_', ' ').toUpperCase() || 'SUSPICIOUS REPLAY/SPOOF'}. To protect the platform against fake/spam reports, submissions containing non-authentic media are strictly blocked. Please go back and capture an original image in-situ.
             </div>
           </div>
         )}
@@ -1352,6 +1437,77 @@ export default function SubmitPost() {
                   <div style={{ fontSize: 12 }}>{scannerError}</div>
                 </div>
               )}
+
+              {/* Verification Scan Overlay */}
+              {isVerifyingScan && (
+                <div style={{
+                  position: 'absolute',
+                  inset: 0,
+                  background: 'rgba(15, 23, 42, 0.85)',
+                  backdropFilter: 'blur(4px)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 16,
+                  color: '#fff',
+                  zIndex: 20,
+                  textAlign: 'center',
+                  padding: 24,
+                  animation: 'fadeIn 0.2s ease-out'
+                }}>
+                  <div style={{ position: 'relative' }}>
+                    <div style={{
+                      width: 48,
+                      height: 48,
+                      borderRadius: '50%',
+                      border: '3px solid rgba(20, 184, 166, 0.1)',
+                      borderTopColor: 'var(--teal-400)',
+                      animation: 'spin 1s linear infinite'
+                    }} />
+                    <Sparkles size={16} style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', color: 'var(--teal-400)' }} />
+                  </div>
+                  <div>
+                    <h4 style={{ margin: '0 0 6px 0', fontSize: 14, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--teal-400)' }}>
+                      AI Anti-Spoof Analyzer
+                    </h4>
+                    <p style={{ margin: 0, fontSize: 12, color: 'var(--text-secondary)' }}>
+                      {scanVerificationStep}
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* Scan Error Alert Display */}
+              {scanErrorAlert && (
+                <div style={{
+                  position: 'absolute',
+                  inset: 0,
+                  background: 'rgba(15, 23, 42, 0.92)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  padding: 24,
+                  textAlign: 'center',
+                  zIndex: 15,
+                  animation: 'fadeIn 0.2s ease-out'
+                }}>
+                  <span style={{ fontSize: 32, marginBottom: 12 }}>⚠️</span>
+                  <h4 style={{ margin: '0 0 8px 0', color: '#f43f5e', fontSize: 14, fontWeight: 700 }}>Spoof Attempt Flagged</h4>
+                  <p style={{ margin: '0 0 16px 0', fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+                    {scanErrorAlert}
+                  </p>
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-sm"
+                    onClick={() => setScanErrorAlert('')}
+                    style={{ padding: '6px 16px', fontSize: 11 }}
+                  >
+                    Dismiss & Try Again
+                  </button>
+                </div>
+              )}
             </div>
 
             <div className="scanner-controls">
@@ -1365,6 +1521,7 @@ export default function SubmitPost() {
                   <button
                     type="button"
                     onClick={switchCamera}
+                    disabled={isVerifyingScan}
                     className="btn btn-secondary btn-sm"
                     style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 10px', fontSize: 11 }}
                   >
@@ -1411,6 +1568,7 @@ export default function SubmitPost() {
                   type="button"
                   className="btn btn-secondary"
                   onClick={closeScanner}
+                  disabled={isVerifyingScan}
                   style={{ flex: 1 }}
                 >
                   Close
@@ -1419,7 +1577,7 @@ export default function SubmitPost() {
                   type="button"
                   className="btn btn-primary"
                   onClick={capturePhoto}
-                  disabled={scannerLoading || !!scannerError}
+                  disabled={scannerLoading || !!scannerError || isVerifyingScan}
                   style={{
                     flex: 2,
                     background: isValidated ? 'linear-gradient(135deg, #10b981, #059669)' : undefined,

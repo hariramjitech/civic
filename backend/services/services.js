@@ -8,6 +8,25 @@
 const axios  = require('axios');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const { Post, ChatRoom } = require('../models/models');
+const filter = require('leo-profanity');
+const unhomoglyph = require('unhomoglyph');
+
+// Load default english dictionary and add custom bad words
+filter.loadDictionary('en');
+
+const badWords = [
+  // English
+  'fuck', 'shit', 'ass', 'bitch', 'bastard', 'cunt', 'dick', 'pussy', 'wank', 'crap', 'dumbass', 'idiot', 'motherfucker', 'whore', 'slut', 'asshole',
+  // Tamil Transliterated (Tanglish)
+  'oolu', 'sunni', 'poolu', 'bunda', 'thevidiya', 'koothi', 'soothu', 'ommala', 'omala', 'podangotha', 'oththa', 'poramboke', 'baadu', 'kena', 'omalaokka', 'kandravi',
+  // Tamil Native
+  'தேவிடியா', 'கூதி', 'சூத்து', 'பூலு', 'சுன்னி', 'போடா', 'போடி', 'போரம்போக்கு', 'பாடுகளா', 'நாயே', 'பன்னி', 'சவடா',
+  // Hindi
+  'chutiya', 'bhenchod', 'behenchod', 'madarchod', 'gandu', 'laund', 'lauda', 'harami', 'kaminey', 'saala', 'kamina', 'saale'
+];
+
+filter.add(badWords);
+
 
 // ─────────────────────────────────────────────
 // GEMINI AI CLIENT
@@ -106,10 +125,10 @@ roads | sanitation | water | electricity | municipal | other
 2. Determine severity: low | medium | high | critical
 
 3. Perform image forensics and check originality:
-Analyze if the images are genuine, original photos taken in-situ (authentic), or if any of them is a screenshot of another photo, a downloaded stock photo from the web, a modified/manipulated photo, or unknown.
+Analyze if the images are genuine, original photos taken in-situ (authentic). If an image is a screenshot, a downloaded stock photo from the web, a modified/manipulated photo, or a photograph showing a digital screen, monitor, laptop, mobile device screen, TV, or a physical printout of an image, classify its status accordingly.
 Provide:
-- originalityStatus: "authentic" | "suspicious_screenshot" | "stock_photo_detected" | "manipulated" | "unknown"
-- originalityAnalysis: A short, 1-2 sentence explanation of your assessment.
+- originalityStatus: "authentic" | "suspicious_screenshot" | "stock_photo_detected" | "manipulated" | "screen_spoof_detected" | "unknown"
+- originalityAnalysis: A short, 1-2 sentence explanation of your assessment. If you detect a photograph of a screen/display/print, clearly state that in the explanation.
 
 4. Verify relevance:
 Ensure that ALL uploaded images are relevant to the infrastructure/civic problem described in the user description. If any image is irrelevant, completely unrelated, or inappropriate (e.g. random pet photo, meme, text document, food picture, office group photo, ceremony photo, or generic portrait that does not show the civic issue), set "allImagesRelevant" to false and provide a clear explanation in "relevanceExplanation". Otherwise, set "allImagesRelevant" to true and leave "relevanceExplanation" empty.
@@ -121,7 +140,7 @@ Respond ONLY with valid JSON (no markdown, no code blocks, no backticks):
   "tags": ["tag1","tag2"],
   "confidence": 0.0-1.0,
   "summary": "one sentence description",
-  "originalityStatus": "authentic|suspicious_screenshot|stock_photo_detected|manipulated|unknown",
+  "originalityStatus": "authentic|suspicious_screenshot|stock_photo_detected|manipulated|screen_spoof_detected|unknown",
   "originalityAnalysis": "...",
   "allImagesRelevant": true|false,
   "relevanceExplanation": "..."
@@ -184,16 +203,49 @@ Respond ONLY with JSON: {"isDuplicate":bool,"duplicateIndex":null|number,"simila
 // ─────────────────────────────────────────────
 // AI: Content moderation
 // ─────────────────────────────────────────────
+const censorCustomWords = (text, customWords) => {
+  if (!text || !customWords || !customWords.length) return text;
+  let censored = text;
+  for (const word of customWords) {
+    if (!word || word.trim().length === 0) continue;
+    const escaped = word.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+    const regex = new RegExp(escaped, 'gi');
+    censored = censored.replace(regex, (match) => {
+      if (match.length <= 1) return '*';
+      return match[0] + '*'.repeat(match.length - 1);
+    });
+  }
+  return censored;
+};
+
+// ─────────────────────────────────────────────
+// AI: Content moderation
+// ─────────────────────────────────────────────
 const moderateContent = async (text) => {
   try {
-    const result = await generateContentWithFallback(
-      `Is this safe for a civic platform? Check hate speech, violence, spam.
+    const prompt = `You are an AI content moderator for a civic engagement app in Tamil Nadu, India.
+Analyze the following user text.
+We have two categories of improper text:
+1. Normal swearing / profanity / venting about infrastructure (e.g. "fucking bumpy road", "this shit is broken"). We ALLOW these posts but censor the bad words.
+2. "Scolding", direct insults, personal attacks, abuse, hate speech, spam, or threats of violence directed at people, officials, or groups (e.g. "you idiot collector", "kill the mayor", "foolish officer"). We STRICTLY BLOCK these.
+
+Determine if this text should be blocked (i.e. is "scolding", abusive, threat, hate speech, or spam).
+Also, identify any bad words/profanity in the text in English, Tamil, Tanglish, or Hindi, so we can censor them.
+
 Text: "${text}"
-JSON only: {"safe":bool,"reason":"..."}`
-    );
-    return JSON.parse(result.response.text().replace(/```json?/gi,'').replace(/```/g,'').trim());
-  } catch {
-    return { safe: true, reason: 'moderation skipped' };
+
+Respond ONLY with a JSON object (no markdown, no backticks, no code blocks):
+{
+  "safe": true|false, // false ONLY if it is category 2 (scolding, abuse, hate speech, threat, spam)
+  "reason": "...", // explanation if safe is false
+  "badWords": ["word1", "word2"] // list of profanities/bad words found to be censored
+}`;
+    const result = await generateContentWithFallback(prompt);
+    const json = result.response.text().replace(/```json?/gi,'').replace(/```/g,'').trim();
+    return JSON.parse(json);
+  } catch (err) {
+    console.error('Error in moderateContent:', err);
+    return { safe: true, reason: 'moderation skipped', badWords: [] };
   }
 };
 
@@ -550,30 +602,85 @@ const getHaversineDistance = (lat1, lon1, lat2, lon2) => {
   return R * c; // distance in meters
 };
 
-const badWords = [
-  // English
-  'fuck', 'shit', 'ass', 'bitch', 'bastard', 'cunt', 'dick', 'pussy', 'wank', 'crap', 'dumbass', 'idiot',
-  // Tamil Transliterated (Tanglish)
-  'oolu', 'sunni', 'poolu', 'bunda', 'thevidiya', 'koothi', 'soothu', 'ommala', 'omala', 'podangotha', 'oththa', 'poramboke',
-  // Tamil Native
-  'தேவிடியா', 'கூதி', 'சூத்து', 'பூலு', 'சுன்னி', 'போடா', 'போடி'
-];
+const mapHomoglyphs1to1 = (str) => {
+  if (!str) return str;
+  const map = {
+    'а': 'a', 'с': 'c', 'е': 'e', 'о': 'o', 'р': 'p', 'у': 'y', 'х': 'x', 'ѕ': 's', 'і': 'i',
+    'А': 'A', 'С': 'C', 'Е': 'E', 'О': 'O', 'Р': 'P', 'У': 'Y', 'Х': 'X', 'Ѕ': 'S', 'І': 'I'
+  };
+  return str.split('').map(char => map[char] || char).join('');
+};
+
+const getProfanityStats = (text) => {
+  if (!text || typeof text !== 'string') return { censoredText: text, count: 0 };
+  
+  let count = 0;
+  // Normalize fullwidth and map homoglyphs 1-to-1 (preserves exact character length)
+  let normalized = text.normalize('NFKC');
+  normalized = mapHomoglyphs1to1(normalized);
+  
+  // Use a Boolean array to track already-matched character indices in the original string
+  const matchedIndices = new Uint8Array(text.length);
+  let censoredChars = text.split('');
+  
+  const allBadWords = Array.from(new Set([
+    ...badWords,
+    ...filter.list()
+  ]));
+
+  allBadWords.sort((a, b) => b.length - a.length);
+
+  for (const word of allBadWords) {
+    const isTamilScript = /[\u0B80-\u0BFF]/.test(word);
+    
+    let regexes = [];
+    if (isTamilScript) {
+      regexes.push(new RegExp(word, 'gi'));
+    } else {
+      const chars = word.split('');
+      const pattern = chars.map((c, idx) => {
+        const escaped = c.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+        if (idx === chars.length - 1) return escaped;
+        return escaped + '[^a-zA-Z0-9\\u0B80-\\u0BFF]?';
+      }).join('');
+      
+      regexes.push(new RegExp(`\\b${pattern}\\b`, 'gi'));
+      regexes.push(new RegExp(pattern, 'gi'));
+    }
+
+    for (const regex of regexes) {
+      let match;
+      const localRegex = new RegExp(regex.source, 'gi');
+      while ((match = localRegex.exec(normalized)) !== null) {
+        const index = match.index;
+        const length = match[0].length;
+        
+        let alreadyMatched = true;
+        for (let i = 0; i < length; i++) {
+          if (!matchedIndices[index + i]) {
+            alreadyMatched = false;
+            matchedIndices[index + i] = true;
+          }
+        }
+        
+        if (!alreadyMatched) {
+          count++;
+          for (let i = 1; i < length; i++) {
+            censoredChars[index + i] = '*';
+          }
+          if (length === 1) {
+            censoredChars[index] = '*';
+          }
+        }
+      }
+    }
+  }
+
+  return { censoredText: censoredChars.join(''), count };
+};
 
 const censorText = (text) => {
-  if (!text || typeof text !== 'string') return text;
-  let censored = text;
-  for (const word of badWords) {
-    const isTamilScript = /[\u0B80-\u0BFF]/.test(word);
-    const regex = isTamilScript 
-      ? new RegExp(word, 'gi')
-      : new RegExp(`\\b${word}\\b`, 'gi');
-      
-    censored = censored.replace(regex, (match) => {
-      if (match.length <= 1) return '*';
-      return match[0] + '*'.repeat(match.length - 1);
-    });
-  }
-  return censored;
+  return getProfanityStats(text).censoredText;
 };
 
 module.exports = {
@@ -589,4 +696,6 @@ module.exports = {
   generateLegalPetition,
   getHaversineDistance,
   censorText,
+  getProfanityStats,
+  censorCustomWords,
 };

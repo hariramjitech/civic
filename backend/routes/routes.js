@@ -24,7 +24,8 @@ const {
   reverseGeocode, fetchGovRoadData,
   updateIntensityScore, rewriteComplaint,
   generateLegalPetition,
-  getHaversineDistance, censorText,
+  getHaversineDistance, censorText, getProfanityStats,
+  censorCustomWords,
 } = require('../services/services');
 
 // ═══════════════════════════════════════════
@@ -255,13 +256,22 @@ router.post('/posts',
     if (!title || !description) return res.status(400).json({ error: 'Title and description required' });
 
     // Censor improper words
-    title = censorText(title);
-    description = censorText(description);
+    const titleStats = getProfanityStats(title);
+    const descStats = getProfanityStats(description);
+    
+    title = titleStats.censoredText;
+    description = descStats.censoredText;
 
-    // Moderation check
+    // AI Moderation check to block scolding/insults/abuse, but allow normal venting
     const modResult = await moderateContent(description);
     if (!modResult.safe) {
-      return res.status(400).json({ error: `Content flagged: ${modResult.reason}` });
+      return res.status(400).json({ error: `Content flagged: ${modResult.reason || 'Contains abusive language or personal attacks.'}` });
+    }
+
+    // Censor any additional bad words detected by Gemini
+    if (modResult.badWords && modResult.badWords.length > 0) {
+      title = censorCustomWords(title, modResult.badWords);
+      description = censorCustomWords(description, modResult.badWords);
     }
 
     // Upload images to Cloudinary
@@ -736,12 +746,15 @@ router.post('/posts/:id/witness', requireAuth, attachUser, asyncHandler(async (r
     });
   }
 
+  const cleanNote = String(note || '').trim();
+  const noteStats = getProfanityStats(cleanNote);
+
   const witness = await WitnessConfirmation.create({
     postId: post._id,
     userId: req.user._id,
     clerkId: req.user.clerkId,
     status,
-    note: censorText(String(note || '').trim()).slice(0, 300),
+    note: noteStats.censoredText.slice(0, 300),
     distanceMeters,
     isLocal,
   });
@@ -818,10 +831,19 @@ router.post('/posts/:id/comments', requireAuth, attachUser, asyncHandler(async (
   if (!text?.trim()) return res.status(400).json({ error: 'Comment text required' });
 
   // Censor improper words
-  text = censorText(text);
+  const textStats = getProfanityStats(text);
+  text = textStats.censoredText;
 
-  const mod = await moderateContent(text);
-  if (!mod.safe) return res.status(400).json({ error: `Comment flagged: ${mod.reason}` });
+  // AI Moderation check to block scolding/insults/abuse, but allow normal venting
+  const modResult = await moderateContent(text);
+  if (!modResult.safe) {
+    return res.status(400).json({ error: `Comment flagged: ${modResult.reason || 'Contains abusive language or personal attacks.'}` });
+  }
+
+  // Censor any additional bad words detected by Gemini
+  if (modResult.badWords && modResult.badWords.length > 0) {
+    text = censorCustomWords(text, modResult.badWords);
+  }
 
   const post = await Post.findOne({ _id: req.params.id, isDeleted: false });
   if (!post) return res.status(404).json({ error: 'Post not found' });
