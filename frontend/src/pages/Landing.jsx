@@ -73,10 +73,10 @@ const HOW_IT_WORKS = [
 ];
 
 const METRICS = [
-  { label: 'Districts Covered', value: '25+', color: 'var(--teal-400)' },
-  { label: 'Anonymous by Design', value: '100%', color: '#34d399' },
-  { label: 'AI-Powered', value: 'Real-time', color: '#a78bfa' },
-  { label: 'Escalation Levels', value: '3-Tier', color: '#f87171' },
+  { label: 'Districts Covered', value: '25+', icon: MapPin },
+  { label: 'Anonymous by Design', value: '100%', icon: ShieldCheck },
+  { label: 'AI-Powered', value: 'Real-time', icon: Cpu },
+  { label: 'Escalation Levels', value: '3-Tier', icon: TrendingUp },
 ];
 
 const TAMIL_NADU_DISTRICTS = [
@@ -232,8 +232,22 @@ export default function Landing() {
         initial={{ opacity: 0, y: 24 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.55, ease: [0.4, 0, 0.2, 1] }}
-        className="text-center py-16 md:py-24 px-6 md:px-12 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-md mb-16 mt-4"
+        className="relative overflow-hidden text-center py-16 md:py-24 px-6 md:px-12 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-md mb-10 mt-4"
       >
+        {/* Subtle civic infrastructure grid overlay */}
+        <div className="absolute right-0 top-0 bottom-0 w-full md:w-1/2 opacity-[0.06] dark:opacity-[0.04] pointer-events-none select-none hidden md:block" aria-hidden="true">
+          <svg className="w-full h-full text-[var(--teal-500)]" viewBox="0 0 100 100" preserveAspectRatio="none" fill="none" stroke="currentColor" strokeWidth="0.75">
+            <path d="M15,15 L35,35 L65,15 L85,45 M35,35 L55,75 L75,55 M55,75 L25,85 M65,15 L75,55 M15,15 L55,75 M65,15 L25,85" />
+            <circle cx="15" cy="15" r="1.5" fill="currentColor" />
+            <circle cx="35" cy="35" r="1.5" fill="currentColor" />
+            <circle cx="65" cy="15" r="1.5" fill="currentColor" />
+            <circle cx="85" cy="45" r="1.5" fill="currentColor" />
+            <circle cx="55" cy="75" r="1.5" fill="currentColor" />
+            <circle cx="75" cy="55" r="1.5" fill="currentColor" />
+            <circle cx="25" cy="85" r="1.5" fill="currentColor" />
+          </svg>
+        </div>
+
         {/* Platform badge */}
         <motion.div
           initial={{ opacity: 0, scale: 0.92 }}
@@ -296,27 +310,31 @@ export default function Landing() {
 
       {/* ── METRICS STRIP ── */}
       <StaggerContainer className="metrics-grid" inView={true}>
-        {METRICS.map((m, i) => (
-          <StaggerItem key={i}>
-            <div className="bg-white dark:bg-slate-900 py-6 px-4 text-center border-b md:border-b-0 md:border-r border-slate-200/80 dark:border-slate-800 last:border-none">
-              <div
-                className="font-display text-2xl sm:text-3xl font-black mb-1 text-[var(--teal-500)] dark:text-[var(--teal-400)]"
-              >
-                {liveStats && i === 0 ? `${liveStats.districts || 25}+` : m.value}
+        {METRICS.map((m, i) => {
+          const Icon = m.icon;
+          return (
+            <StaggerItem key={i}>
+              <div className="bg-white dark:bg-slate-900 py-6 px-4 flex flex-col items-center justify-center text-center border-b md:border-b-0 md:border-r border-slate-200/80 dark:border-slate-800 last:border-none">
+                {Icon && <Icon className="text-[var(--teal-500)] dark:text-[var(--teal-400)] mb-2" size={20} />}
+                <div
+                  className="font-display text-2xl sm:text-3xl font-black mb-1 text-[var(--teal-500)] dark:text-[var(--teal-400)]"
+                >
+                  {liveStats && i === 0 ? `${liveStats.districts || 25}+` : m.value}
+                </div>
+                <div className="section-label">{m.label}</div>
               </div>
-              <div className="section-label">{m.label}</div>
-            </div>
-          </StaggerItem>
-        ))}
+            </StaggerItem>
+          );
+        })}
       </StaggerContainer>
 
-      <RevealOnScroll className="py-16">
+      <RevealOnScroll className="py-12">
         <div className="text-center mb-10 max-w-3xl mx-auto py-4">
-          <div className="section-label mb-2">Real-Time Insights</div>
-          <h2 className="font-display text-2xl md:text-3xl font-extrabold text-[var(--text-primary)]">
+          <div className="section-label mb-2 text-teal-400 dark:text-teal-300 font-bold">Real-Time Insights</div>
+          <h2 className="font-display text-2xl md:text-3xl font-extrabold text-white">
             Civic & Infrastructure Intelligence Hub
           </h2>
-          <p className="text-xs text-[var(--text-secondary)] mt-2 leading-relaxed">
+          <p className="text-xs text-slate-300 mt-2 leading-relaxed">
             Stay updated with live infrastructure reports, government projects, and local news across Tamil Nadu.
           </p>
         </div>
@@ -694,10 +712,10 @@ export default function Landing() {
       </RevealOnScroll>
 
       {/* ── HOW IT WORKS ── */}
-      <RevealOnScroll className="py-16">
-        <div className="text-center mb-10 max-w-2xl mx-auto py-4">
-          <div className="section-label mb-2">Process</div>
-          <h2 className="font-display text-2xl md:text-3xl font-extrabold text-[var(--text-primary)]">
+      <RevealOnScroll className="py-12">
+        <div className="text-center mb-10 max-w-3xl mx-auto py-4">
+          <div className="section-label mb-2 text-teal-400 dark:text-teal-300 font-bold">Process</div>
+          <h2 className="font-display text-2xl md:text-3xl font-extrabold text-white">
             How CivicTN Works
           </h2>
         </div>
@@ -734,10 +752,10 @@ export default function Landing() {
       </RevealOnScroll>
 
       {/* ── FEATURE GRID ── */}
-      <RevealOnScroll className="py-16">
-        <div className="text-center mb-10 max-w-2xl mx-auto py-4">
-          <div className="section-label mb-2">Platform Capabilities</div>
-          <h2 className="font-display text-2xl md:text-3xl font-extrabold text-[var(--text-primary)]">
+      <RevealOnScroll className="py-12">
+        <div className="text-center mb-10 max-w-3xl mx-auto py-4">
+          <div className="section-label mb-2 text-teal-400 dark:text-teal-300 font-bold">Platform Capabilities</div>
+          <h2 className="font-display text-2xl md:text-3xl font-extrabold text-white">
             Built for Impact
           </h2>
         </div>
@@ -781,7 +799,7 @@ export default function Landing() {
       </RevealOnScroll>
 
       {/* ── ESCALATION LEVELS INFO ── */}
-      <RevealOnScroll className="py-16" delay={0.05}>
+      <RevealOnScroll className="py-12" delay={0.05}>
         <div className="card p-6 md:p-8">
           <div className="flex items-center gap-2 mb-4">
             <TrendingUp size={16} className="text-[var(--teal-500)]" />
@@ -825,7 +843,7 @@ export default function Landing() {
         </div>
       </RevealOnScroll>
 
-      <RevealOnScroll className="py-16" delay={0.08}>
+      <RevealOnScroll className="py-12" delay={0.08}>
         <section className="text-center py-16 px-6 bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-3xl shadow-md">
           <h2 className="font-display text-2xl font-extrabold text-[var(--text-primary)] mb-2.5">
             Ready to Make Your City Better?

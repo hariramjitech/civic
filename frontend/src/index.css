@@ -15,7 +15,7 @@
   --nav-height: 68px;
 
   /* Background layers - Light Theme (Solid for maximum contrast) */
-  --bg-base: #f8fafc;
+  --bg-base: #0a1f1c;
   --bg-surface: #ffffff;
   --bg-elevated: #f8fafc;
   --bg-overlay: #f1f5f9;
@@ -131,12 +131,11 @@
     position: fixed;
     inset: 0;
     z-index: -1;
-    background-color: #0b1519;
     background-image: url('/civic_pattern_bg.png');
     background-size: cover;
     background-position: center center;
     background-repeat: no-repeat;
-    opacity: 0.12; /* Ambient grid lines (12% opacity) */
+    opacity: 0.08; /* Ambient civic grid lines (8% opacity) */
     pointer-events: none;
     transform: translate3d(0, 0, 0); /* Force GPU acceleration */
   }
@@ -1038,7 +1037,7 @@ html[data-theme='dark'] .leaflet-tile-pane,
 /* 1. Dark Theme Overrides */
 html[data-theme='dark'],
 :root[data-theme='dark'] {
-  --bg-base: #020617;
+  --bg-base: #040d0c;
   --bg-surface: #0f172a;
   --bg-elevated: #1e293b;
   --bg-overlay: #334155;
@@ -1086,7 +1085,7 @@ html[data-theme='dark'],
 
 html[data-theme='dark'] body::before,
 :root[data-theme='dark'] body::before {
-  opacity: 0.08; /* Subtler grid lines in dark mode (8% opacity) */
+  opacity: 0.05; /* Subtler grid lines in dark mode (5% opacity) */
 }
 
 /* 2. High Contrast Theme Override */
@@ -1282,7 +1281,7 @@ html[data-text-size='xlarge'] h3,
   border: 1px solid var(--border-default);
   border-radius: 16px;
   overflow: hidden;
-  margin-bottom: 56px;
+  margin-bottom: 40px;
   box-shadow: var(--shadow-md);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
