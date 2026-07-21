@@ -648,50 +648,57 @@ const suggestLegalActs = async (postData) => {
   try {
     const { category, title, description } = postData;
 
-    // Optional: Call external legal acts API if configured in .env
-    if (process.env.LEGAL_ACTS_API_URL) {
-      try {
-        console.log(`📡 [Legal Acts API] Querying external API: ${process.env.LEGAL_ACTS_API_URL}`);
-        const apiResponse = await axios.get(process.env.LEGAL_ACTS_API_URL, {
-          params: { category, title, description },
-          timeout: 4000
-        });
-        if (apiResponse.data && Array.isArray(apiResponse.data.acts)) {
-          console.log(`✅ [Legal Acts API] Successfully fetched from external API`);
-          return apiResponse.data.acts;
-        }
-      } catch (apiErr) {
-        console.warn(`⚠️ [Legal Acts API] External API call failed (Reason: ${apiErr.message}). Falling back to local database / AI processing...`);
-      }
-    }
-
-    // Load local legal acts database
-    let legalActs = [];
+    // 1. Live query to InsightLaw API
+    let dynamicCandidates = [];
     try {
-      legalActs = require('../data/legalActs.json');
-    } catch (e) {
-      console.error('Failed to load legalActs.json:', e);
+      const queryTerm = `${category || ''} ${title || ''}`.trim() || 'public hazard';
+      console.log(`📡 [InsightLaw API] Querying live legal search for: "${queryTerm}"`);
+      const searchRes = await axios.get('https://insightlaw.in/api/search', {
+        params: { q: queryTerm },
+        timeout: 5000
+      });
+
+      if (searchRes.data && Array.isArray(searchRes.data.results) && searchRes.data.results.length > 0) {
+        console.log(`✅ [InsightLaw API] Found ${searchRes.data.results.length} search results`);
+        dynamicCandidates = searchRes.data.results.map(item => {
+          let actName = "Constitution of India";
+          let section = `Article ${item.article_number || '21'}`;
+          if (item.corpus === 'ipc') {
+            actName = "Indian Penal Code";
+            section = `Section ${item.section || '268'}`;
+          } else if (item.corpus === 'bns') {
+            actName = "Bharatiya Nyaya Sanhita, 2023";
+            section = `Section ${item.section || '152'}`;
+          }
+          return {
+            actName,
+            section,
+            summary: item.preview?.en || item.title_en || '',
+            category: category || 'general',
+            selectedByDefault: true
+          };
+        });
+      }
+    } catch (apiErr) {
+      console.warn(`⚠️ [InsightLaw API] Primary search query failed (${apiErr.message}). Using AI legal draftsman...`);
     }
 
-    // Filter acts by category or 'general'
-    const candidateActs = legalActs.filter(act => act.category === category || act.category === 'general');
+    // 2. Query AI to format and customize the statutory grounds
+    const prompt = `You are an expert legal counsel in India, specializing in municipal laws, civic grievances, public nuisance, and constitutional rights.
+Analyze the following civic complaint in Tamil Nadu:
+- Category: ${category || 'civic'}
+- Title: ${title || 'Civic Issue'}
+- Description: ${description || 'Public hazard requiring municipal intervention.'}
 
-    const prompt = `You are an expert legal counsel in India, specializing in municipal laws, civic grievances, and constitutional rights.
-Analyze the following civic issue logged by a citizen in Tamil Nadu:
-- Category: ${category}
-- Title: ${title}
-- Description: ${description}
+${dynamicCandidates.length > 0 ? `Candidates from live InsightLaw API search:
+${JSON.stringify(dynamicCandidates, null, 2)}` : ''}
 
-Select the 3-5 most relevant statutory acts, sections, or articles from the provided list of candidates below. Do not hallucinate or use acts outside this list.
-
-Candidates:
-${JSON.stringify(candidateActs, null, 2)}
-
-For each selected act/section, provide:
-- actName: Full name of the Act exactly as in candidates (e.g., Tamil Nadu District Municipalities Act, 1920)
-- section: Specific Section or Article exactly as in candidates (e.g., Section 162 or Article 21)
-- summary: Customized 1-sentence explanation of how this section obligates the authority to resolve the user's specific issue. Customize it to fit the user's complaint description and title.
-- selectedByDefault: boolean (use the selectedByDefault value from the candidates list or adjust to true for the most critical 2-3 grounds, false for others)
+Formulate 3-4 precise, citable statutory provisions (Articles of Constitution of India, Sections of Bharatiya Nyaya Sanhita 2023 / IPC, or Municipal Acts) applicable to this specific problem.
+For each selected provision, provide:
+- actName: Full official name of the Act (e.g., "Constitution of India", "Bharatiya Nyaya Sanhita, 2023", "Tamil Nadu District Municipalities Act, 1920")
+- section: Specific Section or Article (e.g., "Article 21", "Section 152", "Section 162")
+- summary: A clear 1-sentence legal summary explaining how this specific provision obligates the local authority or protects the resident for this exact complaint.
+- selectedByDefault: true for the top 2-3 grounds, false for others.
 
 Format the response ONLY as a valid JSON array of objects (no markdown, no code blocks, no backticks):
 [
@@ -700,8 +707,7 @@ Format the response ONLY as a valid JSON array of objects (no markdown, no code 
     "section": "...",
     "summary": "...",
     "selectedByDefault": true
-  },
-  ...
+  }
 ]`;
 
     const result = await generateContentWithFallback(prompt);
@@ -710,29 +716,96 @@ Format the response ONLY as a valid JSON array of objects (no markdown, no code 
   } catch (err) {
     console.error('Error in suggestLegalActs:', err);
     
-    // Fallback logic using the filtered database candidates
-    let legalActs = [];
-    try {
-      legalActs = require('../data/legalActs.json');
-    } catch (e) {
-      // ignore
-    }
-    const candidates = legalActs.filter(act => act.category === category || act.category === 'general');
-    if (candidates.length > 0) {
-      return candidates.map(act => ({
-        actName: act.actName,
-        section: act.section,
-        summary: act.summary,
-        selectedByDefault: act.selectedByDefault
-      }));
-    }
-
+    // Unlinked Fallback: Dynamic legal response without relying on legalActs.json
     return [
       {
         actName: "Constitution of India",
         section: "Article 21",
-        summary: "Guarantees the Right to Life, which courts have interpreted to include the right to safe public infrastructure and clean environment.",
+        summary: "Guarantees the Right to Life, which courts have interpreted to include the right to safe public infrastructure, hazard-free roads, and clean environment.",
         selectedByDefault: true
+      },
+      {
+        actName: "Bharatiya Nyaya Sanhita, 2023",
+        section: "Section 152",
+        summary: "Empowers public authorities and magistrate offices to order immediate abatement of active public nuisances and hazards endangering safety.",
+        selectedByDefault: true
+      },
+      {
+        actName: "Tamil Nadu District Municipalities Act, 1920",
+        section: "Section 162",
+        summary: "Statutory duty of local municipal corporations and district administration to maintain public streets and assets in a safe, motorable condition.",
+        selectedByDefault: true
+      }
+    ];
+  }
+};
+
+const fillMaskInLegalBERT = async (text) => {
+  const token = process.env.HF_API_TOKEN;
+  console.log(`🤖 [HuggingFace Inference] Mask fill query: "${text}"`);
+  
+  // Try calling Hugging Face Inference API
+  try {
+    let response;
+    try {
+      response = await axios.post(
+        'https://router.huggingface.co/hf-inference/models/law-ai/InLegalBERT',
+        { inputs: text },
+        {
+          headers: { 'Authorization': `Bearer ${token}` },
+          timeout: 7000
+        }
+      );
+    } catch (routeErr) {
+      console.warn(`⚠️ [HF Inference] router.huggingface.co failed, trying api-inference...: ${routeErr.message}`);
+      response = await axios.post(
+        'https://api-inference.huggingface.co/models/law-ai/InLegalBERT',
+        { inputs: text },
+        {
+          headers: { 'Authorization': `Bearer ${token}` },
+          timeout: 7000
+        }
+      );
+    }
+    
+    if (response && response.data && Array.isArray(response.data)) {
+      console.log('✅ [HF Inference] Successfully fetched predictions from Hugging Face');
+      return response.data;
+    }
+  } catch (err) {
+    console.warn(`⚠️ [HF Inference] Hugging Face Inference API failed (Reason: ${err.message || err.response?.data?.error}). Falling back to Gemini AI simulation...`);
+  }
+
+  // Gemini AI Fallback: Simulate the fill-mask behavior of law-ai/InLegalBERT
+  try {
+    console.log('🤖 [Gemini AI] Simulating InLegalBERT fill-mask prediction...');
+    const prompt = `You are simulating the Hugging Face BERT mask filling model "law-ai/InLegalBERT" specialized in Indian legal corpus (Constitution, IPC, BNS).
+Analyze this legal text containing a [MASK] token:
+"${text}"
+
+Predict the 5 most likely words to fill the [MASK] token. Focus on accurate legal terms or articles/sections applicable in this context.
+For each prediction, provide:
+- score: confidence score (a float between 0.0 and 1.0, descending, summing up to approx 1.0)
+- token_str: the predicted word or token (e.g., "liberty", "property", "injury", "public")
+- sequence: the full sentence with the [MASK] replaced by the predicted token_str.
+
+Format the response ONLY as a valid JSON array of objects (no markdown, no code blocks, no backticks):
+[
+  { "score": 0.85, "token_str": "...", "sequence": "..." },
+  ...
+]`;
+
+    const result = await generateContentWithFallback(prompt);
+    const resultText = result.response.text().replace(/```json?/gi, '').replace(/```/g, '').trim();
+    return JSON.parse(resultText);
+  } catch (geminiErr) {
+    console.error('❌ [Gemini AI] Fallback mask filling failed:', geminiErr);
+    // Ultimate fallback if both fail
+    return [
+      {
+        score: 0.5,
+        token_str: "liberty",
+        sequence: text.replace('[MASK]', 'liberty')
       }
     ];
   }
@@ -828,7 +901,21 @@ ${extraDetails.customDemands || 'N/A'}
 
 Based on the Document Type "${docType.toUpperCase()}", apply the following strict structural guidelines:
 
-#### 1. "MUNICIPAL" - Formal Administrative Representation
+#### 1. "COLLECTOR" - District Collectorate Public Grievance Representation
+- **Layout**: Official Mass Grievance Representation submitted to the District Collector & District Magistrate for Weekly Grievance Day / Administrative Directives.
+- **Preamble**:
+  - Addressed: "To: The District Collector & District Magistrate, Collectorate Office, ${postData.district || 'District'} District, Tamil Nadu."
+  - Subject Line: "SUBJECT: Urgent Public Grievance Representation under Revenue Administration & BNSS Section 152 regarding ${postData.title} at ${postData.address || 'N/A'} - Immediate Field Directives & Inspection Demanded."
+  - Reference Line: "REF: Public Complaint Log ID #${postData._id || 'N/A'}."
+- **Salutation**: "Respected Collector Sir / Madam,"
+- **Body Sections**:
+  - **I. Standing of Complainant**: Introduce lead petitioner (${extraDetails.representativeName}, Age ${extraDetails.petitionerAge}, Residing at ${extraDetails.petitionerResidingAddress}) and resident co-signatories.
+  - **II. Factual Matrix of Hazard**: Detailed chronological narration of the civic hazard, location (${postData.address || 'N/A'}, Geo-coordinates: ${coordinatesText}), severity (${postData.severity}), and failure of local municipal heads.
+  - **III. Statutory Violations & Citable Provisions**: Cite the statutory grounds (${statutoryGroundsText}) and clarify how the ongoing neglect constitutes an active breach of public trust and legal duties.
+  - **IV. District Magistrate Directives Demanded**: Demand District Magistrate invoke administrative and magistrate powers to issue immediate field repair orders to delinquent officials, set a 48-hour completion deadline, and order a physical inspection.
+- **Closure**: "Yours faithfully," followed by Lead Petitioner Signature Block and space for resident co-signatories.
+
+#### 2. "MUNICIPAL" - Formal Administrative Representation
 - **Layout**: Follow standard official memorandum/representation style in India.
 - **Preamble**:
   - Addressed "To: [Name & Address of the Addressed Authority]"
@@ -1090,6 +1177,7 @@ module.exports = {
   rewriteComplaint,
   getOfficialsHierarchy,
   suggestLegalActs,
+  fillMaskInLegalBERT,
   generateLegalPetition,
   getHaversineDistance,
   censorText,

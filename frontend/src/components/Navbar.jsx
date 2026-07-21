@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { UserButton, SignedIn, SignedOut, SignInButton } from '@clerk/clerk-react';
 import {
-  Megaphone, Map, MessageSquare, Flame,
+  Megaphone, Map, MessageSquare, Flame, Scale,
   PlusCircle, User, Shield, Menu, X, ArrowRight
 } from 'lucide-react';
 
