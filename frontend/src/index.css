@@ -131,17 +131,16 @@
     position: fixed;
     inset: 0;
     z-index: -1;
-    background-color: #0e2820;
+    background-color: #0b1519;
     background-image:
       linear-gradient(
         160deg,
-        rgba(10, 30, 22, 0.62) 0%,
-        rgba(6, 18, 14, 0.45) 40%,
-        rgba(10, 26, 20, 0.60) 100%
+        rgba(11, 21, 25, 0.35) 0%,
+        rgba(8, 14, 18, 0.45) 100%
       ),
-      url('/mountain_road_bg.png');
+      url('/civic_pattern_bg.png');
     background-size: cover;
-    background-position: center top;
+    background-position: center center;
     background-repeat: no-repeat;
     pointer-events: none;
     transform: translate3d(0, 0, 0); /* Force GPU acceleration */
@@ -1092,15 +1091,14 @@ html[data-theme='dark'],
 
 html[data-theme='dark'] body::before,
 :root[data-theme='dark'] body::before {
-  background-color: #050d0a;
+  background-color: #020608;
   background-image:
     linear-gradient(
       160deg,
-      rgba(5, 10, 18, 0.82) 0%,
-      rgba(8, 14, 22, 0.72) 50%,
-      rgba(5, 10, 18, 0.85) 100%
+      rgba(2, 6, 8, 0.75) 0%,
+      rgba(2, 6, 8, 0.85) 100%
     ),
-    url('/mountain_road_bg.png');
+    url('/civic_pattern_bg.png');
 }
 
 /* 2. High Contrast Theme Override */

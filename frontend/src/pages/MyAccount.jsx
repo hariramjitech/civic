@@ -81,7 +81,7 @@ export default function MyAccount() {
       initial={{ opacity: 0, y: 14 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.4, ease: [0.4, 0, 0.2, 1] }}
-      style={{ maxWidth: 800, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 20 }}
+      className="max-w-6xl mx-auto w-full flex flex-col gap-5"
     >
 
       {/* ── PROFILE HEADER ── */}

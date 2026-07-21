@@ -262,7 +262,7 @@ export default function Feed() {
   );
 
   return (
-    <div style={{ maxWidth: 680, margin: '0 auto' }}>
+    <div className="max-w-6xl mx-auto">
 
       {/* ── PAGE HEADER ── */}
       <div style={{
@@ -304,10 +304,19 @@ export default function Feed() {
       </div>
 
       {/* ── FILTER PILLS ── */}
-      <div style={{
-        display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 4, marginBottom: 16,
-        msOverflowStyle: 'none', scrollbarWidth: 'none',
-      }}>
+      <div
+        className="scrollbar-none"
+        style={{
+          display: 'flex',
+          gap: 8,
+          overflowX: 'auto',
+          flexWrap: 'nowrap',
+          paddingBottom: 6,
+          marginBottom: 16,
+          width: '100%',
+          WebkitOverflowScrolling: 'touch',
+        }}
+      >
         {CATEGORIES.map(c => (
           <button
             key={c.value}
@@ -396,7 +405,7 @@ export default function Feed() {
           <Link to="/submit" className="btn btn-primary">Report First Issue</Link>
         </div>
       ) : (
-        <StaggerContainer className="flex flex-col gap-4" inView={false}>
+        <StaggerContainer className="grid grid-cols-1 md:grid-cols-2 gap-6" inView={false}>
           {filteredPosts.map((post, idx) => {
             const isOwner = myPostIds.has(post._id);
             const isContactOpen = expandedContacts[post._id];

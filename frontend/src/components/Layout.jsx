@@ -67,7 +67,7 @@ export default function Layout({ children }) {
       {/* Main page content — padded to clear fixed navbar */}
       <main
         id="main-content"
-        className="flex-1 relative z-10 w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8"
+        className="flex-1 relative z-10 w-full max-w-6xl mx-auto px-4 sm:px-6 lg:px-8"
         style={{ paddingTop: 'calc(var(--nav-height) + 24px)', paddingBottom: '48px' }}
       >
         {loadingProfile && isSignedIn ? (

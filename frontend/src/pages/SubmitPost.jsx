@@ -1131,7 +1131,7 @@ export default function SubmitPost() {
   const progress = ((step - 1) / (STEPS.length - 1)) * 100;
 
   return (
-    <div style={{ maxWidth: 640, margin: '0 auto' }}>
+    <div className="max-w-6xl mx-auto">
       {/* Header */}
       <div style={{ marginBottom: 28 }}>
         <h1 style={{
