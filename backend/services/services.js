@@ -21,12 +21,6 @@ const badWords = [
   'oolu', 'sunni', 'poolu', 'bunda', 'thevidiya', 'koothi', 'soothu', 'ommala', 'omala', 'podangotha', 'oththa', 'poramboke', 'baadu', 'kena', 'omalaokka', 'kandravi',
   // Tamil Native
   'தேவிடியா', 'கூதி', 'சூத்து', 'பூலு', 'சுன்னி', 'போடா', 'போடி', 'போரம்போக்கு', 'பாடுகளா', 'நாயே', 'பன்னி', 'சவடா',
-  // Hindi
-  'chutiya', 'bhenchod', 'behenchod', 'madarchod', 'gandu', 'laund', 'lauda', 'harami', 'kaminey', 'saala', 'kamina', 'saale'
-];
-
-filter.add(badWords);
-
 
 // ─────────────────────────────────────────────
 // GEMINI AI CLIENT
