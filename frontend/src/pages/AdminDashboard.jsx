@@ -8,6 +8,9 @@ import {
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import SeverityBadge from '../components/SeverityBadge';
+import { motion, AnimatePresence } from 'framer-motion';
+import StaggerContainer, { StaggerItem } from '../components/StaggerContainer';
+import RevealOnScroll from '../components/RevealOnScroll';
 
 const TABS = [
   { key: 'overview', label: 'Overview', icon: Activity },
@@ -199,316 +202,191 @@ export default function AdminDashboard() {
         })}
       </div>
 
-      {/* ── OVERVIEW TAB ── */}
-      {activeTab === 'overview' && stats && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-
-          {/* Stats grid */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12 }}>
-            <StatCard label="Total Reports" value={stats.stats.totalPosts} color="var(--teal-400)" icon={BarChart3} />
-            <StatCard label="Resolved Cases" value={stats.stats.resolvedPosts} color="#4ade80" icon={CheckSquare} />
-            <StatCard label="Resolution Rate" value={`${stats.stats.resolutionRate}%`} color="#eab308" icon={TrendingUp} sub="of all reports resolved" />
-            <StatCard label="Critical Incidents" value={stats.stats.criticalPosts} color="var(--sev-critical)" icon={AlertCircle} />
-          </div>
-
-          {/* Breakdowns */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16 }}>
-
-            {/* Category breakdown */}
-            <div className="card" style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 14 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-                <BarChart3 size={15} style={{ color: 'var(--teal-400)' }} />
-                <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)' }}>By Category</span>
+      <AnimatePresence mode="wait">
+        <motion.div
+          key={activeTab}
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -12 }}
+          transition={{ duration: 0.22, ease: 'easeOut' }}
+        >
+          {activeTab === 'overview' && stats && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12 }}>
+                <StatCard label="Total Reports" value={stats.stats.totalPosts} color="var(--teal-400)" icon={BarChart3} />
+                <StatCard label="Resolved Cases" value={stats.stats.resolvedPosts} color="#4ade80" icon={CheckSquare} />
+                <StatCard label="Resolution Rate" value={`${stats.stats.resolutionRate}%`} color="#eab308" icon={TrendingUp} sub="of all reports resolved" />
+                <StatCard label="Critical Incidents" value={stats.stats.criticalPosts} color="var(--sev-critical)" icon={AlertCircle} />
               </div>
-              {stats.categoryBreakdown?.map((cat, i) => (
-                <BarRow key={i} label={cat._id} count={cat.count} total={stats.stats.totalPosts} />
-              ))}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16 }}>
+                <div className="card" style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 14 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                    <BarChart3 size={15} style={{ color: 'var(--teal-400)' }} />
+                    <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)' }}>By Category</span>
+                  </div>
+                  {stats.categoryBreakdown?.map((cat, i) => (
+                    <BarRow key={i} label={cat._id} count={cat.count} total={stats.stats.totalPosts} />
+                  ))}
+                </div>
+                <div className="card" style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 12 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                    <Users size={15} style={{ color: 'var(--teal-400)' }} />
+                    <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)' }}>By District</span>
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    {stats.districtBreakdown?.map((dist, i) => {
+                      const rate = dist.count ? Math.round((dist.resolved / dist.count) * 100) : 0;
+                      return (
+                        <div key={i} style={{
+                          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                          padding: '8px 0', borderBottom: '1px solid var(--border-subtle)', fontSize: 12,
+                        }}>
+                          <span style={{ fontWeight: 600, color: 'var(--text-secondary)' }}>{dist._id}</span>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                            <span style={{ color: 'var(--text-muted)' }}>{dist.count} cases</span>
+                            <span style={{
+                              fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 4,
+                              background: 'rgba(74,222,128,0.08)', color: '#4ade80', border: '1px solid rgba(74,222,128,0.2)',
+                            }}>
+                              {rate}% resolved
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+              <div className="card" style={{ padding: 20 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 16 }}>
+                  <ArrowUpRight size={15} style={{ color: '#f97316' }} />
+                  <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)' }}>Escalation Engine Rules</span>
+                </div>
+                <div className="category-grid">
+                  {[
+                    { threshold: '50+', to: 'Assistant Engineer', color: '#f97316' },
+                    { threshold: '100+', to: 'Executive Engineer', color: '#f43f5e' },
+                    { threshold: '200+', to: 'Municipal Commissioner', color: '#a855f7' },
+                  ].map((e, i) => (
+                    <div key={i} style={{
+                      padding: '12px 14px', borderRadius: 8,
+                      background: `${e.color}08`, border: `1px solid ${e.color}20`,
+                    }}>
+                      <div style={{ fontFamily: 'var(--font-display)', fontSize: 20, fontWeight: 800, color: e.color, marginBottom: 4 }}>
+                        {e.threshold}
+                      </div>
+                      <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>support votes</div>
+                      <div style={{ fontSize: 12, fontWeight: 600, color: e.color, marginTop: 6 }}>→ {e.to}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
             </div>
+          )}
 
-            {/* District breakdown */}
-            <div className="card" style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 12 }}>
+          {activeTab === 'incidents' && stats && (
+            <div className="card" style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 16 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                <AlertCircle size={15} style={{ color: '#f43f5e' }} />
+                <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)' }}>High-Intensity Incidents</span>
+              </div>
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                  <thead>
+                    <tr style={{ borderBottom: '1px solid var(--border-subtle)' }}>
+                      {['Title', 'District', 'Severity', 'Intensity', 'Status', 'Actions'].map(h => (
+                        <th key={h} style={{
+                          textAlign: 'left', padding: '10px 8px', color: 'var(--text-muted)',
+                          fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.05em',
+                        }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {stats.topIntensity?.map(post => (
+                      <tr key={post._id} style={{ borderBottom: '1px solid var(--border-subtle)' }}>
+                        <td style={{ padding: '12px 8px', fontWeight: 600, color: 'var(--text-primary)' }}>{post.title}</td>
+                        <td style={{ padding: '12px 8px', color: 'var(--text-secondary)' }}>{post.district}</td>
+                        <td style={{ padding: '12px 8px' }}><SeverityBadge severity={post.severity} /></td>
+                        <td style={{ padding: '12px 8px', fontWeight: 700, color: 'var(--text-primary)' }}>{post.intensityScore} 🔥</td>
+                        <td style={{ padding: '12px 8px' }}>
+                          <select value={post.status} onChange={e => handleStatusChange(post._id, e.target.value)} className="glass-input" style={{ fontSize: 11 }}>
+                            <option value="reported">Reported</option>
+                            <option value="in_progress">In Progress</option>
+                            <option value="resolved">Resolved</option>
+                          </select>
+                        </td>
+                        <td style={{ padding: '12px 8px' }}>
+                          <button onClick={() => handleDelete(post._id)} className="btn btn-danger btn-sm"><Trash2 size={12} /></button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'users' && role === 'admin' && (
+            <div className="card" style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 16 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
                 <Users size={15} style={{ color: 'var(--teal-400)' }} />
-                <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)' }}>By District</span>
+                <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)' }}>User Registry</span>
               </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                {stats.districtBreakdown?.map((dist, i) => {
-                  const rate = dist.count ? Math.round((dist.resolved / dist.count) * 100) : 0;
-                  return (
-                    <div key={i} style={{
-                      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                      padding: '8px 0', borderBottom: '1px solid var(--border-subtle)', fontSize: 12,
-                    }}>
-                      <span style={{ fontWeight: 600, color: 'var(--text-secondary)' }}>{dist._id}</span>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                        <span style={{ color: 'var(--text-muted)' }}>{dist.count} cases</span>
-                        <span style={{
-                          fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 4,
-                          background: 'rgba(74,222,128,0.08)', color: '#4ade80', border: '1px solid rgba(74,222,128,0.2)',
-                        }}>
-                          {rate}% resolved
-                        </span>
-                      </div>
-                    </div>
-                  );
-                })}
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                  <thead>
+                    <tr style={{ borderBottom: '1px solid var(--border-subtle)' }}>
+                      {['User', 'ID', 'District', 'Role'].map(h => <th key={h} style={{ textAlign: 'left', padding: '10px 8px', color: 'var(--text-muted)', fontSize: 10 }}>{h}</th>)}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {users.map(u => (
+                      <tr key={u._id} style={{ borderBottom: '1px solid var(--border-subtle)' }}>
+                        <td style={{ padding: '12px 8px' }}>{u.displayName}</td>
+                        <td style={{ padding: '12px 8px', fontFamily: 'monospace' }}>{u.clerkId.slice(0, 8)}</td>
+                        <td style={{ padding: '12px 8px' }}>{u.district}</td>
+                        <td style={{ padding: '12px 8px' }}>
+                          <select value={u.role} onChange={e => handleRoleChange(u._id, e.target.value)} className="glass-input" style={{ fontSize: 11 }}>
+                            <option value="citizen">Citizen</option>
+                            <option value="officer">Officer</option>
+                            <option value="admin">Admin</option>
+                          </select>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             </div>
-          </div>
+          )}
 
-          {/* Escalation thresholds info */}
-          <div className="card" style={{ padding: 20 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 16 }}>
-              <ArrowUpRight size={15} style={{ color: '#f97316' }} />
-              <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)' }}>Escalation Engine Rules</span>
-            </div>
-            <div className="category-grid">
-              {[
-                { threshold: '50+', to: 'Assistant Engineer', color: '#f97316' },
-                { threshold: '100+', to: 'Executive Engineer', color: '#f43f5e' },
-                { threshold: '200+', to: 'Municipal Commissioner', color: '#a855f7' },
-              ].map((e, i) => (
-                <div key={i} style={{
-                  padding: '12px 14px', borderRadius: 8,
-                  background: `${e.color}08`, border: `1px solid ${e.color}20`,
-                }}>
-                  <div style={{ fontFamily: 'var(--font-display)', fontSize: 20, fontWeight: 800, color: e.color, marginBottom: 4 }}>
-                    {e.threshold}
-                  </div>
-                  <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>support votes</div>
-                  <div style={{ fontSize: 12, fontWeight: 600, color: e.color, marginTop: 6 }}>→ {e.to}</div>
+          {activeTab === 'ai' && (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16 }}>
+              <div className="card" style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 14 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                  <Sparkles size={15} style={{ color: 'var(--teal-400)' }} />
+                  <span style={{ fontSize: 14, fontWeight: 700 }}>AI Report</span>
                 </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ── INCIDENTS TAB ── */}
-      {activeTab === 'incidents' && stats && (
-        <div className="card" style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 16 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-            <AlertCircle size={15} style={{ color: '#f43f5e' }} />
-            <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)' }}>High-Intensity Incidents</span>
-          </div>
-
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
-              <thead>
-                <tr style={{ borderBottom: '1px solid var(--border-subtle)' }}>
-                  {['Title', 'District', 'Severity', 'Intensity', 'Status', 'Actions'].map(h => (
-                    <th key={h} style={{
-                      padding: '8px 12px', textAlign: 'left',
-                      fontSize: 10, fontWeight: 700, textTransform: 'uppercase',
-                      letterSpacing: '0.06em', color: 'var(--text-muted)',
-                    }}>
-                      {h}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {stats.topIntensity?.map(post => (
-                  <tr key={post._id} style={{ borderBottom: '1px solid var(--border-subtle)', transition: 'background 0.1s' }}
-                    onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-elevated)'}
-                    onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
-                  >
-                    <td style={{ padding: '12px', fontWeight: 600, color: 'var(--text-primary)', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {post.title}
-                    </td>
-                    <td style={{ padding: '12px', color: 'var(--text-secondary)' }}>{post.district}</td>
-                    <td style={{ padding: '12px' }}>
-                      <SeverityBadge severity={post.severity} />
-                    </td>
-                    <td style={{ padding: '12px', fontWeight: 700, color: 'var(--text-primary)' }}>
-                      {post.intensityScore} 🔥
-                    </td>
-                    <td style={{ padding: '12px' }}>
-                      <select
-                        value={post.status || 'reported'}
-                        onChange={e => handleStatusChange(post._id, e.target.value)}
-                        className="glass-input"
-                        style={{ padding: '4px 28px 4px 8px', fontSize: 11, width: 'auto' }}
-                      >
-                        <option value="reported">Reported</option>
-                        <option value="in_progress">In Progress</option>
-                        <option value="resolved">Resolved</option>
-                        <option value="closed">Closed</option>
-                      </select>
-                    </td>
-                    <td style={{ padding: '12px' }}>
-                      <button
-                        onClick={() => handleDelete(post._id)}
-                        className="btn btn-danger btn-sm"
-                      >
-                        <Trash2 size={13} />
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
-      {/* ── USERS TAB ── */}
-      {activeTab === 'users' && role === 'admin' && (
-        <div className="card" style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 16 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-            <Users size={15} style={{ color: 'var(--teal-400)' }} />
-            <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)' }}>
-              User Registry ({users.length})
-            </span>
-          </div>
-
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
-              <thead>
-                <tr style={{ borderBottom: '1px solid var(--border-subtle)' }}>
-                  {['User', 'Clerk ID', 'District', 'Role'].map(h => (
-                    <th key={h} style={{ padding: '8px 12px', textAlign: 'left', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-muted)' }}>
-                      {h}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {users.map(user => (
-                  <tr key={user._id} style={{ borderBottom: '1px solid var(--border-subtle)' }}
-                    onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-elevated)'}
-                    onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
-                  >
-                    <td style={{ padding: '12px', fontWeight: 600, color: 'var(--text-primary)' }}>
-                      {user.displayName || 'Citizen Member'}
-                    </td>
-                    <td style={{ padding: '12px', fontFamily: 'monospace', fontSize: 10, color: 'var(--text-muted)' }}>
-                      {user.clerkId?.slice(0, 16)}...
-                    </td>
-                    <td style={{ padding: '12px', color: 'var(--text-secondary)' }}>
-                      {user.district || '—'}
-                    </td>
-                    <td style={{ padding: '12px' }}>
-                      <select
-                        value={user.role}
-                        onChange={e => handleRoleChange(user._id, e.target.value)}
-                        className="glass-input"
-                        style={{ padding: '4px 28px 4px 8px', fontSize: 11, width: 'auto' }}
-                      >
-                        <option value="citizen">Citizen</option>
-                        <option value="officer">Field Officer</option>
-                        <option value="department">Department Head</option>
-                        <option value="admin">Administrator</option>
-                      </select>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
-      {/* ── AI TAB ── */}
-      {activeTab === 'ai' && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16 }}>
-
-          {/* Report generator */}
-          <div className="card" style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 14 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-              <Sparkles size={15} style={{ color: 'var(--teal-400)' }} />
-              <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)' }}>AI Executive Report</span>
-            </div>
-            <p style={{ fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.6 }}>
-              Gemini AI compiles a structured municipal summary from current platform analytics.
-            </p>
-
-            {aiReport && (
-              <div style={{
-                maxHeight: 200, overflowY: 'auto', padding: '12px 14px',
-                background: 'var(--bg-elevated)', borderRadius: 8, border: '1px solid var(--border-subtle)',
-                fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.65,
-                whiteSpace: 'pre-wrap',
-              }}>
-                {aiReport}
+                {aiReport && <div style={{ fontSize: 12, background: 'var(--bg-elevated)', padding: 12, borderRadius: 8 }}>{aiReport}</div>}
+                <button onClick={generateAIReport} disabled={generatingReport} className="btn btn-primary">{generatingReport ? 'Generating...' : 'Generate'}</button>
               </div>
-            )}
-
-            <div style={{ display: 'flex', gap: 8 }}>
-              <button
-                onClick={generateAIReport}
-                disabled={generatingReport}
-                className="btn btn-primary"
-                style={{ flex: 1 }}
-              >
-                {generatingReport
-                  ? <><Loader2 size={14} style={{ animation: 'spin 0.8s linear infinite' }} /> Generating...</>
-                  : <><Sparkles size={14} /> Generate Report</>
-                }
-              </button>
-              {aiReport && (
-                <button onClick={downloadReport} className="btn btn-secondary" title="Download as text">
-                  <Download size={14} />
-                </button>
-              )}
-            </div>
-          </div>
-
-          {/* Risk predictor */}
-          <div className="card" style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 14 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-              <Award size={15} style={{ color: '#eab308' }} />
-              <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)' }}>Spatial Risk Forecast</span>
-            </div>
-            <p style={{ fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.6 }}>
-              Models historical incident clusters to project high-risk zones across Tamil Nadu.
-            </p>
-
-            {aiRiskPredictions && (
-              <div style={{
-                maxHeight: 220, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 8,
-              }}>
-                {aiRiskPredictions.map((pred, i) => (
-                  <div key={i} style={{
-                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                    padding: '10px 12px', background: 'var(--bg-elevated)',
-                    borderRadius: 8, border: '1px solid var(--border-subtle)',
-                  }}>
-                    <div>
-                      <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>
-                        {pred.district}
-                      </div>
-                      <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
-                        {pred.category} · {Math.round(pred.confidence * 100)}% confidence
-                      </div>
-                    </div>
-                    <span style={{
-                      fontSize: 10, fontWeight: 800, textTransform: 'uppercase',
-                      padding: '3px 8px', borderRadius: 4,
-                      background: pred.riskLevel === 'High' ? 'rgba(244,63,94,0.1)' : 'rgba(234,179,8,0.1)',
-                      color: pred.riskLevel === 'High' ? '#f43f5e' : '#eab308',
-                      border: `1px solid ${pred.riskLevel === 'High' ? 'rgba(244,63,94,0.2)' : 'rgba(234,179,8,0.2)'}`,
-                    }}>
-                      {pred.riskLevel} Risk
-                    </span>
+              <div className="card" style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 14 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                  <Award size={15} style={{ color: '#eab308' }} />
+                  <span style={{ fontSize: 14, fontWeight: 700 }}>Risk Forecast</span>
+                </div>
+                {aiRiskPredictions && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {aiRiskPredictions.map((p, i) => <div key={i} style={{ fontSize: 12 }}>{p.district}: {p.riskLevel}</div>)}
                   </div>
-                ))}
+                )}
+                <button onClick={predictRisk} disabled={predictingRisk} className="btn btn-primary">{predictingRisk ? 'Modeling...' : 'Run Model'}</button>
               </div>
-            )}
-
-            <button
-              onClick={predictRisk}
-              disabled={predictingRisk}
-              className="btn btn-primary"
-            >
-              {predictingRisk
-                ? <><Loader2 size={14} style={{ animation: 'spin 0.8s linear infinite' }} /> Modeling...</>
-                : <><BarChart3 size={14} /> Run Risk Model</>
-              }
-            </button>
-          </div>
-        </div>
-      )}
+            </div>
+          )}
+        </motion.div>
+      </AnimatePresence>
     </div>
   );
 }

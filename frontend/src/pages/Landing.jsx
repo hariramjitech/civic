@@ -6,8 +6,12 @@ import {
   Camera, Cpu, PhoneCall, BarChart2, TrendingUp, Clock,
   Globe, Compass, Newspaper, Building2, Activity, ExternalLink, AlertTriangle, ChevronRight
 } from 'lucide-react';
+import { motion } from 'framer-motion';
 import api from '../lib/api';
 import { useCivic } from '../context/CivicContext';
+import RevealOnScroll from '../components/RevealOnScroll';
+import StaggerContainer, { StaggerItem } from '../components/StaggerContainer';
+import AnimatedCard from '../components/AnimatedCard';
 
 const FEATURES = [
   {
@@ -224,28 +228,53 @@ export default function Landing() {
     <div className="max-w-5xl mx-auto px-4 pb-16">
 
       {/* ── HERO ── */}
-      <section className="text-center py-12 md:py-16 px-6 md:px-12 animate-slideInUp rounded-3xl bg-white/40 dark:bg-slate-950/45 backdrop-blur-md border border-white/20 dark:border-slate-800/40 shadow-xl mb-12 mt-6">
+      <motion.section
+        initial={{ opacity: 0, y: 24 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.55, ease: [0.4, 0, 0.2, 1] }}
+        className="text-center py-14 md:py-20 px-6 md:px-12 rounded-3xl bg-white/40 dark:bg-slate-950/45 backdrop-blur-md border border-white/20 dark:border-slate-800/40 shadow-xl mb-12 mt-2"
+      >
         {/* Platform badge */}
-        <div className="inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full border border-[var(--border-strong)] bg-[var(--teal-glow)] text-[var(--teal-500)] text-xs font-semibold uppercase tracking-wider mb-6">
+        <motion.div
+          initial={{ opacity: 0, scale: 0.92 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ delay: 0.15, duration: 0.35, ease: [0.34, 1.56, 0.64, 1] }}
+          className="inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full border border-[var(--border-strong)] bg-[var(--teal-glow)] text-[var(--teal-500)] text-xs font-semibold uppercase tracking-wider mb-6"
+        >
           <ShieldCheck size={13} className="text-[var(--teal-500)]" />
           Tamil Nadu Civic Platform
-        </div>
+        </motion.div>
 
-        <h1 className="font-display text-4xl sm:text-5xl md:text-6xl font-black tracking-tight leading-none text-[var(--text-primary)] mb-5">
+        <motion.h1
+          initial={{ opacity: 0, y: 16 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.22, duration: 0.5, ease: [0.4, 0, 0.2, 1] }}
+          className="font-display text-4xl sm:text-5xl md:text-6xl font-black tracking-tight leading-none text-[var(--text-primary)] mb-5"
+        >
           Report Civic Issues.
           <span className="block mt-1 bg-gradient-to-r from-[var(--teal-400)] via-[var(--teal-500)] to-[var(--teal-600)] bg-clip-text text-transparent">
             Anonymously. Instantly.
           </span>
-        </h1>
+        </motion.h1>
 
-        <p className="text-sm md:text-base text-[var(--text-secondary)] max-w-xl mx-auto mb-8 leading-relaxed">
+        <motion.p
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.3, duration: 0.5, ease: [0.4, 0, 0.2, 1] }}
+          className="text-sm md:text-base text-[var(--text-secondary)] max-w-xl mx-auto mb-8 leading-relaxed"
+        >
           CivicTN bridges citizens and government without exposing identities.
           Upload evidence, let AI classify it, and mobilize community support to resolve
           infrastructure failures across Tamil Nadu.
-        </p>
+        </motion.p>
 
         {/* CTA Buttons */}
-        <div className="flex flex-wrap gap-3 justify-center">
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.4, duration: 0.4, ease: [0.4, 0, 0.2, 1] }}
+          className="flex flex-wrap gap-3 justify-center"
+        >
           <SignedIn>
             <Link to="/feed" className="btn btn-primary btn-lg">
               Explore Feed <ArrowRight size={15} />
@@ -262,26 +291,28 @@ export default function Landing() {
             <MapPin size={15} />
             View Civic Map
           </Link>
-        </div>
-      </section>
+        </motion.div>
+      </motion.section>
 
       {/* ── METRICS STRIP ── */}
-      <section className="metrics-grid">
+      <StaggerContainer className="metrics-grid" inView={true}>
         {METRICS.map((m, i) => (
-          <div key={i} className="bg-[var(--bg-surface)] py-6 px-4 text-center border-b md:border-b-0 md:border-r border-[var(--border-default)] last:border-none">
-            <div
-              className="font-display text-2xl sm:text-3xl font-black mb-1"
-              style={{ color: m.color }}
-            >
-              {liveStats && i === 0 ? `${liveStats.districts || 25}+` : m.value}
+          <StaggerItem key={i}>
+            <div className="bg-[var(--bg-surface)] py-6 px-4 text-center border-b md:border-b-0 md:border-r border-[var(--border-default)] last:border-none">
+              <div
+                className="font-display text-2xl sm:text-3xl font-black mb-1"
+                style={{ color: m.color }}
+              >
+                {liveStats && i === 0 ? `${liveStats.districts || 25}+` : m.value}
+              </div>
+              <div className="section-label">{m.label}</div>
             </div>
-            <div className="section-label">{m.label}</div>
-          </div>
+          </StaggerItem>
         ))}
-      </section>
+      </StaggerContainer>
 
       {/* ── CIVIC & INFRASTRUCTURE INTELLIGENCE HUB ── */}
-      <section className="my-16 animate-slideInUp">
+      <RevealOnScroll className="my-16">
         <div className="text-center mb-10 bg-white/40 dark:bg-slate-950/45 backdrop-blur-md border border-white/20 dark:border-slate-800/40 px-6 py-6 rounded-2xl max-w-2xl mx-auto shadow-md">
           <div className="section-label mb-2">Real-Time Insights</div>
           <h2 className="font-display text-2xl md:text-3xl font-extrabold text-[var(--text-primary)]">
@@ -662,10 +693,10 @@ export default function Landing() {
           )}
 
         </div>
-      </section>
+      </RevealOnScroll>
 
       {/* ── HOW IT WORKS ── */}
-      <section className="mb-16">
+      <RevealOnScroll className="mb-16">
         <div className="text-center mb-10 bg-white/40 dark:bg-slate-950/45 backdrop-blur-md border border-white/20 dark:border-slate-800/40 px-6 py-5 rounded-2xl max-w-md mx-auto shadow-md">
           <div className="section-label mb-2">Process</div>
           <h2 className="font-display text-2xl md:text-3xl font-extrabold text-[var(--text-primary)]">
@@ -673,37 +704,39 @@ export default function Landing() {
           </h2>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <StaggerContainer className="grid grid-cols-1 md:grid-cols-3 gap-6">
           {HOW_IT_WORKS.map((step, idx) => {
             const Icon = step.icon;
             return (
-              <div key={idx} className="card p-6 relative overflow-hidden group hover:scale-[1.02] transition-all duration-300">
-                {/* Step number watermark */}
-                <div className="absolute top-3 right-4 font-display text-5xl font-black text-[var(--text-muted)] opacity-5 select-none leading-none">
-                  {step.step}
-                </div>
+              <StaggerItem key={idx}>
+                <AnimatedCard className="card p-6 relative overflow-hidden h-full">
+                  {/* Step number watermark */}
+                  <div className="absolute top-3 right-4 font-display text-5xl font-black text-[var(--text-muted)] opacity-5 select-none leading-none">
+                    {step.step}
+                  </div>
 
-                <div
-                  style={{ background: `${step.color}12`, borderColor: `${step.color}25` }}
-                  className="w-10 h-10 rounded-xl border flex items-center justify-center mb-5"
-                >
-                  <Icon size={20} style={{ color: step.color }} />
-                </div>
+                  <div
+                    style={{ background: `${step.color}12`, borderColor: `${step.color}25` }}
+                    className="w-10 h-10 rounded-xl border flex items-center justify-center mb-5"
+                  >
+                    <Icon size={20} style={{ color: step.color }} />
+                  </div>
 
-                <h3 className="font-display text-base font-bold text-[var(--text-primary)] mb-2">
-                  {step.title}
-                </h3>
-                <p className="text-xs text-[var(--text-secondary)] leading-relaxed">
-                  {step.desc}
-                </p>
-              </div>
+                  <h3 className="font-display text-base font-bold text-[var(--text-primary)] mb-2">
+                    {step.title}
+                  </h3>
+                  <p className="text-xs text-[var(--text-secondary)] leading-relaxed">
+                    {step.desc}
+                  </p>
+                </AnimatedCard>
+              </StaggerItem>
             );
           })}
-        </div>
-      </section>
+        </StaggerContainer>
+      </RevealOnScroll>
 
       {/* ── FEATURE GRID ── */}
-      <section className="mb-16">
+      <RevealOnScroll className="mb-16">
         <div className="text-center mb-10 bg-white/40 dark:bg-slate-950/45 backdrop-blur-md border border-white/20 dark:border-slate-800/40 px-6 py-5 rounded-2xl max-w-md mx-auto shadow-md">
           <div className="section-label mb-2">Platform Capabilities</div>
           <h2 className="font-display text-2xl md:text-3xl font-extrabold text-[var(--text-primary)]">
@@ -711,47 +744,46 @@ export default function Landing() {
           </h2>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <StaggerContainer className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {FEATURES.map((f, idx) => {
             const Icon = f.icon;
             return (
-              <div
-                key={idx}
-                className="card p-5 flex gap-4 items-start border-l-4 transition-all duration-300 hover:scale-[1.01]"
-                style={{
-                  borderLeftColor: f.border,
-                }}
-                onMouseEnter={e => {
-                  e.currentTarget.style.borderLeftColor = f.color;
-                  e.currentTarget.style.background = f.bg;
-                }}
-                onMouseLeave={e => {
-                  e.currentTarget.style.borderLeftColor = f.border;
-                  e.currentTarget.style.background = 'var(--bg-surface)';
-                }}
-              >
+              <StaggerItem key={idx}>
                 <div
-                  style={{ background: f.bg, borderColor: f.border }}
-                  className="w-9 h-9 rounded-xl border flex items-center justify-center flex-shrink-0"
+                  className="card p-5 flex gap-4 items-start border-l-4 transition-all duration-300 hover:scale-[1.01]"
+                  style={{ borderLeftColor: f.border }}
+                  onMouseEnter={e => {
+                    e.currentTarget.style.borderLeftColor = f.color;
+                    e.currentTarget.style.background = f.bg;
+                  }}
+                  onMouseLeave={e => {
+                    e.currentTarget.style.borderLeftColor = f.border;
+                    e.currentTarget.style.background = 'var(--bg-surface)';
+                  }}
                 >
-                  <Icon size={18} style={{ color: f.color }} />
+                  <div
+                    style={{ background: f.bg, borderColor: f.border }}
+                    className="w-9 h-9 rounded-xl border flex items-center justify-center flex-shrink-0"
+                  >
+                    <Icon size={18} style={{ color: f.color }} />
+                  </div>
+                  <div>
+                    <h3 className="font-display text-sm font-bold text-[var(--text-primary)] mb-1">
+                      {f.title}
+                    </h3>
+                    <p className="text-xs text-[var(--text-secondary)] leading-relaxed">
+                      {f.desc}
+                    </p>
+                  </div>
                 </div>
-                <div>
-                  <h3 className="font-display text-sm font-bold text-[var(--text-primary)] mb-1">
-                    {f.title}
-                  </h3>
-                  <p className="text-xs text-[var(--text-secondary)] leading-relaxed">
-                    {f.desc}
-                  </p>
-                </div>
-              </div>
+              </StaggerItem>
             );
           })}
-        </div>
-      </section>
+        </StaggerContainer>
+      </RevealOnScroll>
 
       {/* ── ESCALATION LEVELS INFO ── */}
-      <section className="mb-16">
+      <RevealOnScroll className="mb-16" delay={0.05}>
         <div className="card p-6 md:p-8">
           <div className="flex items-center gap-2 mb-4">
             <TrendingUp size={16} className="text-[var(--teal-500)]" />
@@ -763,57 +795,60 @@ export default function Landing() {
             Community support votes automatically escalate complaints to higher authorities when thresholds are reached.
           </p>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <StaggerContainer className="grid grid-cols-1 md:grid-cols-3 gap-4">
             {[
               { count: '50+', label: 'Community Support', next: '→ Assistant Engineer', color: '#f97316' },
               { count: '100+', label: 'Community Support', next: '→ Executive Engineer', color: '#f43f5e' },
               { count: '200+', label: 'Community Support', next: '→ Municipal Commissioner', color: '#a855f7' },
             ].map((tier, i) => (
-              <div
-                key={i}
-                style={{ background: `${tier.color}08`, borderColor: `${tier.color}18` }}
-                className="p-4 rounded-xl border flex flex-col justify-between hover:scale-[1.02] transition-transform duration-200"
-              >
-                <div>
-                  <div
-                    style={{ color: tier.color }}
-                    className="font-display text-2xl font-black mb-1"
-                  >
-                    {tier.count}
+              <StaggerItem key={i}>
+                <div
+                  style={{ background: `${tier.color}08`, borderColor: `${tier.color}18` }}
+                  className="p-4 rounded-xl border flex flex-col justify-between hover:scale-[1.02] transition-transform duration-200"
+                >
+                  <div>
+                    <div
+                      style={{ color: tier.color }}
+                      className="font-display text-2xl font-black mb-1"
+                    >
+                      {tier.count}
+                    </div>
+                    <div className="text-[10px] text-[var(--text-muted)] tracking-wider uppercase font-semibold mb-2">
+                      {tier.label}
+                    </div>
                   </div>
-                  <div className="text-[10px] text-[var(--text-muted)] tracking-wider uppercase font-semibold mb-2">
-                    {tier.label}
+                  <div style={{ color: tier.color }} className="text-xs font-bold">
+                    {tier.next}
                   </div>
                 </div>
-                <div style={{ color: tier.color }} className="text-xs font-bold">
-                  {tier.next}
-                </div>
-              </div>
+              </StaggerItem>
             ))}
-          </div>
+          </StaggerContainer>
         </div>
-      </section>
+      </RevealOnScroll>
 
-      <section className="text-center py-12 px-6 bg-gradient-to-br from-[var(--teal-glow)] to-transparent border border-[var(--border-default)] rounded-2xl shadow-sm">
-        <h2 className="font-display text-2xl font-extrabold text-[var(--text-primary)] mb-2.5">
-          Ready to Make Your City Better?
-        </h2>
-        <p className="text-xs md:text-sm text-[var(--text-secondary)] mb-6">
-          Join thousands of citizens holding authorities accountable — anonymously.
-        </p>
-        <SignedOut>
-          <SignInButton mode="modal">
-            <button className="btn btn-primary btn-lg">
-              Start Reporting — It's Free <ArrowRight size={15} />
-            </button>
-          </SignInButton>
-        </SignedOut>
-        <SignedIn>
-          <Link to="/submit" className="btn btn-primary btn-lg">
-            Report a Civic Issue <ArrowRight size={15} />
-          </Link>
-        </SignedIn>
-      </section>
+      <RevealOnScroll delay={0.08}>
+        <section className="text-center py-12 px-6 bg-gradient-to-br from-[var(--teal-glow)] to-transparent border border-[var(--border-default)] rounded-2xl shadow-sm">
+          <h2 className="font-display text-2xl font-extrabold text-[var(--text-primary)] mb-2.5">
+            Ready to Make Your City Better?
+          </h2>
+          <p className="text-xs md:text-sm text-[var(--text-secondary)] mb-6">
+            Join thousands of citizens holding authorities accountable — anonymously.
+          </p>
+          <SignedOut>
+            <SignInButton mode="modal">
+              <button className="btn btn-primary btn-lg">
+                Start Reporting — It's Free <ArrowRight size={15} />
+              </button>
+            </SignInButton>
+          </SignedOut>
+          <SignedIn>
+            <Link to="/submit" className="btn btn-primary btn-lg">
+              Report a Civic Issue <ArrowRight size={15} />
+            </Link>
+          </SignedIn>
+        </section>
+      </RevealOnScroll>
     </div>
   );
 }

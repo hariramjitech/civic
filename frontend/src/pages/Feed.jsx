@@ -8,10 +8,13 @@ import {
   Sparkles, Navigation, Phone, Mail, PlusCircle, SlidersHorizontal,
   LayoutGrid, List, Volume2, VolumeX
 } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 import toast from 'react-hot-toast';
 import SeverityBadge from '../components/SeverityBadge';
 import EscalationBar from '../components/EscalationBar';
 import StatusTimeline from '../components/StatusTimeline';
+import StaggerContainer, { StaggerItem } from '../components/StaggerContainer';
+
 
 const CATEGORIES = [
   { value: '', label: 'All Issues' },
@@ -393,7 +396,7 @@ export default function Feed() {
           <Link to="/submit" className="btn btn-primary">Report First Issue</Link>
         </div>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <StaggerContainer className="flex flex-col gap-4" inView={false}>
           {filteredPosts.map((post, idx) => {
             const isOwner = myPostIds.has(post._id);
             const isContactOpen = expandedContacts[post._id];
@@ -402,13 +405,12 @@ export default function Feed() {
             const username = `anon_${post.district?.toLowerCase().slice(0, 3)}_${post._id?.slice(-4)}`;
 
             return (
+              <StaggerItem key={post._id}>
               <div
-                key={post._id}
-                className="card animate-slideInUp card-stagger"
+                className="card"
                 style={{
                   overflow: 'hidden',
                   borderLeft: `3px solid ${SEV_BORDER[post.severity] || 'var(--border-subtle)'}`,
-                  animationDelay: `${idx * 0.06}s`,
                 }}
               >
                 {/* ── CARD HEADER ── */}
@@ -775,9 +777,10 @@ export default function Feed() {
                   </Link>
                 )}
               </div>
+              </StaggerItem>
             );
           })}
-        </div>
+        </StaggerContainer>
       )}
     </div>
   );

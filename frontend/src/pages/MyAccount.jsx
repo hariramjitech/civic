@@ -7,9 +7,13 @@ import {
   Settings, Loader2, Calendar, ShieldAlert, CheckCircle,
   Flame, Award
 } from 'lucide-react';
+import { motion } from 'framer-motion';
 import toast from 'react-hot-toast';
 import SeverityBadge from '../components/SeverityBadge';
 import StatusTimeline from '../components/StatusTimeline';
+import AnimatedCard from '../components/AnimatedCard';
+import StaggerContainer, { StaggerItem } from '../components/StaggerContainer';
+
 
 const DISTRICTS = [
   'Chennai', 'Coimbatore', 'Madurai', 'Tiruchirappalli', 'Salem',
@@ -73,7 +77,12 @@ export default function MyAccount() {
   );
 
   return (
-    <div style={{ maxWidth: 800, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 20 }}>
+    <motion.div
+      initial={{ opacity: 0, y: 14 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.4, ease: [0.4, 0, 0.2, 1] }}
+      style={{ maxWidth: 800, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 20 }}
+    >
 
       {/* ── PROFILE HEADER ── */}
       <div className="card" style={{ padding: 24 }}>
@@ -157,7 +166,7 @@ export default function MyAccount() {
       </div>
 
       {/* ── STATS ── */}
-      <div className="stats-grid">
+      <StaggerContainer className="stats-grid">
         {[
           { label: 'Reports Filed', value: myPosts.length, color: 'var(--teal-400)', icon: FileText },
           { label: 'Comments', value: myComments.length, color: '#a78bfa', icon: MessageSquare },
@@ -166,7 +175,8 @@ export default function MyAccount() {
         ].map((s, i) => {
           const Icon = s.icon;
           return (
-            <div key={i} className="card" style={{ padding: '14px 16px' }}>
+            <StaggerItem key={i}>
+              <div className="card" style={{ padding: '14px 16px' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
                 <Icon size={13} style={{ color: s.color }} />
                 <span className="section-label">{s.label}</span>
@@ -175,9 +185,10 @@ export default function MyAccount() {
                 {s.value}
               </div>
             </div>
+            </StaggerItem>
           );
         })}
-      </div>
+      </StaggerContainer>
 
       {/* ── PRIVACY NOTICE ── */}
       <div style={{
@@ -301,6 +312,6 @@ export default function MyAccount() {
             ))}
           </div>
       )}
-    </div>
+    </motion.div>
   );
 }

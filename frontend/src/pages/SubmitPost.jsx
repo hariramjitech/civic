@@ -10,6 +10,7 @@ import {
   RefreshCw
 } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { motion, AnimatePresence } from 'framer-motion';
 
 // Leaflet fix
 delete L.Icon.Default.prototype._getIconUrl;
@@ -1175,20 +1176,30 @@ export default function SubmitPost() {
       </div>
 
       {/* Step content */}
-      <div className="card animate-fadeIn" style={{ padding: 24, marginBottom: 20 }}>
-        <div style={{
-          fontSize: 16, fontWeight: 700, fontFamily: 'var(--font-display)',
-          color: 'var(--text-primary)', marginBottom: 20,
-          display: 'flex', alignItems: 'center', gap: 8,
-        }}>
-          {step === 1 && <><FileText size={18} style={{ color: 'var(--teal-400)' }} /> Describe the Issue</>}
-          {step === 2 && <><MapPin size={18} style={{ color: 'var(--teal-400)' }} /> Pin the Location</>}
-          {step === 3 && <><Camera size={18} style={{ color: 'var(--teal-400)' }} /> Upload Evidence</>}
-          {step === 4 && <><Eye size={18} style={{ color: 'var(--teal-400)' }} /> Review & Submit</>}
-        </div>
+      <AnimatePresence mode="wait">
+        <motion.div
+          key={step}
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -8 }}
+          transition={{ duration: 0.22, ease: 'easeOut' }}
+          className="card"
+          style={{ padding: 24, marginBottom: 20 }}
+        >
+          <div style={{
+            fontSize: 16, fontWeight: 700, fontFamily: 'var(--font-display)',
+            color: 'var(--text-primary)', marginBottom: 20,
+            display: 'flex', alignItems: 'center', gap: 8,
+          }}>
+            {step === 1 && <><FileText size={18} style={{ color: 'var(--teal-400)' }} /> Describe the Issue</>}
+            {step === 2 && <><MapPin size={18} style={{ color: 'var(--teal-400)' }} /> Pin the Location</>}
+            {step === 3 && <><Camera size={18} style={{ color: 'var(--teal-400)' }} /> Upload Evidence</>}
+            {step === 4 && <><Eye size={18} style={{ color: 'var(--teal-400)' }} /> Review & Submit</>}
+          </div>
 
-        {renderStep()}
-      </div>
+          {renderStep()}
+        </motion.div>
+      </AnimatePresence>
 
       {/* Navigation Buttons */}
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>

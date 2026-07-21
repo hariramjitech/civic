@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useCivic } from '../context/CivicContext';
 import api from '../lib/api';
+import { motion } from 'framer-motion';
 import { 
   MessageSquare, Users, Send, Radio, Plus, Search, 
   MapPin, X, Loader2, Sparkles 
@@ -272,7 +273,14 @@ export default function ChatRooms() {
   return (
     <div className="h-[78vh] flex flex-col lg:flex-row gap-6 relative">
       {/* Sidebar - Channels list */}
-      <div className="w-full lg:w-80 flex flex-col justify-between glass-panel p-4 rounded-2xl h-[30vh] lg:h-auto border border-gray-900 overflow-hidden">
+      <div
+        className="w-full lg:w-80 flex flex-col justify-between p-4 rounded-2xl h-[30vh] lg:h-auto overflow-hidden"
+        style={{
+          background: 'var(--bg-surface)',
+          border: '1px solid var(--border-subtle)',
+          backdropFilter: 'blur(12px)',
+        }}
+      >
         <div className="space-y-3 overflow-hidden flex flex-col h-full">
           {/* Header */}
           <div className="flex items-center justify-between">

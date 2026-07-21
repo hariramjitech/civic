@@ -7,6 +7,7 @@ import {
   AlertTriangle, ArrowLeft, Send, Plus, Flame, Clock,
   CheckCircle, Loader2, Trash2, Volume2, VolumeX
 } from 'lucide-react';
+import { motion } from 'framer-motion';
 import toast from 'react-hot-toast';
 
 export default function PostDetail() {
@@ -251,9 +252,17 @@ export default function PostDetail() {
   const showStatusEditControls = isOwner || ['admin', 'department', 'officer'].includes(role);
 
   return (
-    <div className="space-y-6">
+    <motion.div
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.35, ease: [0.4, 0, 0.2, 1] }}
+      className="space-y-6"
+    >
       {/* Back Button */}
-      <Link to="/feed" className="inline-flex items-center space-x-2 text-gray-400 hover:text-teal-400 font-semibold text-sm transition-colors mb-2">
+      <Link to="/feed" className="inline-flex items-center gap-2 font-semibold text-sm transition-colors" style={{ color: 'var(--text-muted)' }}
+        onMouseEnter={e => e.currentTarget.style.color = 'var(--teal-500)'}
+        onMouseLeave={e => e.currentTarget.style.color = 'var(--text-muted)'}
+      >
         <ArrowLeft size={16} />
         <span>Return to Feed</span>
       </Link>
@@ -261,19 +270,40 @@ export default function PostDetail() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
         {/* Left Column - Main Details */}
         <div className="lg:col-span-2 space-y-6">
-          <div className="glass-panel p-6 rounded-2xl space-y-6">
+          <div className="card p-6 space-y-6">
             {/* Meta */}
-            <div className="flex items-center justify-between flex-wrap gap-2 pb-4 border-b border-gray-900">
-              <div className="flex items-center space-x-2">
-                <span className="text-xs uppercase bg-gray-900 border border-gray-800 text-gray-300 px-3 py-1 rounded-full font-bold">
+            <div className="flex items-center justify-between flex-wrap gap-2 pb-4" style={{ borderBottom: '1px solid var(--border-subtle)' }}>
+              <div className="flex items-center gap-2">
+                <span
+                  className="text-xs uppercase px-3 py-1 rounded-full font-bold"
+                  style={{
+                    background: 'var(--bg-elevated)',
+                    border: '1px solid var(--border-default)',
+                    color: 'var(--text-secondary)',
+                  }}
+                >
                   {post.category}
                 </span>
-                <span className="text-xs uppercase bg-teal-500/10 border border-teal-500/20 text-teal-400 px-3 py-1 rounded-full font-extrabold">
+                <span
+                  className="text-xs uppercase px-3 py-1 rounded-full font-extrabold"
+                  style={{
+                    background: 'var(--teal-glow)',
+                    border: '1px solid rgba(13,148,136,0.2)',
+                    color: 'var(--teal-400)',
+                  }}
+                >
                   {post.severity} severity
                 </span>
               </div>
 
-              <div className="inline-flex items-center space-x-1.5 px-3 py-1 rounded-full bg-gray-950/80 border border-gray-900 text-xs font-extrabold uppercase text-gray-300">
+              <div
+                className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-extrabold uppercase"
+                style={{
+                  background: 'var(--bg-elevated)',
+                  border: '1px solid var(--border-subtle)',
+                  color: 'var(--text-secondary)',
+                }}
+              >
                 <span className={`w-2 h-2 rounded-full ${post.status === 'resolved' ? 'bg-emerald-400' : post.status === 'in_progress' ? 'bg-amber-400' : 'bg-teal-500'}`} />
                 <span>{post.status.replace('_', ' ')}</span>
               </div>
@@ -371,8 +401,8 @@ export default function PostDetail() {
           </div>
 
           {/* Timeline / Status History */}
-          <div className="glass-panel p-6 rounded-2xl space-y-4">
-            <h3 className="text-lg font-bold font-display flex items-center space-x-2">
+          <div className="card p-6 space-y-4">
+            <h3 className="text-lg font-bold font-display flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
               <Clock size={18} className="text-teal-400" />
               <span>Resolution Timeline & Audit Log</span>
             </h3>
@@ -405,8 +435,8 @@ export default function PostDetail() {
           </div>
 
           {/* Comments Section */}
-          <div className="glass-panel p-6 rounded-2xl space-y-6" id="comments">
-            <h3 className="text-lg font-bold font-display flex items-center space-x-2">
+          <div className="card p-6 space-y-6" id="comments">
+            <h3 className="text-lg font-bold font-display flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
               <MessageSquare size={18} className="text-teal-400" />
               <span>Anonymous Discussion ({post.commentCount || 0})</span>
             </h3>
@@ -803,6 +833,6 @@ export default function PostDetail() {
 
         </div>
       </div>
-    </div>
+    </motion.div>
   );
 }

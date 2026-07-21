@@ -7,6 +7,7 @@ import { MapPin, ExternalLink, BarChart2, Info, RefreshCw } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import SeverityBadge from '../components/SeverityBadge';
+import { motion } from 'framer-motion';
 
 delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({
@@ -86,7 +87,12 @@ export default function MapView() {
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 16, height: 'calc(100vh - 120px)', minHeight: 600 }}>
+    <motion.div
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.35, ease: [0.4, 0, 0.2, 1] }}
+      style={{ display: 'flex', flexDirection: 'column', gap: 16, height: 'calc(100vh - 120px)', minHeight: 600 }}
+    >
 
       {/* ── HEADER + FILTERS ── */}
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
@@ -268,6 +274,6 @@ export default function MapView() {
           )}
         </div>
       </div>
-    </div>
+    </motion.div>
   );
 }

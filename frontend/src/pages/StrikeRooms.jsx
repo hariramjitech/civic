@@ -3,6 +3,7 @@ import { useCivic } from '../context/CivicContext';
 import api from '../lib/api';
 import { useLocation } from 'react-router-dom';
 import { MapContainer, TileLayer, Marker } from 'react-leaflet';
+import { motion } from 'framer-motion';
 import { 
   Flame, Users, ArrowRight, Shield, Bell, 
   MapPin, Loader2, Send, MessageSquare 
@@ -246,7 +247,14 @@ export default function StrikeRooms() {
     <div className="h-[78vh] flex flex-col lg:flex-row gap-6">
       
       {/* Sidebar - Strikes Grid List */}
-      <div className="w-full lg:w-80 flex flex-col justify-between glass-panel p-4 rounded-2xl h-[30vh] lg:h-auto overflow-hidden">
+      <div
+        className="w-full lg:w-80 flex flex-col justify-between p-4 rounded-2xl h-[30vh] lg:h-auto overflow-hidden"
+        style={{
+          background: 'var(--bg-surface)',
+          border: '1px solid var(--border-subtle)',
+          backdropFilter: 'blur(12px)',
+        }}
+      >
         <div className="space-y-3 overflow-hidden flex flex-col h-full">
           <div>
             <h2 className="text-lg font-bold font-display flex items-center space-x-1.5 text-rose-400">
