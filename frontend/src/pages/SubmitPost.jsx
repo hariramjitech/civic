@@ -1,16 +1,16 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useCivic } from '../context/CivicContext';
 import api from '../lib/api';
-import { MapContainer, TileLayer, Marker, useMapEvents } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, useMapEvents, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import {
   Camera, MapPin, EyeOff, Sparkles, Upload, Check,
   Loader2, X, ChevronRight, ChevronLeft, FileText, Eye,
   RefreshCw
 } from 'lucide-react';
-import toast from 'react-hot-toast';
-import { motion, AnimatePresence } from 'framer-motion';
+
 
 // Leaflet fix
 delete L.Icon.Default.prototype._getIconUrl;
@@ -22,6 +22,16 @@ L.Icon.Default.mergeOptions({
 
 function MapClickHandler({ setPosition }) {
   useMapEvents({ click(e) { setPosition({ lat: e.latlng.lat, lng: e.latlng.lng }); } });
+  return null;
+}
+
+function MapCenterHandler({ center }) {
+  const map = useMap();
+  useEffect(() => {
+    if (center) {
+      map.setView(center, map.getZoom());
+    }
+  }, [center, map]);
   return null;
 }
 
@@ -40,6 +50,28 @@ const STEPS = [
   { number: 3, label: 'Evidence' },
   { number: 4, label: 'Review' },
 ];
+
+const isSuspiciousImage = (res) => {
+  if (!res) return false;
+  const status = res.originalityStatus;
+  if (!status) return false;
+  
+  // Explicitly block flagged statuses
+  if (['stock_photo_detected', 'suspicious_screenshot', 'manipulated', 'screen_spoof_detected'].includes(status)) {
+    return true;
+  }
+  
+  // If unknown, check if the analysis text indicates it's a photo of a screen, display, or printout
+  if (status === 'unknown' && res.originalityAnalysis) {
+    const analysis = res.originalityAnalysis.toLowerCase();
+    const keywords = ['screen', 'display', 'monitor', 'laptop', 'television', 'printout', 'spoof', 'photograph of a', 'photo of a photo', 'photo of another'];
+    if (keywords.some(k => analysis.includes(k))) {
+      return true;
+    }
+  }
+  
+  return false;
+};
 
 export default function SubmitPost() {
   const navigate = useNavigate();
@@ -81,22 +113,57 @@ export default function SubmitPost() {
   const [isValidated, setIsValidated] = useState(false);
   const [cameraDevices, setCameraDevices] = useState([]);
   const [activeCameraId, setActiveCameraId] = useState('');
+  
+  // AI Camera spoof validation states
+  const [isVerifyingScan, setIsVerifyingScan] = useState(false);
+  const [scanVerificationStep, setScanVerificationStep] = useState('');
+  const [scanErrorAlert, setScanErrorAlert] = useState('');
 
   const videoRef = useRef(null);
 
   // Submit
   const [submitting, setSubmitting] = useState(false);
 
-  // Auto-detect location on mount
-  useEffect(() => {
-    navigator.geolocation?.getCurrentPosition(
+  // Geolocation & Duplicate States
+  const [detectingLocation, setDetectingLocation] = useState(false);
+  const [showDuplicateModal, setShowDuplicateModal] = useState(false);
+  const [newPostId, setNewPostId] = useState('');
+  const [duplicateOfId, setDuplicateOfId] = useState('');
+  const [duplicatePostDetails, setDuplicatePostDetails] = useState(null);
+  const [loadingDuplicateDetails, setLoadingDuplicateDetails] = useState(false);
+  const [resolvingDuplicate, setResolvingDuplicate] = useState(false);
+
+  const detectLocation = () => {
+    if (!navigator.geolocation) {
+      toast.error('Geolocation is not supported by your browser.');
+      return;
+    }
+    setDetectingLocation(true);
+    const options = {
+      enableHighAccuracy: true,
+      timeout: 10000,
+      maximumAge: 0
+    };
+    navigator.geolocation.getCurrentPosition(
       pos => {
         const c = { lat: pos.coords.latitude, lng: pos.coords.longitude };
         setPosition(c);
         setMapCenter([c.lat, c.lng]);
+        setDetectingLocation(false);
+        toast.success('Location detected successfully!');
       },
-      () => { }
+      err => {
+        console.error('Geolocation error:', err);
+        setDetectingLocation(false);
+        toast.error(`Unable to retrieve location: ${err.message || 'Permission denied or timeout.'}`);
+      },
+      options
     );
+  };
+
+  // Auto-detect location on mount
+  useEffect(() => {
+    detectLocation();
   }, []);
 
   // Reverse geocode when position changes
@@ -208,12 +275,9 @@ export default function SubmitPost() {
         }
       }
       
-      // Warning for stock / screenshot / manipulated fakes
-      if (res.data.originalityStatus === 'stock_photo_detected' || 
-          res.data.originalityStatus === 'suspicious_screenshot' || 
-          res.data.originalityStatus === 'manipulated') {
-        
-        const type = res.data.originalityStatus.replace('_', ' ');
+      // Warning for stock / screenshot / manipulated fakes / screen spoofs
+      if (isSuspiciousImage(res.data)) {
+        const type = res.data.originalityStatus?.replace('_', ' ') || 'suspicious replay/spoof';
         toast.error(`Warning: Uploaded image detected as a ${type}. Submission is locked.`, { duration: 6000 });
       } else if (res.data.allImagesRelevant === false) {
         toast.error(`AI Relevance Warning: ${res.data.relevanceExplanation || 'One of the images is not relevant.'}`, { duration: 6000 });
@@ -262,13 +326,23 @@ export default function SubmitPost() {
   const canProceed = () => {
     if (step === 1) return title.trim() && description.trim();
     if (step === 2) return !!position;
-    if (step === 3) return selectedFiles.length > 0; // Require image proof
+    if (step === 3) {
+      if (selectedFiles.length === 0) return false;
+      if (aiLoading) return false;
+      if (!aiResult) return false;
+      if (isSuspiciousImage(aiResult)) return false;
+      if (aiResult.allImagesRelevant === false) return false;
+      return true;
+    }
     return true;
   };
 
   const isSubmitDisabled = () => {
     if (selectedFiles.length === 0) return true;
-    if (aiResult?.originalityStatus && aiResult.originalityStatus !== 'authentic' && aiResult.originalityStatus !== 'unknown') {
+    if (isSuspiciousImage(aiResult)) {
+      return true;
+    }
+    if (aiResult?.allImagesRelevant === false) {
       return true;
     }
     return false;
@@ -279,6 +353,11 @@ export default function SubmitPost() {
     if (!title.trim() || !description.trim()) { toast.error('Title and description required.'); return; }
     if (!position) { toast.error('Please pin the issue location.'); return; }
     
+    if (aiResult?.allImagesRelevant === false) {
+      toast.error(`Submission blocked: ${aiResult.relevanceExplanation || 'Uploaded images do not match the reported issue.'}`);
+      return;
+    }
+
     if (isSubmitDisabled()) {
       toast.error('Submission blocked: Non-authentic media detected.');
       return;
@@ -295,15 +374,74 @@ export default function SubmitPost() {
       
       selectedFiles.forEach(f => fd.append('images', f));
       const res = await api.post('/posts', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
-      toast.success('Report submitted anonymously!');
+      
       if (res.data.post?.isDuplicate) {
-        toast('⚠️ Similar report detected nearby — merged to avoid duplicates.', { duration: 5000 });
+        setNewPostId(res.data.post._id);
+        const dupOfId = res.data.post.duplicateOf;
+        setDuplicateOfId(dupOfId);
+        setShowDuplicateModal(true);
+        setLoadingDuplicateDetails(true);
+        try {
+          const dupRes = await api.get(`/posts/${dupOfId}`);
+          setDuplicatePostDetails(dupRes.data.post);
+        } catch (err) {
+          console.error("Failed to load duplicate post details:", err);
+        } finally {
+          setLoadingDuplicateDetails(false);
+        }
+      } else {
+        toast.success('Report submitted successfully!');
+        navigate('/feed');
       }
-      navigate('/feed');
     } catch (err) {
       toast.error(err.response?.data?.error || 'Submission failed.');
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const handleConfirmSameIssue = async () => {
+    if (!newPostId || !duplicateOfId) return;
+    try {
+      setResolvingDuplicate(true);
+      
+      // 1. Upvote the original post
+      try {
+        await api.post(`/posts/${duplicateOfId}/like`);
+      } catch (err) {
+        console.error("Failed to upvote original post:", err);
+      }
+      
+      // 2. Delete our temporary duplicate post
+      await api.delete(`/posts/${newPostId}`);
+      
+      toast.success('Your vote was added to the existing report. Duplicate report discarded.');
+      setShowDuplicateModal(false);
+      navigate(`/posts/${duplicateOfId}`);
+    } catch (err) {
+      toast.error('An error occurred while resolving duplicate.');
+      console.error(err);
+    } finally {
+      setResolvingDuplicate(false);
+    }
+  };
+
+  const handleConfirmDifferentIssue = async () => {
+    if (!newPostId) return;
+    try {
+      setResolvingDuplicate(true);
+      
+      // 1. Mark our post as non-duplicate/publish
+      await api.post(`/posts/${newPostId}/resolve-duplicate`);
+      
+      toast.success('Your report has been published separately!');
+      setShowDuplicateModal(false);
+      navigate(`/posts/${newPostId}`);
+    } catch (err) {
+      toast.error('An error occurred while publishing report.');
+      console.error(err);
+    } finally {
+      setResolvingDuplicate(false);
     }
   };
 
@@ -543,15 +681,58 @@ export default function SubmitPost() {
     const ctx = canvas.getContext('2d');
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
     
-    canvas.toBlob((blob) => {
+    canvas.toBlob(async (blob) => {
       if (!blob) return;
       const file = new File([blob], `camera-capture-${Date.now()}.jpg`, { type: 'image/jpeg' });
-      const newFiles = [...selectedFiles, file].slice(0, 5);
-      setSelectedFiles(newFiles);
-      setPreviews(newFiles.map(f => URL.createObjectURL(f)));
-      analyzeImages(newFiles);
-      closeScanner();
-      toast.success('Evidence photo captured!');
+      
+      setIsVerifyingScan(true);
+      setScanErrorAlert('');
+      
+      try {
+        setScanVerificationStep('Checking luminance variance...');
+        await new Promise(r => setTimeout(r, 600));
+        
+        setScanVerificationStep('Analyzing Moire interference patterns...');
+        await new Promise(r => setTimeout(r, 600));
+        
+        setScanVerificationStep('Detecting bezel/frame spoofing...');
+        await new Promise(r => setTimeout(r, 600));
+        
+        setScanVerificationStep('Running Gemini AI Forensic originality validation...');
+        
+        const fd = new FormData();
+        fd.append('images', file);
+        if (description) fd.append('description', description);
+        
+        const res = await api.post('/ai/classify', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+        const aiData = res.data;
+        
+        if (isSuspiciousImage(aiData)) {
+          const type = aiData.originalityStatus?.replace('_', ' ') || 'suspicious display/spoof';
+          setScanErrorAlert(`Authenticity Validation Failed: Replay attack detected. The image appears to be a ${type}. Please point your camera at a real, live physical civic issue.`);
+          setIsVerifyingScan(false);
+          return;
+        }
+        
+        const newFiles = [...selectedFiles, file].slice(0, 5);
+        setSelectedFiles(newFiles);
+        setPreviews(newFiles.map(f => URL.createObjectURL(f)));
+        setAiResult(aiData);
+        if (aiData.category) {
+          setCategory(aiData.category);
+          if (!title.trim() && aiData.summary) {
+            setTitle(`Reported ${aiData.category.toUpperCase()}: ${aiData.summary}`);
+          }
+        }
+        
+        closeScanner();
+        toast.success('Evidence photo verified and captured!');
+      } catch (err) {
+        console.error('Camera validation failed:', err);
+        setScanErrorAlert('AI forensic analysis failed to connect. Please try capturing again.');
+      } finally {
+        setIsVerifyingScan(false);
+      }
     }, 'image/jpeg', 0.9);
   };
 
@@ -681,18 +862,28 @@ export default function SubmitPost() {
                 AI Suggested Version
               </div>
               
-              <p style={{
-                fontSize: 13,
-                color: 'var(--text-secondary)',
-                lineHeight: 1.6,
-                padding: '10px 12px',
-                background: 'var(--bg-overlay)',
-                border: '1px solid var(--border-subtle)',
-                borderRadius: 8,
-                whiteSpace: 'pre-wrap'
-              }}>
-                {rewrittenText}
-              </p>
+              <textarea
+                value={rewrittenText}
+                onChange={e => setRewrittenText(e.target.value)}
+                className="glass-input"
+                rows={6}
+                style={{
+                  fontSize: 13,
+                  color: 'var(--text-secondary)',
+                  lineHeight: 1.6,
+                  padding: '10px 12px',
+                  background: 'var(--bg-overlay)',
+                  border: '1px solid var(--border-subtle)',
+                  borderRadius: 8,
+                  width: '100%',
+                  resize: 'vertical',
+                  fontFamily: 'inherit'
+                }}
+                maxLength={1000}
+              />
+              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: -4 }}>
+                💡 You can edit the polished version above (e.g. fill in [Street Name]) before applying.
+              </div>
 
               <div style={{ display: 'flex', gap: 8, justifySelf: 'flex-end', justifyContent: 'flex-end' }}>
                 <button
@@ -765,10 +956,42 @@ export default function SubmitPost() {
           Click anywhere on the map to pin the exact issue location
         </div>
 
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
+          <button
+            type="button"
+            onClick={detectLocation}
+            disabled={detectingLocation}
+            className="btn btn-secondary btn-sm"
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6,
+              fontSize: 12,
+              padding: '8px 14px',
+              borderRadius: 8,
+              cursor: 'pointer',
+              border: '1px solid rgba(20, 184, 166, 0.25)',
+              background: 'rgba(20, 184, 166, 0.04)',
+              color: 'var(--teal-400)',
+            }}
+          >
+            {detectingLocation ? (
+              <Loader2 size={13} className="animate-spin" />
+            ) : (
+              <RefreshCw size={13} />
+            )}
+            <span>{detectingLocation ? 'Detecting GPS...' : 'Auto-Detect Location'}</span>
+          </button>
+          <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+            Or click on the map to manually pin
+          </span>
+        </div>
+
         <div style={{ height: 340, borderRadius: 12, overflow: 'hidden', border: '1px solid var(--border-subtle)' }}>
           <MapContainer center={mapCenter} zoom={11} style={{ height: '100%', width: '100%' }}>
             <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
             <MapClickHandler setPosition={setPosition} />
+            <MapCenterHandler center={mapCenter} />
             {position && <Marker position={[position.lat, position.lng]} />}
           </MapContainer>
         </div>
@@ -940,7 +1163,11 @@ export default function SubmitPost() {
                       <span style={{ 
                         fontWeight: 800, 
                         textTransform: 'uppercase', 
-                        color: aiResult.originalityStatus === 'authentic' ? '#4ade80' : '#f43f5e'
+                        color: aiResult.originalityStatus === 'authentic' 
+                          ? '#4ade80' 
+                          : isSuspiciousImage(aiResult) 
+                            ? '#f43f5e' 
+                            : '#fbbf24'
                       }}>
                         {aiResult.originalityStatus?.replace('_', ' ')}
                       </span>
@@ -1085,7 +1312,11 @@ export default function SubmitPost() {
                   <span style={{ 
                     fontSize: 12, 
                     fontWeight: 700, 
-                    color: aiResult.originalityStatus === 'authentic' ? '#4ade80' : '#f43f5e'
+                    color: aiResult.originalityStatus === 'authentic' 
+                      ? '#4ade80' 
+                      : isSuspiciousImage(aiResult) 
+                        ? '#f43f5e' 
+                        : '#fbbf24'
                   }}>
                     {aiResult.originalityStatus?.replace('_', ' ').toUpperCase()}
                   </span>
@@ -1102,7 +1333,7 @@ export default function SubmitPost() {
         </div>
 
         {/* Fake Rejection Warning Banner */}
-        {aiResult && (aiResult.originalityStatus === 'stock_photo_detected' || aiResult.originalityStatus === 'suspicious_screenshot' || aiResult.originalityStatus === 'manipulated') && (
+        {aiResult && isSuspiciousImage(aiResult) && (
           <div style={{
             padding: '14px 18px',
             background: 'rgba(244, 63, 94, 0.08)',
@@ -1120,7 +1351,7 @@ export default function SubmitPost() {
             <span style={{ fontSize: 16 }}>⚠️</span>
             <div>
               <strong style={{ display: 'block', marginBottom: 2, fontSize: 14 }}>Media Legitimacy Block</strong>
-              This upload was flagged as a {aiResult.originalityStatus.replace('_', ' ')}. To protect the platform against fake/spam reports, submissions containing non-authentic media are strictly blocked. Please go back and capture an original image in-situ.
+              This upload was flagged as a {aiResult.originalityStatus?.replace('_', ' ').toUpperCase() || 'SUSPICIOUS REPLAY/SPOOF'}. To protect the platform against fake/spam reports, submissions containing non-authentic media are strictly blocked. Please go back and capture an original image in-situ.
             </div>
           </div>
         )}
@@ -1219,7 +1450,30 @@ export default function SubmitPost() {
         {step < 4 ? (
           <button
             type="button"
-            onClick={() => canProceed() ? setStep(s => s + 1) : toast.error(step === 2 ? 'Pin a location on the map first.' : step === 3 ? 'At least one photo proof is required.' : 'Fill in title and description.')}
+            onClick={() => {
+              if (canProceed()) {
+                setStep(s => s + 1);
+                return;
+              }
+
+              if (step === 1) {
+                toast.error('Fill in title and description.');
+              } else if (step === 2) {
+                toast.error('Pin a location on the map first.');
+              } else if (step === 3) {
+                if (aiLoading) {
+                  toast.error('Wait for AI analysis to finish before continuing.');
+                } else if (selectedFiles.length === 0) {
+                  toast.error('At least one photo proof is required.');
+                } else if (!aiResult) {
+                  toast.error('Run AI analysis on the uploaded image first.');
+                } else if (aiResult.allImagesRelevant === false) {
+                  toast.error(`Submission blocked: ${aiResult.relevanceExplanation || 'Uploaded images do not match the reported issue.'}`);
+                } else {
+                  toast.error('Image must pass AI validation before review.');
+                }
+              }
+            }}
             className="btn btn-primary"
             style={{ flex: 1 }}
           >
@@ -1325,6 +1579,77 @@ export default function SubmitPost() {
                   <div style={{ fontSize: 12 }}>{scannerError}</div>
                 </div>
               )}
+
+              {/* Verification Scan Overlay */}
+              {isVerifyingScan && (
+                <div style={{
+                  position: 'absolute',
+                  inset: 0,
+                  background: 'rgba(15, 23, 42, 0.85)',
+                  backdropFilter: 'blur(4px)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 16,
+                  color: '#fff',
+                  zIndex: 20,
+                  textAlign: 'center',
+                  padding: 24,
+                  animation: 'fadeIn 0.2s ease-out'
+                }}>
+                  <div style={{ position: 'relative' }}>
+                    <div style={{
+                      width: 48,
+                      height: 48,
+                      borderRadius: '50%',
+                      border: '3px solid rgba(20, 184, 166, 0.1)',
+                      borderTopColor: 'var(--teal-400)',
+                      animation: 'spin 1s linear infinite'
+                    }} />
+                    <Sparkles size={16} style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', color: 'var(--teal-400)' }} />
+                  </div>
+                  <div>
+                    <h4 style={{ margin: '0 0 6px 0', fontSize: 14, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--teal-400)' }}>
+                      AI Anti-Spoof Analyzer
+                    </h4>
+                    <p style={{ margin: 0, fontSize: 12, color: 'var(--text-secondary)' }}>
+                      {scanVerificationStep}
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* Scan Error Alert Display */}
+              {scanErrorAlert && (
+                <div style={{
+                  position: 'absolute',
+                  inset: 0,
+                  background: 'rgba(15, 23, 42, 0.92)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  padding: 24,
+                  textAlign: 'center',
+                  zIndex: 15,
+                  animation: 'fadeIn 0.2s ease-out'
+                }}>
+                  <span style={{ fontSize: 32, marginBottom: 12 }}>⚠️</span>
+                  <h4 style={{ margin: '0 0 8px 0', color: '#f43f5e', fontSize: 14, fontWeight: 700 }}>Spoof Attempt Flagged</h4>
+                  <p style={{ margin: '0 0 16px 0', fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+                    {scanErrorAlert}
+                  </p>
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-sm"
+                    onClick={() => setScanErrorAlert('')}
+                    style={{ padding: '6px 16px', fontSize: 11 }}
+                  >
+                    Dismiss & Try Again
+                  </button>
+                </div>
+              )}
             </div>
 
             <div className="scanner-controls">
@@ -1338,6 +1663,7 @@ export default function SubmitPost() {
                   <button
                     type="button"
                     onClick={switchCamera}
+                    disabled={isVerifyingScan}
                     className="btn btn-secondary btn-sm"
                     style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 10px', fontSize: 11 }}
                   >
@@ -1384,6 +1710,7 @@ export default function SubmitPost() {
                   type="button"
                   className="btn btn-secondary"
                   onClick={closeScanner}
+                  disabled={isVerifyingScan}
                   style={{ flex: 1 }}
                 >
                   Close
@@ -1392,7 +1719,7 @@ export default function SubmitPost() {
                   type="button"
                   className="btn btn-primary"
                   onClick={capturePhoto}
-                  disabled={scannerLoading || !!scannerError}
+                  disabled={scannerLoading || !!scannerError || isVerifyingScan}
                   style={{
                     flex: 2,
                     background: isValidated ? 'linear-gradient(135deg, #10b981, #059669)' : undefined,
@@ -1408,6 +1735,149 @@ export default function SubmitPost() {
           </div>
         </div>
       )}
+
+      {/* Duplicate detection modal */}
+      <AnimatePresence>
+        {showDuplicateModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-4">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              transition={{ duration: 0.2 }}
+              className="glass-panel p-6 rounded-2xl max-w-lg w-full space-y-4 shadow-2xl bg-[var(--bg-surface)] border border-[var(--border-default)]"
+              style={{ maxHeight: '90vh', overflowY: 'auto' }}
+            >
+              <div className="flex items-center justify-between border-b border-[var(--border-subtle)] pb-3">
+                <h3 className="font-display font-extrabold text-[var(--teal-500)] text-base flex items-center gap-2">
+                  <MapPin size={16} />
+                  <span>Similar Report Detected Nearby</span>
+                </h3>
+              </div>
+
+              {loadingDuplicateDetails ? (
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '36px 0', gap: 12 }}>
+                  <Loader2 className="animate-spin text-[var(--teal-500)]" size={24} style={{ color: 'var(--teal-400)' }} />
+                  <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Fetching existing report details...</span>
+                </div>
+              ) : duplicatePostDetails ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                  <p style={{ fontSize: 13, color: 'var(--text-secondary)', margin: 0, lineHeight: 1.5 }}>
+                    Another citizen has already reported a very similar issue in this immediate vicinity. Please review it:
+                  </p>
+
+                  <div style={{
+                    padding: 16,
+                    borderRadius: 12,
+                    border: '1px solid var(--border-default)',
+                    background: 'var(--bg-elevated)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 10
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <span style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', color: 'var(--teal-400)', letterSpacing: '0.05em' }}>
+                        {duplicatePostDetails.category}
+                      </span>
+                      <span className={`status-pill status-${duplicatePostDetails.status}`} style={{ textTransform: 'uppercase', fontSize: 9 }}>
+                        {duplicatePostDetails.status}
+                      </span>
+                    </div>
+
+                    <h4 style={{ margin: 0, fontSize: 14, fontWeight: 700, color: 'var(--text-primary)' }}>
+                      {duplicatePostDetails.title}
+                    </h4>
+
+                    <p style={{ margin: 0, fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.5, display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                      {duplicatePostDetails.description}
+                    </p>
+
+                    {duplicatePostDetails.images && duplicatePostDetails.images.length > 0 && (
+                      <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 4 }}>
+                        {duplicatePostDetails.images.map((imgUrl, i) => (
+                          <img
+                            key={i}
+                            src={imgUrl}
+                            alt="Duplicate report evidence"
+                            style={{ width: 64, height: 64, objectFit: 'cover', borderRadius: 8, border: '1px solid var(--border-subtle)', flexShrink: 0 }}
+                          />
+                        ))}
+                      </div>
+                    )}
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 12, fontSize: 10, color: 'var(--text-muted)', borderTop: '1px solid var(--border-subtle)', paddingTop: 10, marginTop: 4 }}>
+                      <span>👍 {duplicatePostDetails.likeCount || 0} Upvotes</span>
+                      <span>💬 {duplicatePostDetails.commentCount || 0} Comments</span>
+                      {duplicatePostDetails.address && (
+                        <span style={{ marginLeft: 'auto', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap', maxWidth: '55%' }}>
+                          📍 {duplicatePostDetails.address}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', textAlign: 'center', padding: '4px 0' }}>
+                    Is your report about the same issue as this one?
+                  </div>
+
+                  <div style={{ display: 'flex', gap: 12 }}>
+                    <button
+                      type="button"
+                      onClick={handleConfirmSameIssue}
+                      disabled={resolvingDuplicate}
+                      className="btn btn-primary"
+                      style={{ flex: 1, padding: '10px 16px', fontSize: 12, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
+                    >
+                      {resolvingDuplicate ? (
+                        <Loader2 size={14} className="animate-spin" />
+                      ) : (
+                        "Yes, it's the same (Upvote & View Original)"
+                      )}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleConfirmDifferentIssue}
+                      disabled={resolvingDuplicate}
+                      className="btn btn-secondary"
+                      style={{ flex: 1, padding: '10px 16px', fontSize: 12, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
+                    >
+                      {resolvingDuplicate ? (
+                        <Loader2 size={14} className="animate-spin" />
+                      ) : (
+                        'No, post mine anyway'
+                      )}
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div style={{ textAlign: 'center', padding: '16px 0', display: 'flex', flexDirection: 'column', gap: 16 }}>
+                  <p style={{ fontSize: 12, color: 'var(--text-muted)', margin: 0 }}>
+                    Unable to load original report details. You can publish yours anyway.
+                  </p>
+                  <div style={{ display: 'flex', gap: 12 }}>
+                    <button
+                      type="button"
+                      onClick={handleConfirmDifferentIssue}
+                      className="btn btn-primary"
+                      style={{ flex: 1, padding: '8px 16px', fontSize: 12 }}
+                    >
+                      Publish Mine Anyway
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setShowDuplicateModal(false)}
+                      className="btn btn-secondary"
+                      style={{ flex: 1, padding: '8px 16px', fontSize: 12 }}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              )}
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

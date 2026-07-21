@@ -52,14 +52,44 @@ const SEV_BORDER = {
   low: 'var(--sev-low)',
 };
 
+function renderMarkdownText(text = '') {
+  const lines = String(text).split(/\n+/).filter(Boolean);
+  const boldPattern = /\*\*(.+?)\*\*/g;
+
+  return lines.map((line, lineIndex) => {
+    const parts = [];
+    let lastIndex = 0;
+    let match;
+
+    while ((match = boldPattern.exec(line)) !== null) {
+      if (match.index > lastIndex) {
+        parts.push(line.slice(lastIndex, match.index));
+      }
+      parts.push(<strong key={`b-${lineIndex}-${match.index}`}>{match[1]}</strong>);
+      lastIndex = match.index + match[0].length;
+    }
+
+    if (lastIndex < line.length) {
+      parts.push(line.slice(lastIndex));
+    }
+
+    return (
+      <span key={`line-${lineIndex}`}>
+        {parts.map((part, partIndex) =>
+          typeof part === 'string' ? <React.Fragment key={`t-${lineIndex}-${partIndex}`}>{part}</React.Fragment> : part
+        )}
+        {lineIndex < lines.length - 1 && <br />}
+      </span>
+    );
+  });
+}
+
 export default function Feed() {
   const { isSignedIn, role, userProfile, socket } = useCivic();
   const navigate = useNavigate();
   const [posts, setPosts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [myPostIds, setMyPostIds] = useState(new Set());
-  const [expandedContacts, setExpandedContacts] = useState({});
-  const [expandedTimelines, setExpandedTimelines] = useState({});
   const [likeAnim, setLikeAnim] = useState({});
 
   // Filters
@@ -408,8 +438,6 @@ export default function Feed() {
         <StaggerContainer className="grid grid-cols-1 md:grid-cols-2 gap-6" inView={false}>
           {filteredPosts.map((post, idx) => {
             const isOwner = myPostIds.has(post._id);
-            const isContactOpen = expandedContacts[post._id];
-            const isTimelineOpen = expandedTimelines[post._id];
             const isLiked = post.likedByUser;
             const username = `anon_${post.district?.toLowerCase().slice(0, 3)}_${post._id?.slice(-4)}`;
 
@@ -482,19 +510,22 @@ export default function Feed() {
                 </div>
 
                 {/* ── IMAGE ── */}
-                <div style={{
-                  position: 'relative',
-                  aspectRatio: '4/3',
-                  background: 'var(--bg-elevated)',
-                  overflow: 'hidden',
-                  cursor: 'pointer',
-                }}
-                  onDoubleClick={() => handleLike(post._id)}
+                <Link
+                  to={`/posts/${post._id}`}
+                  style={{
+                    display: 'block',
+                    position: 'relative',
+                    aspectRatio: '4/3',
+                    background: 'var(--bg-elevated)',
+                    overflow: 'hidden',
+                    cursor: 'pointer',
+                  }}
                 >
                   {post.images?.length > 0 ? (
                     <img
                       src={post.images[0]}
                       alt={post.title}
+                      className="transition-transform duration-300 hover:scale-105"
                       style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
                     />
                   ) : (
@@ -506,16 +537,6 @@ export default function Feed() {
                       <span style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                         No Image
                       </span>
-                    </div>
-                  )}
-
-                  {/* Heart animation overlay */}
-                  {likeAnim[post._id] && (
-                    <div className="animate-scaleUp" style={{
-                      position: 'absolute', inset: 0, display: 'flex',
-                      alignItems: 'center', justifyContent: 'center', pointerEvents: 'none',
-                    }}>
-                      <Heart size={72} fill="#f43f5e" stroke="#f43f5e" style={{ filter: 'drop-shadow(0 0 20px #f43f5e80)' }} />
                     </div>
                   )}
 
@@ -532,7 +553,7 @@ export default function Feed() {
                       AI {Math.round(post.aiConfidence * 100)}%
                     </div>
                   )}
-                </div>
+                </Link>
 
                 {/* ── ACTION BAR ── */}
                 <div style={{
@@ -611,19 +632,6 @@ export default function Feed() {
  
                   <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                     <button
-                      onClick={() => speakPost(post)}
-                      aria-label={speakingId === post._id ? "Stop narration" : "Read post aloud"}
-                      style={{
-                        background: 'none', border: 'none', cursor: 'pointer', padding: '2px',
-                        color: speakingId === post._id ? 'var(--teal-400)' : 'var(--text-muted)', transition: 'color 0.15s',
-                        display: 'flex', alignItems: 'center',
-                      }}
-                      title={speakingId === post._id ? "Stop narration" : "Read post aloud"}
-                    >
-                      {speakingId === post._id ? <VolumeX size={17} strokeWidth={2} /> : <Volume2 size={17} strokeWidth={1.5} />}
-                    </button>
- 
-                    <button
                       onClick={() => copyLink(post._id)}
                       aria-label="Copy share link"
                       style={{
@@ -648,7 +656,20 @@ export default function Feed() {
                     >
                       {post.title}
                     </Link>
-                    {post.description}
+                    {post.description && post.description.length > 140 ? (
+                      <>
+                        {renderMarkdownText(post.description.substring(0, 140))}
+                        <Link 
+                          to={`/posts/${post._id}`} 
+                          style={{ color: 'var(--teal-500)', fontWeight: 600, marginLeft: 6, textDecoration: 'none' }}
+                          className="hover:underline"
+                        >
+                          ... show details
+                        </Link>
+                      </>
+                    ) : (
+                      renderMarkdownText(post.description)
+                    )}
                   </p>
 
                   {/* Tags */}
@@ -680,91 +701,6 @@ export default function Feed() {
                 <div style={{ padding: '0 14px 12px' }}>
                   <EscalationBar supportCount={post.supportCount || 0} />
                 </div>
-
-                {/* ── STATUS TIMELINE (collapsible) ── */}
-                <div style={{ borderTop: '1px solid var(--border-subtle)' }}>
-                  <button
-                    onClick={() => setExpandedTimelines(prev => ({ ...prev, [post._id]: !prev[post._id] }))}
-                    style={{
-                      width: '100%', padding: '8px 14px',
-                      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                      background: 'none', border: 'none', cursor: 'pointer',
-                      color: 'var(--text-muted)', fontSize: 11, fontWeight: 600,
-                      textTransform: 'uppercase', letterSpacing: '0.05em',
-                    }}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                      <Clock size={10} />
-                      Status Progress
-                    </div>
-                    {isTimelineOpen ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
-                  </button>
-
-                  {isTimelineOpen && (
-                    <div className="animate-fadeIn" style={{ padding: '0 14px 14px' }}>
-                      <StatusTimeline status={post.status || 'reported'} />
-                    </div>
-                  )}
-                </div>
-
-                {/* ── OFFICIAL CONTACTS (collapsible) ── */}
-                {post.attachedContacts?.length > 0 && (
-                  <div style={{ borderTop: '1px solid var(--border-subtle)' }}>
-                    <button
-                      onClick={() => setExpandedContacts(prev => ({ ...prev, [post._id]: !prev[post._id] }))}
-                      style={{
-                        width: '100%', padding: '8px 14px',
-                        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                        background: 'none', border: 'none', cursor: 'pointer',
-                        color: 'var(--text-muted)', fontSize: 11, fontWeight: 600,
-                        textTransform: 'uppercase', letterSpacing: '0.05em',
-                      }}
-                    >
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                        <Navigation size={10} style={{ color: '#34d399' }} />
-                        Official Contact
-                      </div>
-                      {isContactOpen ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
-                    </button>
-
-                    {isContactOpen && (
-                      <div className="animate-fadeIn" style={{
-                        padding: '0 14px 14px',
-                        display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
-                      }}>
-                        <div>
-                          <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>
-                            {post.attachedContacts[0].officerName}
-                          </div>
-                          <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
-                            {post.attachedContacts[0].department}
-                          </div>
-                        </div>
-                        <div style={{ display: 'flex', gap: 8 }}>
-                          {post.attachedContacts[0].phone && (
-                            <a
-                              href={`tel:${post.attachedContacts[0].phone}`}
-                              className="btn btn-secondary btn-sm"
-                              style={{ gap: 5 }}
-                            >
-                              <Phone size={12} />
-                              Call
-                            </a>
-                          )}
-                          {post.attachedContacts[0].email && (
-                            <a
-                              href={`mailto:${post.attachedContacts[0].email}`}
-                              className="btn btn-secondary btn-sm"
-                            >
-                              <Mail size={12} />
-                              Email
-                            </a>
-                          )}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )}
 
                 {/* ── STRIKE BANNER ── */}
                 {(post.supportCount || 0) >= 100 && (

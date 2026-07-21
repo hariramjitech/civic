@@ -4,7 +4,7 @@ import { UserButton, SignedIn, SignedOut, SignInButton } from '@clerk/clerk-reac
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Megaphone, Map, MessageSquare, Flame,
-  PlusCircle, Bell, Menu, X, ArrowRight
+  PlusCircle, Bell, User, Shield, Menu, X, ArrowRight
 } from 'lucide-react';
 
 export default function Navbar({ role }) {
@@ -32,12 +32,7 @@ export default function Navbar({ role }) {
   ];
 
   return (
-    <motion.header
-      initial={{ y: -100, opacity: 0 }}
-      animate={{ y: 0, opacity: 1 }}
-      transition={{ duration: 0.5, ease: 'easeOut' }}
-      className="fixed top-0 left-0 right-0 z-50 flex justify-center px-4 md:px-8 pointer-events-none"
-    >
+    <header className="fixed top-0 left-0 right-0 z-50 flex justify-center px-4 md:px-8 pointer-events-none">
       {/* Floating Pill Container Docked to Top */}
       <div
         className={`w-full max-w-6xl rounded-b-[2rem] bg-white/82 dark:bg-slate-900/82 backdrop-blur-md border-b border-l border-r border-slate-200/80 dark:border-slate-800/80 shadow-[0_12px_40px_rgba(0,0,0,0.10)] pointer-events-auto transition-all duration-300 ${
@@ -206,12 +201,7 @@ export default function Navbar({ role }) {
               const Icon = link.icon;
               const active = isActive(link.path);
               return (
-                <motion.div
-                  key={link.path}
-                  initial={{ opacity: 0, x: -10 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: idx * 0.04 }}
-                >
+                <div key={link.path}>
                   <Link
                     to={link.path}
                     aria-current={active ? 'page' : undefined}
@@ -224,7 +214,7 @@ export default function Navbar({ role }) {
                     <Icon size={14} style={{ color: active ? 'var(--teal-500)' : undefined }} className={!active ? 'text-slate-400' : ''} />
                     <span>{link.label}</span>
                   </Link>
-                </motion.div>
+                </div>
               );
             })}
 
@@ -253,6 +243,6 @@ export default function Navbar({ role }) {
           </motion.div>
         )}
       </AnimatePresence>
-    </motion.header>
+    </header>
   );
 }

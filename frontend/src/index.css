@@ -229,6 +229,91 @@
 }
 
 /* ─────────────────────────────────────────────────────── */
+/*  PAGE PANEL — for non-landing pages (light bg)         */
+/* ─────────────────────────────────────────────────────── */
+.page-panel {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: 16px;
+  box-shadow: var(--shadow-sm);
+}
+
+/* Inline info row inside cards */
+.info-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 12px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-default);
+  border-radius: 10px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+/* Timeline audit entry */
+.audit-entry {
+  padding: 10px 14px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-default);
+  border-left: 3px solid var(--teal-500);
+  border-radius: 10px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  font-style: italic;
+  line-height: 1.5;
+}
+
+/* Chat message bubble - light theme */
+.msg-bubble-me {
+  background: linear-gradient(135deg, var(--teal-500), var(--teal-600));
+  color: #fff;
+  border-radius: 16px 16px 4px 16px;
+  padding: 10px 14px;
+  font-size: 13px;
+  line-height: 1.5;
+  max-width: 70%;
+  box-shadow: 0 2px 8px rgba(13, 148, 136, 0.20);
+}
+
+.msg-bubble-other {
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  border: 1px solid var(--border-default);
+  border-radius: 16px 16px 16px 4px;
+  padding: 10px 14px;
+  font-size: 13px;
+  line-height: 1.5;
+  max-width: 70%;
+}
+
+/* Channel list item */
+.channel-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-elevated);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  text-align: left;
+  width: 100%;
+}
+
+.channel-item:hover {
+  border-color: var(--teal-500);
+  background: var(--bg-surface);
+  box-shadow: var(--shadow-sm);
+}
+
+.channel-item.active {
+  border-color: rgba(13, 148, 136, 0.4);
+  background: rgba(13, 148, 136, 0.06);
+}
+
+/* ─────────────────────────────────────────────────────── */
 /*  INPUTS                                                 */
 /* ─────────────────────────────────────────────────────── */
 .glass-input {

@@ -8,8 +8,9 @@
 const express = require('express');
 const crypto = require('crypto');
 const router = express.Router();
+const cache = require('../services/cache');
 
-const { User, Post, Comment, Poll, ChatRoom, Message, Contact, AuditLog } = require('../models/models');
+const { User, Post, Comment, Poll, ChatRoom, Message, WitnessConfirmation, Contact, AuditLog, Campaign } = require('../models/models');
 const {
   requireAuth, attachUser, requireRole,
   upload, uploadToCloudinary,
@@ -22,7 +23,10 @@ const {
   generateReport, predictRiskZones,
   reverseGeocode, fetchGovRoadData,
   updateIntensityScore, rewriteComplaint,
-  getHaversineDistance, censorText,
+  getOfficialsHierarchy, suggestLegalActs,
+  generateLegalPetition,
+  getHaversineDistance, censorText, getProfanityStats,
+  censorCustomWords, getDynamicContact,
 } = require('../services/services');
 
 // ═══════════════════════════════════════════
@@ -54,7 +58,7 @@ router.patch('/auth/profile', requireAuth, attachUser, asyncHandler(async (req, 
   const user = await User.findByIdAndUpdate(
     req.user._id,
     { district },
-    { new: true }
+    { returnDocument: 'after' }
   );
   res.json({ success: true, district: user.district });
 }));
@@ -113,6 +117,12 @@ router.get('/posts', requireAuth, attachUser, asyncHandler(async (req, res) => {
     page = 1, limit = 20, district, category, severity, status,
     sort = 'feed', lat, lng, radius = 5000
   } = req.query;
+
+  const cacheKey = `posts:${JSON.stringify(req.query)}`;
+  const cachedData = cache.get(cacheKey);
+  if (cachedData) {
+    return res.json({ ...cachedData, cached: true });
+  }
 
   const query = { isDeleted: false, isDuplicate: false };
   if (district) query.district = district;
@@ -186,23 +196,73 @@ router.get('/posts', requireAuth, attachUser, asyncHandler(async (req, res) => {
     total = await Post.countDocuments(query);
   }
 
-  res.json({ posts, total, page: parseInt(page), pages: Math.ceil(total / limit) });
+  const responseData = { posts, total, page: parseInt(page), pages: Math.ceil(total / limit) };
+  cache.set(cacheKey, responseData, 30000); // cache for 30 seconds
+  res.json(responseData);
 }));
 
 // GET /api/posts/:id — single post detail
 router.get('/posts/:id', requireAuth, attachUser, asyncHandler(async (req, res) => {
   const post = await Post.findOne({ _id: req.params.id, isDeleted: false })
     .select('-anonToken')
-    .populate('attachedContacts')
+    .populate('attachedContacts duplicateOf')
     .lean();
   if (!post) return res.status(404).json({ error: 'Post not found' });
 
   // Get linked polls & strike room
-  const polls = await Poll.find({ postId: post._id, isActive: true }).lean();
+  const rawPolls = await Poll.find({ postId: post._id, isActive: true }).lean();
+  const user = await User.findById(req.user._id);
+  const polls = rawPolls.map(poll => {
+    let votedOptionIndex = null;
+    if (user && user.votedPolls) {
+      for (const m of user.votedPolls) {
+        if (m instanceof Map) {
+          if (m.has(poll._id.toString())) {
+            votedOptionIndex = parseInt(m.get(poll._id.toString()), 10);
+            break;
+          }
+        } else if (m && typeof m === 'object') {
+          if (poll._id.toString() in m) {
+            votedOptionIndex = parseInt(m[poll._id.toString()], 10);
+            break;
+          }
+        }
+      }
+    }
+    return {
+      ...poll,
+      userVotedOptionIndex: votedOptionIndex,
+      userHasVoted: votedOptionIndex !== null
+    };
+  });
+
   const strikeRoom = await ChatRoom.findOne({ postId: post._id, type: 'strike', isActive: true })
     .select('name memberCount escalationLevel').lean();
+  const userWitness = await WitnessConfirmation.findOne({ postId: post._id, userId: req.user._id })
+    .select('status note distanceMeters isLocal createdAt')
+    .lean();
 
-  res.json({ post, polls, strikeRoom });
+  // Find related / similar posts
+  let similarPosts = [];
+  if (post.duplicateOf) {
+    similarPosts = await Post.find({
+      $or: [
+        { _id: post.duplicateOf._id },
+        { duplicateOf: post.duplicateOf._id }
+      ],
+      _id: { $ne: post._id },
+      isDuplicate: false,
+      isDeleted: false
+    }).select('title category address status severity').lean();
+  } else {
+    similarPosts = await Post.find({
+      duplicateOf: post._id,
+      isDuplicate: false,
+      isDeleted: false
+    }).select('title category address status severity').lean();
+  }
+
+  res.json({ post, polls, strikeRoom, userWitness, similarPosts });
 }));
 
 // POST /api/posts — create anonymous post
@@ -217,13 +277,22 @@ router.post('/posts',
     if (!title || !description) return res.status(400).json({ error: 'Title and description required' });
 
     // Censor improper words
-    title = censorText(title);
-    description = censorText(description);
+    const titleStats = getProfanityStats(title);
+    const descStats = getProfanityStats(description);
+    
+    title = titleStats.censoredText;
+    description = descStats.censoredText;
 
-    // Moderation check
+    // AI Moderation check to block scolding/insults/abuse, but allow normal venting
     const modResult = await moderateContent(description);
     if (!modResult.safe) {
-      return res.status(400).json({ error: `Content flagged: ${modResult.reason}` });
+      return res.status(400).json({ error: `Content flagged: ${modResult.reason || 'Contains abusive language or personal attacks.'}` });
+    }
+
+    // Censor any additional bad words detected by Gemini
+    if (modResult.badWords && modResult.badWords.length > 0) {
+      title = censorCustomWords(title, modResult.badWords);
+      description = censorCustomWords(description, modResult.badWords);
     }
 
     // Upload images to Cloudinary
@@ -359,7 +428,7 @@ GPS Match Status: ${imageMetadata.gpsMatchStatus}`;
     }
 
     // Verify all images are relevant to the civic issue
-    if (aiResult.allImagesRelevant === false) {
+    if (aiResult.allImagesRelevant !== true) {
       return res.status(400).json({
         error: `Relevance check failed: ${aiResult.relevanceExplanation || 'One or more uploaded images do not appear relevant to the described civic issue.'}`,
         code: 'IRRELEVANT_IMAGE'
@@ -372,27 +441,9 @@ GPS Match Status: ${imageMetadata.gpsMatchStatus}`;
       locationData = await reverseGeocode(parseFloat(lat), parseFloat(lng));
     }
 
-    // Find auto-attach contacts for this district and category
-    const contactQuery = { district: locationData.district };
-    if (aiResult.category && aiResult.category !== 'other') {
-      contactQuery.department = aiResult.category;
-    }
-    let contacts = await Contact.find(contactQuery);
-
-    // If no direct department match, fallback to 'municipal' contact for that district
-    if (contacts.length === 0) {
-      contacts = await Contact.find({
-        district: locationData.district,
-        department: 'municipal'
-      });
-    }
-
-    // If still no contact matches, fallback to all contacts of that district
-    if (contacts.length === 0) {
-      contacts = await Contact.find({ district: locationData.district });
-    }
-
-    const contactIds = contacts.map(c => c._id);
+    // Dynamically retrieve or generate official contact for this district and department category
+    const dynamicContact = await getDynamicContact(locationData.district, aiResult.category || 'municipal');
+    const contactIds = dynamicContact ? [dynamicContact._id] : [];
 
     // Duplicate detection (nearby posts within 200m, same category)
     let duplicateInfo = { isDuplicate: false };
@@ -400,6 +451,7 @@ GPS Match Status: ${imageMetadata.gpsMatchStatus}`;
       const nearby = await Post.find({
         category: aiResult.category,
         isDeleted: false,
+        isDuplicate: false,
         location: {
           $near: {
             $geometry: { type: 'Point', coordinates: [parseFloat(lng), parseFloat(lat)] },
@@ -479,6 +531,8 @@ GPS Match Status: ${imageMetadata.gpsMatchStatus}`;
       io.to('feed').emit('feed:post_created', populated);
     }
 
+    cache.invalidatePattern('posts:');
+    cache.invalidatePattern('analytics:');
     res.status(201).json({ post: populated, aiResult });
   })
 );
@@ -499,6 +553,10 @@ router.patch('/posts/:id/status', requireAuth, attachUser, asyncHandler(async (r
   post.statusHistory.push({ status, note: note || '', updatedAt: new Date() });
   await post.save();
 
+  if (['resolved', 'closed'].includes(status)) {
+    await ChatRoom.updateMany({ postId: post._id, type: 'strike' }, { isActive: false });
+  }
+
   const populated = await Post.findById(post._id)
     .select('-anonToken')
     .populate('attachedContacts', 'department officerName phone email portalUrl')
@@ -510,6 +568,8 @@ router.patch('/posts/:id/status', requireAuth, attachUser, asyncHandler(async (r
     io.to(`post:${populated._id}`).emit('post:updated', populated);
   }
 
+  cache.invalidatePattern('posts:');
+  cache.invalidatePattern('analytics:');
   res.json({ success: true, status: post.status, history: post.statusHistory, post: populated });
 }));
 
@@ -522,13 +582,45 @@ router.delete('/posts/:id', requireAuth, attachUser, asyncHandler(async (req, re
   }
   await Post.findByIdAndUpdate(req.params.id, { isDeleted: true });
   await Comment.updateMany({ postId: req.params.id }, { isDeleted: true });
+  await ChatRoom.updateMany({ postId: req.params.id, type: 'strike' }, { isActive: false });
 
   const io = req.app.get('io');
   if (io) {
     io.to('feed').emit('feed:post_deleted', { postId: req.params.id });
   }
 
+  cache.invalidatePattern('posts:');
+  cache.invalidatePattern('analytics:');
   res.json({ success: true });
+}));
+
+// POST /api/posts/:id/resolve-duplicate — keep the post anyway, marking it as not a duplicate
+router.post('/posts/:id/resolve-duplicate', requireAuth, attachUser, asyncHandler(async (req, res) => {
+  const post = await Post.findById(req.params.id);
+  if (!post || post.isDeleted) return res.status(404).json({ error: 'Post not found' });
+  if (!req.user.postTokens?.includes(post.anonToken) && !['admin'].includes(req.user.role)) {
+    return res.status(403).json({ error: 'Permission denied' });
+  }
+
+  post.isDuplicate = false;
+  await post.save();
+
+  // Run priority algorithm to initialize/update intensity score
+  await updateIntensityScore(post._id);
+
+  const populated = await Post.findById(post._id)
+    .select('-anonToken')
+    .populate('attachedContacts', 'department officerName phone email portalUrl');
+
+  // Broadcast that the post is now live
+  const io = req.app.get('io');
+  if (io) {
+    io.to('feed').emit('feed:post_created', populated);
+  }
+
+  cache.invalidatePattern('posts:');
+  cache.invalidatePattern('analytics:');
+  res.json({ success: true, post: populated });
 }));
 
 
@@ -566,6 +658,8 @@ router.post('/posts/:id/like', requireAuth, attachUser, asyncHandler(async (req,
     io.to(`post:${populated._id}`).emit('post:updated', populated);
   }
 
+  cache.invalidatePattern('posts:');
+  cache.invalidatePattern('analytics:');
   res.json({ liked: !alreadyLiked, likeCount: populated.likeCount, intensityScore: populated.intensityScore });
 }));
 
@@ -623,6 +717,8 @@ router.post('/posts/:id/support', requireAuth, attachUser, asyncHandler(async (r
     io.to(`post:${populated._id}`).emit('post:updated', populated);
   }
 
+  cache.invalidatePattern('posts:');
+  cache.invalidatePattern('analytics:');
   res.json({
     success: true,
     supportCount: populated.supportCount,
@@ -630,6 +726,100 @@ router.post('/posts/:id/support', requireAuth, attachUser, asyncHandler(async (r
     intensityScore: newScore,
     isLocal,
     distance
+  });
+}));
+
+// POST /api/posts/:id/witness - nearby community confirmation
+router.post('/posts/:id/witness', requireAuth, attachUser, asyncHandler(async (req, res) => {
+  const { lat, lng, note = '', status = 'confirmed' } = req.body;
+  const validStatuses = ['confirmed', 'not_found', 'needs_review'];
+
+  if (!validStatuses.includes(status)) {
+    return res.status(400).json({ error: 'Invalid witness status' });
+  }
+  if (lat === undefined || lng === undefined) {
+    return res.status(400).json({ error: 'Current GPS location is required' });
+  }
+
+  const post = await Post.findOne({ _id: req.params.id, isDeleted: false });
+  if (!post) return res.status(404).json({ error: 'Post not found' });
+  if (!post.location?.coordinates?.length) {
+    return res.status(400).json({ error: 'This report has no pinned location to verify against' });
+  }
+
+  const userLat = parseFloat(lat);
+  const userLng = parseFloat(lng);
+  if (Number.isNaN(userLat) || Number.isNaN(userLng)) {
+    return res.status(400).json({ error: 'Invalid GPS coordinates' });
+  }
+
+  const [postLng, postLat] = post.location.coordinates;
+  const distanceMeters = Math.round(getHaversineDistance(userLat, userLng, postLat, postLng));
+  const isLocal = distanceMeters <= 500;
+
+  if (!isLocal) {
+    return res.status(403).json({
+      error: `You must be within 500m of the report to confirm it. Current distance: ${distanceMeters}m.`,
+      distanceMeters,
+      isLocal: false
+    });
+  }
+
+  const existing = await WitnessConfirmation.findOne({ postId: post._id, userId: req.user._id });
+  if (existing) {
+    return res.status(409).json({
+      error: 'You already submitted a witness confirmation for this report',
+      witness: {
+        status: existing.status,
+        note: existing.note,
+        distanceMeters: existing.distanceMeters,
+        isLocal: existing.isLocal,
+        createdAt: existing.createdAt
+      }
+    });
+  }
+
+  const cleanNote = String(note || '').trim();
+  const noteStats = getProfanityStats(cleanNote);
+
+  const witness = await WitnessConfirmation.create({
+    postId: post._id,
+    userId: req.user._id,
+    clerkId: req.user.clerkId,
+    status,
+    note: noteStats.censoredText.slice(0, 300),
+    distanceMeters,
+    isLocal,
+  });
+
+  await Post.findByIdAndUpdate(post._id, {
+    $inc: { witnessCount: 1, localWitnessCount: 1 }
+  });
+  await updateIntensityScore(post._id);
+
+  const updatedPost = await Post.findById(post._id)
+    .select('-anonToken')
+    .populate('attachedContacts', 'department officerName phone email portalUrl')
+    .lean();
+
+  const io = req.app.get('io');
+  if (io) {
+    io.to('feed').emit('feed:post_updated', updatedPost);
+    io.to(`post:${updatedPost._id}`).emit('post:updated', updatedPost);
+  }
+
+  cache.invalidatePattern('posts:');
+  cache.invalidatePattern('analytics:');
+  res.status(201).json({
+    success: true,
+    witness: {
+      status: witness.status,
+      note: witness.note,
+      distanceMeters: witness.distanceMeters,
+      isLocal: witness.isLocal,
+      createdAt: witness.createdAt
+    },
+    post: updatedPost
   });
 }));
 
@@ -647,10 +837,22 @@ router.get('/posts/:id/comments', requireAuth, asyncHandler(async (req, res) => 
     .select('-anonToken')
     .lean();
 
-  // Attach replies
+  // Attach replies and handle legacy fallback aliases
   for (const c of comments) {
+    if (!c.senderAlias) {
+      c.senderAlias = 'Anonymous Citizen';
+      c.isPostAuthor = false;
+      c.creatorRole = 'citizen';
+    }
     c.replies = await Comment.find({ parentId: c._id, isDeleted: false })
       .select('-anonToken').sort({ createdAt: 1 }).lean();
+    for (const r of c.replies) {
+      if (!r.senderAlias) {
+        r.senderAlias = 'Anonymous Citizen';
+        r.isPostAuthor = false;
+        r.creatorRole = 'citizen';
+      }
+    }
   }
 
   res.json({ comments });
@@ -662,13 +864,34 @@ router.post('/posts/:id/comments', requireAuth, attachUser, asyncHandler(async (
   if (!text?.trim()) return res.status(400).json({ error: 'Comment text required' });
 
   // Censor improper words
-  text = censorText(text);
+  const textStats = getProfanityStats(text);
+  text = textStats.censoredText;
 
-  const mod = await moderateContent(text);
-  if (!mod.safe) return res.status(400).json({ error: `Comment flagged: ${mod.reason}` });
+  // AI Moderation check to block scolding/insults/abuse, but allow normal venting
+  const modResult = await moderateContent(text);
+  if (!modResult.safe) {
+    return res.status(400).json({ error: `Comment flagged: ${modResult.reason || 'Contains abusive language or personal attacks.'}` });
+  }
+
+  // Censor any additional bad words detected by Gemini
+  if (modResult.badWords && modResult.badWords.length > 0) {
+    text = censorCustomWords(text, modResult.badWords);
+  }
 
   const post = await Post.findOne({ _id: req.params.id, isDeleted: false });
   if (!post) return res.status(404).json({ error: 'Post not found' });
+
+  // Determine if commenter is post author
+  const isPostAuthor = req.user.postTokens?.includes(post.anonToken) || false;
+  
+  // Stable hash per user per post
+  const userHash = crypto.createHash('md5').update(`${req.user._id}-${post._id}`).digest('hex').substring(0, 4).toUpperCase();
+  let senderAlias = `Citizen #${userHash}`;
+  if (isPostAuthor) {
+    senderAlias = `Author (Citizen #${userHash})`;
+  } else if (['admin', 'officer', 'department'].includes(req.user.role)) {
+    senderAlias = `${req.user.role.toUpperCase()} (Citizen #${userHash})`;
+  }
 
   const commentAnonToken = crypto.randomBytes(32).toString('hex');
   const comment = await Comment.create({
@@ -676,6 +899,9 @@ router.post('/posts/:id/comments', requireAuth, attachUser, asyncHandler(async (
     anonToken: commentAnonToken,
     text: text.trim(),
     parentId: parentId || null,
+    senderAlias,
+    isPostAuthor,
+    creatorRole: req.user.role || 'citizen',
   });
 
   await Post.updateOne({ _id: req.params.id, isDeleted: false }, { $inc: { commentCount: 1 } });
@@ -686,6 +912,8 @@ router.post('/posts/:id/comments', requireAuth, attachUser, asyncHandler(async (
     $addToSet: { commentTokens: commentAnonToken }
   });
 
+  cache.invalidatePattern('posts:');
+  cache.invalidatePattern('analytics:');
   res.status(201).json({ comment: { ...comment.toObject(), anonToken: undefined } });
 }));
 
@@ -706,6 +934,8 @@ router.post('/posts/:id/polls', requireAuth, attachUser, asyncHandler(async (req
     expiresAt: new Date(Date.now() + expiresInHours * 3600 * 1000),
   });
 
+  cache.invalidatePattern('posts:');
+  cache.invalidatePattern('analytics:');
   res.status(201).json({ poll });
 }));
 
@@ -731,6 +961,8 @@ router.post('/polls/:pollId/vote', requireAuth, attachUser, asyncHandler(async (
   await User.findByIdAndUpdate(req.user._id, { $push: { votedPolls: voteMap } });
   await updateIntensityScore(poll.postId);
 
+  cache.invalidatePattern('posts:');
+  cache.invalidatePattern('analytics:');
   res.json({ poll });
 }));
 
@@ -742,6 +974,12 @@ router.post('/polls/:pollId/vote', requireAuth, attachUser, asyncHandler(async (
 // GET /api/rooms — list rooms
 router.get('/rooms', requireAuth, asyncHandler(async (req, res) => {
   const { type, district } = req.query;
+  const cacheKey = `rooms:${type || ''}:${district || ''}`;
+  const cachedData = cache.get(cacheKey);
+  if (cachedData) {
+    return res.json({ rooms: cachedData, cached: true });
+  }
+
   const query = { isActive: true };
   if (type) query.type = type;
   if (district) query.district = district;
@@ -749,6 +987,7 @@ router.get('/rooms', requireAuth, asyncHandler(async (req, res) => {
   const rooms = await ChatRoom.find(query)
     .sort({ memberCount: -1, createdAt: -1 })
     .lean();
+  cache.set(cacheKey, rooms, 60000); // 1 minute cache
   res.json({ rooms });
 }));
 
@@ -767,6 +1006,7 @@ router.post('/rooms', requireAuth, attachUser, asyncHandler(async (req, res) => 
     name, description, type, postId, district, category,
     createdBy: req.user.clerkId,
   });
+  cache.invalidatePattern('rooms:');
   res.status(201).json({ room });
 }));
 
@@ -774,6 +1014,15 @@ router.post('/rooms', requireAuth, attachUser, asyncHandler(async (req, res) => 
 router.get('/rooms/:id', requireAuth, attachUser, asyncHandler(async (req, res) => {
   const room = await ChatRoom.findOne({ _id: req.params.id, isActive: true });
   if (!room) return res.status(404).json({ error: 'Room not found' });
+
+  // Self-healing: if linked post is deleted or missing, deactivate room
+  if (room.type === 'strike' && room.postId) {
+    const post = await Post.findOne({ _id: room.postId, isDeleted: false });
+    if (!post) {
+      await ChatRoom.findByIdAndUpdate(room._id, { isActive: false });
+      return res.status(404).json({ error: 'Linked post not found, protest room deactivated' });
+    }
+  }
 
   const messageQuery = room.type === 'discussion'
     ? { roomId: room._id }
@@ -790,17 +1039,26 @@ router.get('/rooms/:id', requireAuth, attachUser, asyncHandler(async (req, res) 
 // POST /api/rooms/:id/join — join a strike room
 router.post('/rooms/:id/join', requireAuth, attachUser, asyncHandler(async (req, res) => {
   const clerkId = req.user.clerkId;
-  const room = await ChatRoom.findOneAndUpdate(
-    { _id: req.params.id, isActive: true, members: { $ne: clerkId } },
+  const roomExists = await ChatRoom.findOne({ _id: req.params.id, isActive: true });
+  if (!roomExists) return res.status(404).json({ error: 'Protest room not found' });
+
+  if (roomExists.members?.includes(clerkId)) {
+    // Add to user profile just in case it got out of sync
+    await User.findByIdAndUpdate(req.user._id, { $addToSet: { joinedRooms: roomExists._id } });
+    return res.json({ success: true, alreadyJoined: true, memberCount: roomExists.memberCount });
+  }
+
+  const room = await ChatRoom.findByIdAndUpdate(
+    req.params.id,
     { $addToSet: { members: clerkId }, $inc: { memberCount: 1 } },
-    { new: true }
+    { returnDocument: 'after' }
   );
-  if (!room) return res.status(404).json({ error: 'Room not found or already joined' });
 
   // Track for user
   await User.findByIdAndUpdate(req.user._id, { $addToSet: { joinedRooms: room._id } });
   await updateIntensityScore(room.postId);
 
+  cache.invalidatePattern('rooms:');
   res.json({ success: true, memberCount: room.memberCount });
 }));
 
@@ -812,10 +1070,7 @@ router.post('/rooms/:id/leave', requireAuth, attachUser, asyncHandler(async (req
 
   // Strike rooms keep ephemeral cleanup; discussion rooms preserve history.
   if (room?.type === 'strike') {
-    await Message.updateMany(
-      { roomId: req.params.id, senderAlias: alias },
-      { isDeleted: true }
-    );
+    await Message.deleteMany({ roomId: req.params.id, senderAlias: alias });
   }
 
   // Remove from members
@@ -825,7 +1080,102 @@ router.post('/rooms/:id/leave', requireAuth, attachUser, asyncHandler(async (req
   });
 
   await User.findByIdAndUpdate(req.user._id, { $pull: { joinedRooms: req.params.id } });
+  cache.invalidatePattern('rooms:');
   res.json({ success: true });
+}));
+
+// GET /api/rooms/:id/officials-hierarchy — fetch TN responsible officials hierarchy
+router.get('/rooms/:id/officials-hierarchy', requireAuth, attachUser, aiLimiter, asyncHandler(async (req, res) => {
+  const room = await ChatRoom.findOne({ _id: req.params.id, isActive: true });
+  if (!room) return res.status(404).json({ error: 'Strike room not found' });
+  
+  if (!room.postId) return res.status(400).json({ error: 'No post linked to this strike room' });
+  const post = await Post.findOne({ _id: room.postId, isDeleted: false }).lean();
+  if (!post) return res.status(404).json({ error: 'Linked post not found' });
+
+  const hierarchy = await getOfficialsHierarchy(post);
+  res.json({ hierarchy });
+}));
+
+// GET /api/legal-acts — fetch all statutory acts in the database (supports optional filtering by category or query search)
+router.get('/legal-acts', asyncHandler(async (req, res) => {
+  try {
+    const { category, q } = req.query;
+    const legalActs = require('../data/legalActs.json');
+    
+    let results = legalActs;
+    
+    // Filter by category (optionally matching general acts too)
+    if (category) {
+      results = results.filter(act => act.category === category || act.category === 'general');
+    }
+    
+    // Search query q
+    if (q) {
+      const query = q.toLowerCase();
+      results = results.filter(act => 
+        act.actName.toLowerCase().includes(query) || 
+        act.section.toLowerCase().includes(query) || 
+        act.summary.toLowerCase().includes(query)
+      );
+    }
+    
+    res.json({ acts: results });
+  } catch (err) {
+    console.error('Error fetching legal acts:', err);
+    res.status(500).json({ error: 'Internal Server Error loading legal acts' });
+  }
+}));
+
+// GET /api/rooms/:id/suggest-acts — fetch suggested statutory acts based on issue
+router.get('/rooms/:id/suggest-acts', requireAuth, attachUser, aiLimiter, asyncHandler(async (req, res) => {
+  const room = await ChatRoom.findOne({ _id: req.params.id, isActive: true });
+  if (!room) return res.status(404).json({ error: 'Strike room not found' });
+  
+  if (!room.postId) return res.status(400).json({ error: 'No post linked to this strike room' });
+  const post = await Post.findOne({ _id: room.postId, isDeleted: false }).lean();
+  if (!post) return res.status(404).json({ error: 'Linked post not found' });
+
+  const acts = await suggestLegalActs(post);
+  res.json({ acts });
+}));
+
+// POST /api/rooms/:id/legal-document — generate official legal petition/complaint
+router.post('/rooms/:id/legal-document', requireAuth, attachUser, aiLimiter, asyncHandler(async (req, res) => {
+  const { 
+    representativeName, 
+    addressedAuthority, 
+    customDemands, 
+    docType = 'municipal',
+    petitionerFatherSpouseName = '',
+    petitionerAge = '',
+    petitionerResidingAddress = '',
+    selectedActs = []
+  } = req.body;
+  const room = await ChatRoom.findOne({ _id: req.params.id, isActive: true });
+  if (!room) return res.status(404).json({ error: 'Strike room not found' });
+  if (room.type !== 'strike') return res.status(400).json({ error: 'This feature is only available for Strike Rooms' });
+
+  // Get the linked post and populate contacts
+  if (!room.postId) return res.status(400).json({ error: 'No post linked to this strike room' });
+  const post = await Post.findOne({ _id: room.postId, isDeleted: false })
+    .populate('attachedContacts')
+    .lean();
+  if (!post) return res.status(404).json({ error: 'Linked post not found' });
+
+  const extraDetails = { 
+    representativeName, 
+    addressedAuthority, 
+    customDemands, 
+    docType,
+    petitionerFatherSpouseName,
+    petitionerAge,
+    petitionerResidingAddress,
+    selectedActs
+  };
+  const document = await generateLegalPetition(post, room, extraDetails);
+
+  res.json({ document });
 }));
 
 // DELETE /api/rooms/:id — delete room + all messages (admin or creator)
@@ -833,14 +1183,23 @@ router.delete('/rooms/:id', requireAuth, attachUser, asyncHandler(async (req, re
   const room = await ChatRoom.findById(req.params.id);
   if (!room) return res.status(404).json({ error: 'Room not found' });
 
+  let isPostCreator = false;
+  if (room.postId) {
+    const post = await Post.findById(room.postId).lean();
+    if (post && req.user.postTokens?.includes(post.anonToken)) {
+      isPostCreator = true;
+    }
+  }
+
   const isCreator = room.createdBy === req.user.clerkId;
   const isAdmin = req.user.role === 'admin';
-  if (!isCreator && !isAdmin) return res.status(403).json({ error: 'Permission denied' });
+  if (!isCreator && !isAdmin && !isPostCreator) return res.status(403).json({ error: 'Permission denied' });
 
   // Delete all messages (ephemeral)
   await Message.deleteMany({ roomId: room._id });
   await ChatRoom.findByIdAndDelete(room._id);
 
+  cache.invalidatePattern('rooms:');
   res.json({ success: true });
 }));
 
@@ -992,11 +1351,18 @@ router.get('/ai/gov-data/:district', requireAuth, asyncHandler(async (req, res) 
 // GET /api/contacts — all or by district
 router.get('/contacts', requireAuth, asyncHandler(async (req, res) => {
   const { district, department } = req.query;
+  const cacheKey = `contacts:${district || ''}:${department || ''}`;
+  const cachedData = cache.get(cacheKey);
+  if (cachedData) {
+    return res.json({ contacts: cachedData, cached: true });
+  }
+
   const query = {};
   if (district) query.district = district;
   if (department) query.department = department;
 
   const contacts = await Contact.find(query).lean();
+  cache.set(cacheKey, contacts, 300000); // cache for 5 minutes
   res.json({ contacts });
 }));
 
@@ -1018,13 +1384,27 @@ router.get('/contacts/by-location', requireAuth, asyncHandler(async (req, res) =
 
 // GET /api/analytics/public-stats — public stats for landing page
 router.get('/analytics/public-stats', asyncHandler(async (req, res) => {
+  const cacheKey = 'analytics:public-stats';
+  const cachedData = cache.get(cacheKey);
+  if (cachedData) {
+    return res.json({ ...cachedData, cached: true });
+  }
+
   const distinctDistricts = await Post.distinct('district', { isDeleted: false });
   const count = distinctDistricts.filter(d => d && d !== 'Unknown').length;
-  res.json({ districts: Math.max(25, count) });
+  const responseData = { districts: Math.max(25, count) };
+  cache.set(cacheKey, responseData, 3600000); // cache for 1 hour
+  res.json(responseData);
 }));
 
 // GET /api/analytics/dashboard — overall stats
 router.get('/analytics/dashboard', requireAuth, attachUser, asyncHandler(async (req, res) => {
+  const cacheKey = 'analytics:dashboard';
+  const cachedData = cache.get(cacheKey);
+  if (cachedData) {
+    return res.json({ ...cachedData, cached: true });
+  }
+
   const [
     totalPosts, resolvedPosts, criticalPosts,
     categoryBreakdown, districtBreakdown, recentPosts, topIntensity,
@@ -1049,17 +1429,25 @@ router.get('/analytics/dashboard', requireAuth, attachUser, asyncHandler(async (
 
   const resolutionRate = totalPosts ? Math.round((resolvedPosts / totalPosts) * 100) : 0;
 
-  res.json({
+  const responseData = {
     stats: { totalPosts, resolvedPosts, criticalPosts, resolutionRate },
     categoryBreakdown,
     districtBreakdown,
     recentPosts,
     topIntensity,
-  });
+  };
+  cache.set(cacheKey, responseData, 120000); // cache for 2 minutes
+  res.json(responseData);
 }));
 
 // GET /api/analytics/heatmap — GIS data for map clustering
 router.get('/analytics/heatmap', requireAuth, asyncHandler(async (req, res) => {
+  const cacheKey = 'analytics:heatmap';
+  const cachedData = cache.get(cacheKey);
+  if (cachedData) {
+    return res.json({ ...cachedData, cached: true });
+  }
+
   const points = await Post.find(
     { isDeleted: false, 'location.coordinates': { $exists: true } },
     { 'location.coordinates': 1, severity: 1, category: 1, status: 1 }
@@ -1073,12 +1461,20 @@ router.get('/analytics/heatmap', requireAuth, asyncHandler(async (req, res) => {
     status: p.status,
   }));
 
-  res.json({ heatmapData });
+  const responseData = { heatmapData };
+  cache.set(cacheKey, responseData, 120000); // cache for 2 minutes
+  res.json(responseData);
 }));
 
 // GET /api/analytics/district/:name — district-specific stats
 router.get('/analytics/district/:name', requireAuth, asyncHandler(async (req, res) => {
   const district = req.params.name;
+  const cacheKey = `analytics:district:${district}`;
+  const cachedData = cache.get(cacheKey);
+  if (cachedData) {
+    return res.json({ ...cachedData, cached: true });
+  }
+
   const [posts, contacts, govData] = await Promise.all([
     Post.aggregate([
       { $match: { district, isDeleted: false } },
@@ -1088,7 +1484,9 @@ router.get('/analytics/district/:name', requireAuth, asyncHandler(async (req, re
     fetchGovRoadData(district),
   ]);
 
-  res.json({ district, categoryStats: posts, contacts, govData });
+  const responseData = { district, categoryStats: posts, contacts, govData };
+  cache.set(cacheKey, responseData, 120000); // cache for 2 minutes
+  res.json(responseData);
 }));
 
 
@@ -1108,7 +1506,7 @@ router.patch('/admin/users/:id/role', requireAuth, attachUser, requireRole('admi
   const validRoles = ['citizen', 'officer', 'department', 'admin'];
   if (!validRoles.includes(role)) return res.status(400).json({ error: 'Invalid role' });
 
-  const user = await User.findByIdAndUpdate(req.params.id, { role }, { new: true });
+  const user = await User.findByIdAndUpdate(req.params.id, { role }, { returnDocument: 'after' });
   await AuditLog.create({
     action: 'role_change', targetType: 'user', targetId: user._id,
     performedBy: req.user.clerkId, details: { newRole: role }
@@ -1124,6 +1522,8 @@ router.delete('/admin/posts/:id', requireAuth, attachUser, requireRole('admin'),
     action: 'post_deleted', targetType: 'post', targetId: req.params.id,
     performedBy: req.user.clerkId
   });
+  cache.invalidatePattern('posts:');
+  cache.invalidatePattern('analytics:');
   res.json({ success: true });
 }));
 
@@ -1153,6 +1553,157 @@ router.get('/news', attachUser, asyncHandler(async (req, res) => {
     locationNews,
     district: resolvedDistrict
   });
+}));
+
+// ═══════════════════════════════════════════
+// COMMUNITY CAMPAIGN ROUTES
+// ═══════════════════════════════════════════
+
+// GET /api/posts/:id/campaign — Fetch campaign details for a post
+router.get('/posts/:id/campaign', asyncHandler(async (req, res) => {
+  const campaign = await Campaign.findOne({ postId: req.params.id });
+  res.json({ campaign });
+}));
+
+// POST /api/posts/:id/campaign — Create a new campaign for a post
+router.post('/posts/:id/campaign', requireAuth, attachUser, asyncHandler(async (req, res) => {
+  const { meetingDate, meetingTime, meetingPoint, targetVolunteers, requestedMaterials } = req.body;
+  const post = await Post.findById(req.params.id);
+  
+  if (!post) {
+    return res.status(404).json({ error: 'Post not found' });
+  }
+
+  // Validate post category (e.g. sanitation, roads, other, municipal)
+  const allowedCategories = ['sanitation', 'roads', 'other', 'municipal'];
+  if (!allowedCategories.includes(post.category)) {
+    return res.status(400).json({ error: `Self-fix campaigns are not permitted for category: ${post.category}` });
+  }
+
+  // Check if campaign already exists
+  const existing = await Campaign.findOne({ postId: post._id });
+  if (existing) {
+    if (existing.status === 'cancelled') {
+      existing.meetingDate = new Date(meetingDate);
+      existing.meetingTime = meetingTime;
+      existing.meetingPoint = meetingPoint;
+      existing.targetVolunteers = targetVolunteers || 5;
+      existing.volunteers = [{
+        clerkId: req.user.clerkId,
+        displayName: req.user.displayName || 'Anonymous Citizen'
+      }];
+      existing.materials = materialsList;
+      existing.status = 'scheduled';
+      existing.createdBy = req.user.clerkId;
+      await existing.save();
+      return res.status(200).json({ campaign: existing });
+    }
+    return res.status(400).json({ error: 'A campaign has already been initiated for this post' });
+  }
+
+  // Format requested materials array of strings to our schema
+  const materialsList = (requestedMaterials || []).map(item => ({
+    item: item.trim(),
+    targetCount: 5, // Default target count of 5 items
+    pledges: []
+  }));
+
+  const campaign = new Campaign({
+    postId: post._id,
+    meetingDate: new Date(meetingDate),
+    meetingTime,
+    meetingPoint,
+    targetVolunteers: targetVolunteers || 5,
+    volunteers: [{
+      clerkId: req.user.clerkId,
+      displayName: req.user.displayName || 'Anonymous Citizen'
+    }], // Creator joins as first volunteer
+    materials: materialsList,
+    createdBy: req.user.clerkId
+  });
+
+  await campaign.save();
+  res.status(201).json({ campaign });
+}));
+
+// POST /api/posts/:id/campaign/volunteer — Volunteer to join/leave cleanup
+router.post('/posts/:id/campaign/volunteer', requireAuth, attachUser, asyncHandler(async (req, res) => {
+  const campaign = await Campaign.findOne({ postId: req.params.id });
+  if (!campaign) {
+    return res.status(404).json({ error: 'Campaign not found' });
+  }
+
+  const clerkId = req.user.clerkId;
+  const isVolunteered = campaign.volunteers.some(v => v.clerkId === clerkId);
+
+  if (isVolunteered) {
+    // Leave campaign
+    campaign.volunteers = campaign.volunteers.filter(v => v.clerkId !== clerkId);
+  } else {
+    // Join campaign
+    campaign.volunteers.push({
+      clerkId,
+      displayName: req.user.displayName || 'Anonymous Citizen'
+    });
+  }
+
+  await campaign.save();
+  res.json({ campaign });
+}));
+
+// POST /api/posts/:id/campaign/pledge — Pledge materials/tools to the campaign
+router.post('/posts/:id/campaign/pledge', requireAuth, attachUser, asyncHandler(async (req, res) => {
+  const { item, quantity } = req.body;
+  const campaign = await Campaign.findOne({ postId: req.params.id });
+  if (!campaign) {
+    return res.status(404).json({ error: 'Campaign not found' });
+  }
+
+  const clerkId = req.user.clerkId;
+  const displayName = req.user.displayName || 'Anonymous Citizen';
+
+  const materialRecord = campaign.materials.find(m => m.item.toLowerCase() === item.toLowerCase());
+  if (!materialRecord) {
+    return res.status(400).json({ error: `Item "${item}" is not requested in this campaign` });
+  }
+
+  // Check if user already pledged for this item, if so, update quantity. If quantity is <= 0, remove pledge.
+  const existingPledge = materialRecord.pledges.find(p => p.clerkId === clerkId);
+  if (existingPledge) {
+    if (quantity <= 0) {
+      materialRecord.pledges = materialRecord.pledges.filter(p => p.clerkId !== clerkId);
+    } else {
+      existingPledge.quantity = quantity;
+    }
+  } else if (quantity > 0) {
+    materialRecord.pledges.push({
+      clerkId,
+      displayName,
+      quantity
+    });
+  }
+
+  await campaign.save();
+  res.json({ campaign });
+}));
+
+// POST /api/posts/:id/campaign/cancel — Cancel campaign
+router.post('/posts/:id/campaign/cancel', requireAuth, attachUser, asyncHandler(async (req, res) => {
+  const campaign = await Campaign.findOne({ postId: req.params.id });
+  if (!campaign) {
+    return res.status(404).json({ error: 'Campaign not found' });
+  }
+
+  const isAdmin = req.user.role === 'admin';
+  const isCreator = campaign.createdBy === req.user.clerkId;
+
+  if (!isCreator && !isAdmin) {
+    return res.status(403).json({ error: 'Permission denied: Only the creator can cancel this campaign' });
+  }
+
+  campaign.status = 'cancelled';
+  await campaign.save();
+  res.json({ campaign });
 }));
 
 module.exports = router;

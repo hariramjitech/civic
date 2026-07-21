@@ -73,6 +73,8 @@ const postSchema = new Schema({
   commentCount: { type: Number, default: 0 },
   supportCount: { type: Number, default: 0 },  // cross-city reports
   localSupportCount: { type: Number, default: 0 }, // verified local reports (within 500m)
+  witnessCount: { type: Number, default: 0 },
+  localWitnessCount: { type: Number, default: 0 },
   intensityScore: { type: Number, default: 0 },   // computed score
 
   // Auto-attached official contacts (populated from Contact collection)
@@ -129,6 +131,9 @@ const commentSchema = new Schema({
   text: { type: String, required: true, maxlength: 1000 },
   likeCount: { type: Number, default: 0 },
   parentId: { type: Schema.Types.ObjectId, ref: 'Comment', default: null }, // threading
+  senderAlias: { type: String },
+  isPostAuthor: { type: Boolean, default: false },
+  creatorRole: { type: String, enum: ['citizen', 'officer', 'department', 'admin'], default: 'citizen' },
   isDeleted: { type: Boolean, default: false },
 }, { timestamps: true });
 
@@ -177,6 +182,28 @@ const messageSchema = new Schema({
   isDeleted: { type: Boolean, default: false },
 }, { timestamps: true });
 
+messageSchema.index({ createdAt: 1 }, { expireAfterSeconds: 259200 }); // Auto-delete messages older than 3 days
+
+
+// ─────────────────────────────────────────────
+// WITNESS CONFIRMATION (nearby user validates a post)
+// ─────────────────────────────────────────────
+const witnessConfirmationSchema = new Schema({
+  postId: { type: Schema.Types.ObjectId, ref: 'Post', required: true, index: true },
+  userId: { type: Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+  clerkId: { type: String, required: true },
+  status: {
+    type: String,
+    enum: ['confirmed', 'not_found', 'needs_review'],
+    default: 'confirmed'
+  },
+  note: { type: String, maxlength: 300 },
+  distanceMeters: { type: Number, required: true },
+  isLocal: { type: Boolean, default: false },
+}, { timestamps: true });
+
+witnessConfirmationSchema.index({ postId: 1, userId: 1 }, { unique: true });
+
 // ─────────────────────────────────────────────
 // OFFICIAL CONTACT (Tamil Nadu district contacts)
 // ─────────────────────────────────────────────
@@ -211,6 +238,32 @@ const auditLogSchema = new Schema({
 }, { timestamps: true });
 
 // ─────────────────────────────────────────────
+// CAMPAIGN (self-fix / volunteer cleanup campaign)
+// ─────────────────────────────────────────────
+const campaignSchema = new Schema({
+  postId: { type: Schema.Types.ObjectId, ref: 'Post', required: true, unique: true, index: true },
+  meetingDate: { type: Date, required: true },
+  meetingTime: { type: String, required: true },
+  meetingPoint: { type: String, required: true },
+  targetVolunteers: { type: Number, default: 5 },
+  volunteers: [{
+    clerkId: { type: String, required: true },
+    displayName: { type: String, default: 'Anonymous Volunteer' }
+  }],
+  materials: [{
+    item: { type: String, required: true }, // e.g. "Trash Bags", "Brooms", "Paint"
+    targetCount: { type: Number, default: 0 },
+    pledges: [{
+      clerkId: { type: String, required: true },
+      displayName: { type: String },
+      quantity: { type: Number, default: 1 }
+    }]
+  }],
+  status: { type: String, enum: ['scheduled', 'completed', 'cancelled'], default: 'scheduled' },
+  createdBy: { type: String } // clerkId
+}, { timestamps: true });
+
+// ─────────────────────────────────────────────
 // EXPORTS
 // ─────────────────────────────────────────────
 const User = mongoose.model('User', userSchema);
@@ -219,7 +272,9 @@ const Comment = mongoose.model('Comment', commentSchema);
 const Poll = mongoose.model('Poll', pollSchema);
 const ChatRoom = mongoose.model('ChatRoom', chatRoomSchema);
 const Message = mongoose.model('Message', messageSchema);
+const WitnessConfirmation = mongoose.model('WitnessConfirmation', witnessConfirmationSchema);
 const Contact = mongoose.model('Contact', contactSchema);
 const AuditLog = mongoose.model('AuditLog', auditLogSchema);
+const Campaign = mongoose.model('Campaign', campaignSchema);
 
-module.exports = { User, Post, Comment, Poll, ChatRoom, Message, Contact, AuditLog };
+module.exports = { User, Post, Comment, Poll, ChatRoom, Message, WitnessConfirmation, Contact, AuditLog, Campaign };

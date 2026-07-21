@@ -7,7 +7,23 @@
 
 const axios  = require('axios');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
-const { Post, ChatRoom } = require('../models/models');
+const { Post, ChatRoom, Contact } = require('../models/models');
+const filter = require('leo-profanity');
+const unhomoglyph = require('unhomoglyph');
+const removeAccents = require('remove-accents');
+const BadWordsNext = require('bad-words-next');
+const badwordsEn = require('bad-words-next/lib/en');
+
+// Load default english dictionary and add fallback moderation terms
+filter.loadDictionary('en');
+const customBadWords = [
+  'gay', 'nega', 'nigga', 'nigger',
+  'punda', 'sunni', 'poolu', 'bunda', 'koothi', 'soothu'
+];
+filter.add(customBadWords);
+
+// Initialize BadWordsNext
+const badwordsNextInstance = new BadWordsNext({ data: badwordsEn });
 
 // ─────────────────────────────────────────────
 // GEMINI AI CLIENT
@@ -98,7 +114,7 @@ const classifyIssue = async (images, description = '', metadataContext = '') => 
     }
 
     const prompt = `You are a civic issue classifier, forensic image validator, and municipal assistant for Tamil Nadu, India.
-Analyze the uploaded infrastructure/civic problem image(s).
+Analyze the uploaded infrastructure/civic problem image(s). The images must show the actual civic issue or direct evidence of it; do not treat unrelated people, offices, selfies, group photos, ceremonies, landscapes, or generic street scenes as relevant just because they were taken nearby.
 
 1. Classify into ONE category:
 roads | sanitation | water | electricity | municipal | other
@@ -106,13 +122,13 @@ roads | sanitation | water | electricity | municipal | other
 2. Determine severity: low | medium | high | critical
 
 3. Perform image forensics and check originality:
-Analyze if the images are genuine, original photos taken in-situ (authentic), or if any of them is a screenshot of another photo, a downloaded stock photo from the web, a modified/manipulated photo, or unknown.
+Analyze if the images are genuine, original photos taken in-situ (authentic). If an image is a screenshot, a downloaded stock photo from the web, a modified/manipulated photo, or a photograph showing a digital screen, monitor, laptop, mobile device screen, TV, or a physical printout of an image, classify its status accordingly.
 Provide:
-- originalityStatus: "authentic" | "suspicious_screenshot" | "stock_photo_detected" | "manipulated" | "unknown"
-- originalityAnalysis: A short, 1-2 sentence explanation of your assessment.
+- originalityStatus: "authentic" | "suspicious_screenshot" | "stock_photo_detected" | "manipulated" | "screen_spoof_detected" | "unknown"
+- originalityAnalysis: A short, 1-2 sentence explanation of your assessment. If you detect a photograph of a screen/display/print, clearly state that in the explanation.
 
 4. Verify relevance:
-Ensure that ALL uploaded images are relevant to the infrastructure/civic problem described in the user description. If any image is irrelevant, completely unrelated, or inappropriate (e.g. random pet photo, meme, text document, or food picture that has nothing to do with the civic issue), set "allImagesRelevant" to false and provide a clear explanation in "relevanceExplanation". Otherwise, set "allImagesRelevant" to true and leave "relevanceExplanation" empty.
+Ensure that ALL uploaded images are relevant to the infrastructure/civic problem described in the user description. If any image is irrelevant, completely unrelated, or inappropriate (e.g. random pet photo, meme, text document, food picture, office group photo, ceremony photo, or generic portrait that does not show the civic issue), set "allImagesRelevant" to false and provide a clear explanation in "relevanceExplanation". Otherwise, set "allImagesRelevant" to true and leave "relevanceExplanation" empty.
 
 Respond ONLY with valid JSON (no markdown, no code blocks, no backticks):
 {
@@ -121,7 +137,7 @@ Respond ONLY with valid JSON (no markdown, no code blocks, no backticks):
   "tags": ["tag1","tag2"],
   "confidence": 0.0-1.0,
   "summary": "one sentence description",
-  "originalityStatus": "authentic|suspicious_screenshot|stock_photo_detected|manipulated|unknown",
+  "originalityStatus": "authentic|suspicious_screenshot|stock_photo_detected|manipulated|screen_spoof_detected|unknown",
   "originalityAnalysis": "...",
   "allImagesRelevant": true|false,
   "relevanceExplanation": "..."
@@ -184,16 +200,57 @@ Respond ONLY with JSON: {"isDuplicate":bool,"duplicateIndex":null|number,"simila
 // ─────────────────────────────────────────────
 // AI: Content moderation
 // ─────────────────────────────────────────────
+const censorCustomWords = (text, customWords) => {
+  if (!text || !customWords || !customWords.length) return text;
+  let censored = text;
+  for (const word of customWords) {
+    if (!word || word.trim().length === 0) continue;
+    const escaped = word.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+    const regex = new RegExp(escaped, 'gi');
+    censored = censored.replace(regex, (match) => {
+      if (match.length <= 1) return '*';
+      return match[0] + '*'.repeat(match.length - 1);
+    });
+  }
+  return censored;
+};
+
 const moderateContent = async (text) => {
   try {
-    const result = await generateContentWithFallback(
-      `Is this safe for a civic platform? Check hate speech, violence, spam.
-Text: "${text}"
-JSON only: {"safe":bool,"reason":"..."}`
-    );
-    return JSON.parse(result.response.text().replace(/```json?/gi,'').replace(/```/g,'').trim());
-  } catch {
-    return { safe: true, reason: 'moderation skipped' };
+    const prompt = `You are an AI content moderator for a civic engagement app in Tamil Nadu, India.
+Analyze the following user text.
+
+We have a two-category moderation system:
+
+1. ALLOWED POSTS/MESSAGES (safe: true):
+   - Frustrated venting about civic infrastructure or safety (e.g., "this fucking road is broken", "garbage smells like shit"). We ALLOW these, but we will censor the bad words.
+   - Complaints about civic issues, system failures, or administrative neglect (e.g., "corruption in road laying", "bribes are being taken", "negligent officials", "incompetent corporation"). These are fully allowed and must NEVER be blocked.
+   - Physical description terms or animals (e.g., "drain is full of rats", "stray dog menace", "pigs in trash", "roads are dirty like a pigsty"). These are fully allowed and must NEVER be blocked.
+   - Standard identity words (e.g., "gay", "transgender", "religion") used normally and not as a slur or insult.
+
+2. BLOCKED POSTS/MESSAGES (safe: false):
+   - Direct personal attacks, name-calling, abuse, insults, or threats directed at individuals, politicians, or officials (e.g., "you idiot officer", "kill the mayor", "Thiru Kumar is a bastard", "delinquent fool engineer").
+   - Hate speech, derogatory slurs, or harassment targeting groups or personal characteristics (e.g., using identity terms like "gay", caste, or religious terms as slurs, insults, or abuse, such as "gay punda" or "gay bastard").
+   - Vulgar/highly offensive sexual or abusive terms in English, Tamil, Tanglish, or Hindi used as direct insults.
+
+INSTRUCTIONS FOR OUTPUT:
+- Decide if the text is safe (true) or should be blocked (false).
+- Under "badWords", identify any profanities, vulgar slang, or swear words in English, Tamil (native or Tanglish), or Hindi present in the text so they can be censored (e.g., "fucking", "shit", "punda", "sunni"). Do not include words like "corruption", "rat", "dog", "gay" (unless "gay" is used directly as a derogatory slur).
+
+Text to analyze: "${text}"
+
+Respond ONLY with a JSON object (no markdown, no backticks, no code blocks):
+{
+  "safe": true|false,
+  "reason": "...", // short explanation if safe is false
+  "badWords": ["word1", "word2"] // list of vulgar words/profanities found to be censored
+}`;
+    const result = await generateContentWithFallback(prompt);
+    const json = result.response.text().replace(/```json?/gi,'').replace(/```/g,'').trim();
+    return JSON.parse(json);
+  } catch (err) {
+    console.error('Error in moderateContent:', err);
+    return { safe: true, reason: 'moderation skipped', badWords: [] };
   }
 };
 
@@ -308,7 +365,8 @@ const updateIntensityScore = async (postId) => {
     (post.likeCount || 0) + 
     ((post.commentCount || 0) * 1.5) + 
     ((post.supportCount || 0) * 3) + 
-    ((post.localSupportCount || 0) * 15)
+    ((post.localSupportCount || 0) * 15) +
+    ((post.localWitnessCount || 0) * 12)
   ) + baseScore;
   
   // Boosts
@@ -360,6 +418,326 @@ const updateIntensityScore = async (postId) => {
   return score;
 };
 
+const getDynamicContact = async (district, department) => {
+  try {
+    if (!district || district === 'Unknown') {
+      district = 'Chennai'; // Safe fallback district
+    }
+    const cleanDept = (department || 'municipal').toLowerCase();
+
+    // Check if contact already exists in database
+    let contact = await Contact.findOne({ district: new RegExp(`^${district}$`, 'i'), department: cleanDept });
+    if (contact) return contact;
+
+    console.log(`🤖 [Gemini API] Dynamically generating contact info for ${district} (${cleanDept})...`);
+
+    // If not, fetch/generate using Gemini API
+    const prompt = `You are an administrative director in Tamil Nadu, India.
+Generate the official contact details for the department/authority responsible for the civic category "${cleanDept}" in the district of "${district}", Tamil Nadu.
+Find/infer the realistic officer name (e.g. "Thiru A. Selvamani" or "Smt. K. Vimala"), designation, phone numbers, official email, postal address, website portal URL, and online complaint URL.
+
+CRITICAL INSTRUCTIONS:
+1. Do NOT include any placeholder text, square brackets, or template brackets like "[Insert Name]", "[Ward Number]", "[Insert Phone]", or "___". Every single value must be fully resolved with a highly specific, realistic name, number, and location.
+2. The phone numbers, emails, addresses, and portals must be realistic and specific for Tamil Nadu state departments (e.g. for TANGEDCO: ce.chennaicity@tangedco.gov.in, 1912; for Police: sp.district@tn.gov.in, 100; for Municipalities/Corporations: commissioner.city@tn.gov.in).
+3. The official URLs must be actual, working government links (e.g., https://grievance.tn.gov.in, https://www.coimbatorecorporation.gov.in, https://www.tangedco.gov.in, https://www.tnpolice.gov.in).
+
+Format the response ONLY as a single valid JSON object (no markdown, no code blocks, no backticks):
+{
+  "district": "${district}",
+  "department": "${cleanDept}",
+  "officerName": "...",
+  "designation": "...",
+  "phone": ["..."],
+  "email": "...",
+  "address": "...",
+  "portalUrl": "...",
+  "complaintUrl": "...",
+  "whatsappNumber": "..." or null,
+  "workingHours": "..."
+}`;
+
+    const result = await generateContentWithFallback(prompt);
+    const text = result.response.text().replace(/```json?/gi, '').replace(/```/g, '').trim();
+    const data = JSON.parse(text);
+    
+    // Ensure correct fields
+    data.district = district;
+    data.department = cleanDept;
+
+    // Create the contact in DB (Cache)
+    contact = await Contact.create(data);
+    return contact;
+  } catch (err) {
+    console.error('Failed to get dynamic contact:', err);
+    // Return a basic fallback so it doesn't fail the post creation
+    try {
+      // Load templates from contactTemplates.json
+      let templates = {};
+      try {
+        templates = require('../data/contactTemplates.json');
+      } catch (e) {
+        console.error('Failed to load contactTemplates.json:', e);
+      }
+
+      const deptTemplate = templates[department] || templates['municipal'] || {
+        phone: ['1913'],
+        email: 'support@tn.gov.in',
+        designation: `Officer, ${district}`,
+        officerName: `Officer, ${district}`,
+        address: `Municipal Office, ${district}, Tamil Nadu`,
+        portal: 'https://www.tn.gov.in'
+      };
+
+      const districtLowerClean = district.toLowerCase().replace(/\s+/g, '');
+      const replacePlaceholders = (str) => {
+        if (!str) return str;
+        return str
+          .replace(/\{\{district\}\}/g, district)
+          .replace(/\{\{districtLowerClean\}\}/g, districtLowerClean);
+      };
+
+      const phone = deptTemplate.phone;
+      const email = replacePlaceholders(deptTemplate.email);
+      const designation = replacePlaceholders(deptTemplate.designation);
+      const officerName = replacePlaceholders(deptTemplate.officerName);
+      const address = replacePlaceholders(deptTemplate.address);
+      const portal = replacePlaceholders(deptTemplate.portal);
+
+      const fallbackContact = await Contact.create({
+        district,
+        department,
+        officerName,
+        designation,
+        phone,
+        email,
+        address,
+        portalUrl: portal,
+        complaintUrl: portal,
+        whatsappNumber: null,
+        workingHours: '9:00 AM - 5:30 PM (Mon-Sat)'
+      });
+      return fallbackContact;
+    } catch (dbErr) {
+      console.error('Failed to create fallback contact in DB:', dbErr);
+      return null;
+    }
+  }
+};
+
+const getOfficialsHierarchy = async (postData) => {
+  try {
+    const { category, district, address } = postData;
+
+    const prompt = `You are an expert on municipal governance and administrative hierarchies in Tamil Nadu, India.
+Analyze the following civic issue context:
+- Category: ${category}
+- District: ${district}
+- Address: ${address || 'N/A'}
+
+Based on this, outline the 5-level hierarchy of government officials responsible for addressing this issue.
+Level 1: Ward / Field Level (L1) - Direct inspector / field officer
+Level 2: Sub-divisional / Zone Level (L2) - Ward zone supervisor / assistant engineer
+Level 3: Divisional / Regional Level (L3) - Executive engineer / regional officer
+Level 4: District / Municipal Corporation Level (L4) - Municipal commissioner / superintending engineer / district collector
+Level 5: State / Apex Board Level (L5) - Secretary to Government / Managing Director of the state board / Chief Engineer
+
+For each level, provide:
+- level: "L1", "L2", "L3", "L4", or "L5"
+- levelName: Name of the level (e.g., "Ward / Field Level")
+- designation: Official title in Tamil Nadu (e.g. Assistant Engineer, Sanitary Inspector, Executive Engineer, etc.)
+- department: Responsible department name (e.g. Greater Chennai Corporation, TANGEDCO, CMWSSB, TWAD Board, Highways Department)
+- role: Brief summary of their action authority for this issue (1 sentence)
+- timeframe: Standard resolution timeframe before escalation (e.g., 7 Days, 15 Days)
+- contact: A realistic, specific contact info object for this official in Tamil Nadu:
+  - officerName: Specific realistic name of the officer in office (e.g. "Thiru P. Ramanathan" or "Smt. S. Anitha"). Do NOT leave empty or generic.
+  - designation: Official designation, resolving any specific ward/zone details based on the post address.
+  - phone: Array of strings representing phone numbers or emergency helpline (e.g. ["0422-2339100", "1912"])
+  - email: Official email address (e.g. "commr.coimbatore@tn.gov.in" or "ee.highways@tn.gov.in")
+  - address: Official office address (e.g. "Coimbatore Municipal Corporation HQ, Town Hall, Coimbatore - 641001")
+  - portalUrl: Official website URL (e.g. "https://www.coimbatorecorporation.gov.in")
+  - complaintUrl: Official online complaint portal URL (e.g. "https://grievance.tn.gov.in")
+  - whatsappNumber: Official WhatsApp helpline if available (else null)
+  - workingHours: Working hours string (e.g., "9:00 AM - 5:30 PM (Mon-Sat)")
+
+CRITICAL REQUIREMENTS:
+1. ZERO PLACEHOLDERS: Do NOT output any placeholder text, square brackets, or template variables like "[Ward Number]", "[Zone Number]", "[Insert Name]", or "___". Every single value must be fully resolved with a highly specific, realistic name, number, and location.
+2. LOCALIZED SPECIFICITY: If the address mentions specific areas (e.g., 'Sundakkamuthur', 'Kalampalayam', 'Perur'), you must infer the realistic municipal ward number (e.g., 'Ward 88') and zone name (e.g., 'West Zone') corresponding to those locations in Coimbatore/the specified district, and output that exact specific ward/zone in the designation/role.
+3. REALISTIC WEBSITES: The contact portalUrl and complaintUrl must point to actual official websites of the Tamil Nadu government, the district, or the municipal corporation (e.g. https://grievance.tn.gov.in, https://www.coimbatorecorporation.gov.in, https://www.tangedco.gov.in, https://www.tnpolice.gov.in).
+
+Format the response ONLY as a valid JSON array of objects (no markdown, no code blocks, no backticks):
+[
+  {
+    "level": "L1",
+    "levelName": "Ward / Field Level",
+    "designation": "...",
+    "department": "...",
+    "role": "...",
+    "timeframe": "...",
+    "contact": {
+      "officerName": "...",
+      "designation": "...",
+      "phone": ["..."],
+      "email": "...",
+      "address": "...",
+      "portalUrl": "...",
+      "complaintUrl": "...",
+      "whatsappNumber": null,
+      "workingHours": "..."
+    }
+  },
+  ...
+]`;
+
+    const result = await generateContentWithFallback(prompt);
+    const text = result.response.text().replace(/```json?/gi, '').replace(/```/g, '').trim();
+    const hierarchy = JSON.parse(text);
+    return hierarchy;
+  } catch (err) {
+    console.error('Error in getOfficialsHierarchy:', err);
+    return [
+      {
+        level: "L1",
+        levelName: "Ward / Field Level",
+        designation: "Assistant Engineer (AE) / Sanitary Inspector",
+        department: "Municipal Corporation / Local Body",
+        role: "Field inspection, immediate repair scheduling.",
+        timeframe: "7 Days",
+        contact: null
+      },
+      {
+        level: "L2",
+        levelName: "Sub-divisional / Zone Level",
+        designation: "Assistant Executive Engineer (AEE)",
+        department: "Municipal Corporation / Divisional Board",
+        role: "Supervision and approval of small works.",
+        timeframe: "14 Days",
+        contact: null
+      },
+      {
+        level: "L3",
+        levelName: "Divisional / Regional Level",
+        designation: "Executive Engineer (EE)",
+        department: "Municipal Corporation / State Board Division",
+        role: "Financial sanction and operational management.",
+        timeframe: "30 Days",
+        contact: null
+      },
+      {
+        level: "L4",
+        levelName: "District / Corporation Level",
+        designation: "Commissioner / District Collector",
+        department: "District Administration / Corporation HQ",
+        role: "Overall administration, enforcement, and public grievance head.",
+        timeframe: "45 Days",
+        contact: null
+      },
+      {
+        level: "L5",
+        levelName: "State / Apex Board Level",
+        designation: "Managing Director / Secretary",
+        department: "Municipal Administration and Water Supply / State Board",
+        role: "Policy formulation, large budget approvals, and supreme escalation authority.",
+        timeframe: "90 Days",
+        contact: null
+      }
+    ];
+  }
+};
+
+const suggestLegalActs = async (postData) => {
+  try {
+    const { category, title, description } = postData;
+
+    // Optional: Call external legal acts API if configured in .env
+    if (process.env.LEGAL_ACTS_API_URL) {
+      try {
+        console.log(`📡 [Legal Acts API] Querying external API: ${process.env.LEGAL_ACTS_API_URL}`);
+        const apiResponse = await axios.get(process.env.LEGAL_ACTS_API_URL, {
+          params: { category, title, description },
+          timeout: 4000
+        });
+        if (apiResponse.data && Array.isArray(apiResponse.data.acts)) {
+          console.log(`✅ [Legal Acts API] Successfully fetched from external API`);
+          return apiResponse.data.acts;
+        }
+      } catch (apiErr) {
+        console.warn(`⚠️ [Legal Acts API] External API call failed (Reason: ${apiErr.message}). Falling back to local database / AI processing...`);
+      }
+    }
+
+    // Load local legal acts database
+    let legalActs = [];
+    try {
+      legalActs = require('../data/legalActs.json');
+    } catch (e) {
+      console.error('Failed to load legalActs.json:', e);
+    }
+
+    // Filter acts by category or 'general'
+    const candidateActs = legalActs.filter(act => act.category === category || act.category === 'general');
+
+    const prompt = `You are an expert legal counsel in India, specializing in municipal laws, civic grievances, and constitutional rights.
+Analyze the following civic issue logged by a citizen in Tamil Nadu:
+- Category: ${category}
+- Title: ${title}
+- Description: ${description}
+
+Select the 3-5 most relevant statutory acts, sections, or articles from the provided list of candidates below. Do not hallucinate or use acts outside this list.
+
+Candidates:
+${JSON.stringify(candidateActs, null, 2)}
+
+For each selected act/section, provide:
+- actName: Full name of the Act exactly as in candidates (e.g., Tamil Nadu District Municipalities Act, 1920)
+- section: Specific Section or Article exactly as in candidates (e.g., Section 162 or Article 21)
+- summary: Customized 1-sentence explanation of how this section obligates the authority to resolve the user's specific issue. Customize it to fit the user's complaint description and title.
+- selectedByDefault: boolean (use the selectedByDefault value from the candidates list or adjust to true for the most critical 2-3 grounds, false for others)
+
+Format the response ONLY as a valid JSON array of objects (no markdown, no code blocks, no backticks):
+[
+  {
+    "actName": "...",
+    "section": "...",
+    "summary": "...",
+    "selectedByDefault": true
+  },
+  ...
+]`;
+
+    const result = await generateContentWithFallback(prompt);
+    const text = result.response.text().replace(/```json?/gi, '').replace(/```/g, '').trim();
+    return JSON.parse(text);
+  } catch (err) {
+    console.error('Error in suggestLegalActs:', err);
+    
+    // Fallback logic using the filtered database candidates
+    let legalActs = [];
+    try {
+      legalActs = require('../data/legalActs.json');
+    } catch (e) {
+      // ignore
+    }
+    const candidates = legalActs.filter(act => act.category === category || act.category === 'general');
+    if (candidates.length > 0) {
+      return candidates.map(act => ({
+        actName: act.actName,
+        section: act.section,
+        summary: act.summary,
+        selectedByDefault: act.selectedByDefault
+      }));
+    }
+
+    return [
+      {
+        actName: "Constitution of India",
+        section: "Article 21",
+        summary: "Guarantees the Right to Life, which courts have interpreted to include the right to safe public infrastructure and clean environment.",
+        selectedByDefault: true
+      }
+    ];
+  }
+};
+
 // ─────────────────────────────────────────────
 // AI: Text Rewriter
 // ─────────────────────────────────────────────
@@ -384,9 +762,189 @@ User complaint:
   }
 };
 
+const generateLegalPetition = async (postData, roomData, extraDetails) => {
+  try {
+    const contactsText = postData.attachedContacts && postData.attachedContacts.length > 0
+      ? postData.attachedContacts.map(c => `  - Officer: ${c.officerName || 'N/A'} (${c.designation || 'N/A'}), Dept: ${c.department}, Phone: ${c.phone?.join(', ') || 'N/A'}, Email: ${c.email || 'N/A'}, Address: ${c.address || 'N/A'}`).join('\n')
+      : '  - No official contact mapped yet. (Placeholder: Municipal Commissioner / District Collector)';
+
+    const coordinatesText = postData.location?.coordinates
+      ? `Latitude: ${postData.location.coordinates[1]}, Longitude: ${postData.location.coordinates[0]}`
+      : 'N/A';
+
+    const postDateText = postData.createdAt 
+      ? new Date(postData.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })
+      : 'N/A';
+
+    const currentDateText = new Date().toLocaleDateString('en-IN', {
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric'
+    });
+
+    const docType = extraDetails.docType || 'municipal';
+    
+    // Compile statutory grounds selected by the user
+    let statutoryGroundsText = '';
+    if (extraDetails.selectedActs && extraDetails.selectedActs.length > 0) {
+      statutoryGroundsText = extraDetails.selectedActs.map((act, i) => 
+        `${i + 1}. **${act.actName} (Section/Article: ${act.section})**: ${act.summary}`
+      ).join('\n');
+    } else {
+      // Fallback if no acts were selected
+      statutoryGroundsText = `1. **Article 21 of the Constitution of India**: Right to Life and personal liberty, which encompasses the right to safe public infrastructure and hazard-free municipal roads/spaces.\n2. **Tamil Nadu District Municipalities Act, 1920 (Section 162)**: Binding obligations of the municipal corporation and district administration to maintain public streets and public spaces in a safe, motorable, and hazard-free state.`;
+    }
+
+    const prompt = `You are a Senior Advocate and expert legal draftsman in Tamil Nadu, India, specializing in Administrative Law, Constitutional Writs, the Right to Information Act, and Public Interest Litigation.
+Draft a highly precise, formal, and legally binding document of type "${docType.toUpperCase()}" in clean Markdown.
+
+### CASE FACTS & CONTEXT
+1. **Petitioner/Complainant**:
+   - Name: ${extraDetails.representativeName}
+   - Father's/Spouse's Name: ${extraDetails.petitionerFatherSpouseName}
+   - Age: ${extraDetails.petitionerAge} years
+   - Residential Address: ${extraDetails.petitionerResidingAddress}
+2. **Opposing / Addressed Authority (Respondent)**:
+   - Name: ${extraDetails.addressedAuthority || 'N/A'}
+   - Department Contacts & Address:
+${contactsText}
+3. **Core Grievance**:
+   - Issue Title: ${postData.title}
+   - Description: ${postData.description}
+   - Category of Grievance: ${postData.category}
+   - Danger Severity: ${postData.severity}
+   - Place of Occurrence: ${postData.address || 'N/A'}
+   - Geo-coordinates: ${coordinatesText}
+   - Originally Reported On: ${postDateText}
+   - Current Date of Draft: ${currentDateText}
+4. **Legal / Statutory Grounding**:
+${statutoryGroundsText}
+5. **Specific Demands / Relief (Prayers)**:
+${extraDetails.customDemands || 'N/A'}
+
+---
+
+### DRAFTING SPECIFICATIONS BY DOCUMENT TYPE
+
+Based on the Document Type "${docType.toUpperCase()}", apply the following strict structural guidelines:
+
+#### 1. "MUNICIPAL" - Formal Administrative Representation
+- **Layout**: Follow standard official memorandum/representation style in India.
+- **Preamble**:
+  - Addressed "To: [Name & Address of the Addressed Authority]"
+  - Subject Line: "SUBJECT: Urgent Representation under Section 162 of the Tamil Nadu District Municipalities Act, 1920 (or relevant municipal act) regarding ${postData.title} at ${postData.address || 'N/A'} - Immediate Redressal Demanded."
+  - Reference Line: "REF: Civic Grievance Log ID #${postData._id || 'N/A'} and local community resolutions."
+- **Salutation**: "Respected Sir/Madam,"
+- **Body Sections**:
+  - **I. Introduction of the Petitioner**: Define the representative and local resident community stakes.
+  - **II. Factual Matrix**: Detailed chronological narration of the hazard, explaining the specific location, geographic coordinates, severity, and the systemic failure to maintain the civic asset.
+  - **III. Statutory Violations & Public Nuisance**: Cite the statutory grounds (${statutoryGroundsText}) and clarify how the ongoing neglect constitutes an active breach of public trust and legal duties.
+  - **IV. Interim Remedies & Final Demands**: Explicitly list the demands/prayers.
+- **Closure**: "Yours faithfully," followed by the Lead Petitioner's Signature Block and space for co-signatories of the Strike Room.
+
+#### 2. "COURT" - Writ Petition / PIL under Art. 226 of the Constitution of India
+- **Layout**: Official Madras High Court (Special Original Jurisdiction) format.
+- **Header**:
+  \`\`\`markdown
+  IN THE HIGH COURT OF JUDICATURE AT MADRAS
+  (SPECIAL ORIGINAL JURISDICTION)
+
+  W.P. No. ________ of 2026
+
+  IN THE MATTER OF:
+  A Petition under Article 226 of the Constitution of India for the issuance of a Writ of Mandamus, or any other appropriate Writ, Order, or Direction.
+
+  BETWEEN:
+  ${extraDetails.representativeName},
+  S/o (or D/o or W/o) ${extraDetails.petitionerFatherSpouseName},
+  Aged about ${extraDetails.petitionerAge} years,
+  Residing at ${extraDetails.petitionerResidingAddress}.
+  ... PETITIONER
+
+  AND
+
+  1. ${extraDetails.addressedAuthority || 'The Commissioner / Collector'},
+     [Department details & address from: ${contactsText}]
+  2. The State of Tamil Nadu,
+     Represented by its Secretary, Municipal Administration and Water Supply Department,
+     Fort St. George, Chennai - 600009.
+  ... RESPONDENTS
+  \`\`\`
+- **Affidavit Preamble**: "AFFIDAVIT OF THE PETITIONER: I, [Petitioner Name], S/o [Father Name], aged [Age] years, residing at [Address], do hereby solemnly affirm and sincerely state as follows:"
+- **Affidavit Paragraphs**:
+  - Numbered paragraphs (1, 2, 3...) written in formal first-person legal language (e.g., "1. I am the petitioner herein and as such, I am well acquainted with the facts of the case...", "2. It is submitted that...").
+  - Clear narration of facts of the civic hazard, the lack of administrative action, and public danger.
+  - Detailed Legal Grounds (Article 21 - Right to Life, and specific sections from statutory grounds: ${statutoryGroundsText}).
+  - Statement on lack of alternative, or efficacious remedy.
+- **Prayer**: "It is therefore prayed that this Hon'ble Court may be pleased to issue a Writ of Mandamus, or any other appropriate writ, order, or direction in the nature of a writ, directing the Respondents to [specific relief requested], and pass such other or further orders as this Hon'ble Court may deem fit and proper in the circumstances of the case and thus render justice."
+- **Verification Clause**: "VERIFICATION: Solemnly affirmed at Chennai on this [Date] and contents verified to be true and correct."
+
+#### 3. "RTI" - Right to Information Act, 2005 Application
+- **Layout**: Standard application under Section 6(1) of the RTI Act, 2005.
+- **Header**: "APPLICATION UNDER SECTION 6(1) OF THE RIGHT TO INFORMATION ACT, 2005"
+- **To**: "To: The Public Information Officer (PIO), [Department Name & Address from: ${contactsText}]"
+- **Numbered Fields**:
+  - 1. Full Name of the Applicant: ${extraDetails.representativeName}
+  - 2. Complete Address for Correspondence: ${extraDetails.petitionerResidingAddress}
+  - 3. Particulars of Information Required:
+    - Context: Regarding the public hazard of "${postData.title}" located at ${postData.address || 'N/A'} (Coordinates: ${coordinatesText}).
+    - Information Queries (Formulate 4-5 precise, sharp questions):
+      - Query A: "Provide certified copies of the sanctioned budget, work order, and execution contracts for repair/laying/maintenance of the road/infrastructure at the said location for the fiscal years 2024-25 and 2025-26."
+      - Query B: "Provide the name, designation, and contact details of the Junior Engineer (JE) and Assistant Executive Engineer (AEE) responsible for supervising the maintenance of this sector."
+      - Query C: "Provide copies of the periodic maintenance logs, inspection reports, and safety audits filed by municipal officers regarding this location in the last 180 days."
+      - Query D: "Provide details of all complaints received by the department regarding this specific hazard, along with file notations showing action taken, daily progress sheets, and final status reports."
+      - Query E: "State the standard operating procedure (SOP) and timeline mandated by the department for rectifying such hazardous civic conditions."
+  - 4. Citizen Declaration: "I hereby declare that I am a citizen of India and am entitled to seek information under the RTI Act, 2005."
+  - 5. Application Fee Details: "Enclosed is the application fee of Rs. 10/- by way of Court Fee Stamp / Postal Order No. ________."
+  - 6. Medium of Information: "Kindly send the certified documents/information via Registered Post with Acknowledgment Due to the correspondence address mentioned above."
+- **Signature Block**: Applicant Signature & Date.
+
+#### 4. "POLICE" - Criminal Complaint / Representation
+- **Layout**: Formal police representation under Section 173 of the Bharatiya Nagarik Suraksha Sanhita (BNSS), 2023 (formerly Section 154 CrPC) / Sections 290 and 336 of the IPC (or Sections 270 and 125 of BNS, 2023).
+- **Address**: "To: The Inspector of Police, [Local Police Station Jurisdiction for ${postData.address || 'N/A'}]"
+- **Subject**: "SUBJECT: Criminal Complaint and Representation regarding Public Endangerment, Criminal Negligence, and Maintenance of a Public Nuisance under BNS / IPC and BNSS, 2023."
+- **Salutation**: "Respected Sir,"
+- **Structure**:
+  - **1. Details of Complainant**: ${extraDetails.representativeName}, residing at ${extraDetails.petitionerResidingAddress}.
+  - **2. Accused Parties**: The responsible municipal engineering officials, contractors, and public works representatives in charge of Zone/Sector for ${postData.address || 'N/A'}.
+  - **3. Statement of Offence**: Detail the hazardous conditions (e.g. open manholes, dangling live cables, deep trenches without signboards/barricades). Highlight that this constitutes a direct, negligent threat to human life and safety, causing an active public nuisance.
+  - **4. Relevant Legal Provisions**: Citing Section 152 of the BNSS, 2023 (magistrate's/police power to remove public nuisances/hazards) and substantive provisions on negligent endangerment of personal safety.
+  - **5. Action Requested**: Request immediate registration of an FIR/Grievance entry, physical inspection of the site, and issuing of immediate directives to the accused to secure the hazard to prevent loss of human life.
+- **Signature Block**: Complainant Signature, Date, and Contact Info.
+
+#### 5. "CONSUMER" - Consumer Forum Notice for Deficiency of Service
+- **Layout**: Formal legal notice under Section 2(11) of the Consumer Protection Act, 2019.
+- **To**: "To: The Executive Engineer / Zonal Officer, [Department Name & Address from: ${contactsText}]"
+- **Subject**: "SUBJECT: Legal Notice for Deficiency of Service under the Consumer Protection Act, 2019, and Compensation Claim for Negligence and Civic Malfeasance."
+- **Salutation**: "Sir,"
+- **Structure**:
+  - **1. Consumer Status**: State that the complainant (${extraDetails.representativeName}) and residents are taxpayers paying municipal taxes/electricity tariffs/water taxes, qualifying them as consumers under the Consumer Protection Act.
+  - **2. Deficiency of Service**: Describe the extreme negligence in failing to maintain the civic assets (e.g. broken road, unlit streets, toxic water supply, open drains), which constitutes an active "deficiency in service" as defined under Section 2(11) of the Act.
+  - **3. Material Harm & Endangerment**: Describe the risk, mental agony, physical injuries, or damages incurred (pointing to the details in the complaint: "${postData.description}").
+  - **4. Legal Notice & Remedy**: Demand that the deficiency be cured and the hazard be rectified within 7 days from the receipt of this notice, failing which a formal complaint will be instituted before the District Consumer Disputes Redressal Commission claiming damages/compensation of Rs. 1,00,000/- for deficiency of service, mental harassment, and endangerment of life.
+- **Signature Block**: Consumer's signature.
+
+---
+
+### GENERAL DRAFTING RULES
+1. **No Placeholders or Comments**: Use the provided variables directly. Do NOT insert comment tags like "[Insert name here]" if the variable is already provided.
+2. **Professional Legal Terminology**: Use authentic Indian legal terms (e.g., "solemnly affirm", "delinquent officials", "deficiency of service", "public nuisance", "statutory duty", "Writ of Mandamus").
+3. **No Conversational Filler**: Output ONLY the generated legal document. Do not include any conversational greeting or instruction in your final output.
+4. **Format**: Format the output in pristine Markdown with clear headers, indentations, and bullet points where applicable.
+`;
+
+    const result = await generateContentWithFallback(prompt);
+    return result.response.text().trim();
+  } catch (err) {
+    console.error('Error generating legal petition:', err);
+    return '## Legal Document Generation Failed\n\nUnable to generate the legal petition draft at this time. Please try again.';
+  }
+};
+
 // ─────────────────────────────────────────────
 // Forensics: Haversine distance calculator
 // ─────────────────────────────────────────────
+
 const getHaversineDistance = (lat1, lon1, lat2, lon2) => {
   const R = 6371e3; // Earth radius in meters
   const phi1 = lat1 * Math.PI / 180;
@@ -402,30 +960,122 @@ const getHaversineDistance = (lat1, lon1, lat2, lon2) => {
   return R * c; // distance in meters
 };
 
-const badWords = [
-  // English
-  'fuck', 'shit', 'ass', 'bitch', 'bastard', 'cunt', 'dick', 'pussy', 'wank', 'crap', 'dumbass', 'idiot',
-  // Tamil Transliterated (Tanglish)
-  'oolu', 'sunni', 'poolu', 'bunda', 'thevidiya', 'koothi', 'soothu', 'ommala', 'omala', 'podangotha', 'oththa', 'poramboke',
-  // Tamil Native
-  'தேவிடியா', 'கூதி', 'சூத்து', 'பூலு', 'சுன்னி', 'போடா', 'போடி'
-];
+// ─────────────────────────────────────────────
+// Profanity & Bypass Filtering combo
+// ─────────────────────────────────────────────
+
+const getProfanityStats = (text) => {
+  if (!text || typeof text !== 'string') return { censoredText: text, count: 0 };
+  
+  // 1. Normalize the text (homoglyph conversion + accent removal + lowercasing)
+  let normalized = text.normalize('NFKC');
+  normalized = unhomoglyph(normalized);
+  normalized = removeAccents(normalized);
+  
+  // Map common bypass characters to their alphabetical counterparts
+  const bypassMap = {
+    '@': 'a',
+    '$': 's',
+    '!': 'i',
+    '1': 'i',
+    '0': 'o',
+    '3': 'e',
+    '4': 'a',
+    '5': 's',
+  };
+  
+  let checkText = normalized.split('').map(char => bypassMap[char] || char).join('');
+
+  // 2. Scan with bad-words-next and leo-profanity
+  let count = 0;
+  const matchedIndices = new Uint8Array(text.length);
+  let censoredChars = text.split('');
+
+  const allBadWords = Array.from(new Set([
+    ...filter.list()
+  ]));
+
+  allBadWords.sort((a, b) => b.length - a.length);
+
+  for (const word of allBadWords) {
+    const isTamilScript = /[\u0B80-\u0BFF]/.test(word);
+    
+    let regexes = [];
+    if (isTamilScript) {
+      regexes.push(new RegExp(word, 'gi'));
+    } else {
+      const chars = word.split('');
+      const pattern = chars.map((c, idx) => {
+        const escaped = c.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+        const repeatable = /[a-zA-Z0-9]/.test(c) ? `${escaped}+` : escaped;
+        if (idx === chars.length - 1) return repeatable;
+        return repeatable + '[^a-zA-Z0-9]?';
+      }).join('');
+      
+      regexes.push(new RegExp(`\\b${pattern}\\b`, 'gi'));
+      regexes.push(new RegExp(pattern, 'gi'));
+    }
+
+    for (const regex of regexes) {
+      let match;
+      const localRegex = new RegExp(regex.source, 'gi');
+      while ((match = localRegex.exec(checkText)) !== null) {
+        const index = match.index;
+        const length = match[0].length;
+        
+        let alreadyMatched = true;
+        for (let i = 0; i < length; i++) {
+          if (!matchedIndices[index + i]) {
+            alreadyMatched = false;
+            matchedIndices[index + i] = true;
+          }
+        }
+        
+        if (!alreadyMatched) {
+          count++;
+          for (let i = 1; i < length; i++) {
+            censoredChars[index + i] = '*';
+          }
+          if (length === 1) {
+            censoredChars[index] = '*';
+          }
+        }
+      }
+    }
+  }
+
+  // Also check and censor using bad-words-next instance
+  badwordsNextInstance.filter(checkText, (badword) => {
+    const escaped = badword.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+    const localRegex = new RegExp(escaped, 'gi');
+    let match;
+    while ((match = localRegex.exec(checkText)) !== null) {
+      const index = match.index;
+      const length = match[0].length;
+      let alreadyMatched = true;
+      for (let i = 0; i < length; i++) {
+        if (!matchedIndices[index + i]) {
+          alreadyMatched = false;
+          matchedIndices[index + i] = true;
+        }
+      }
+      if (!alreadyMatched) {
+        count++;
+        for (let i = 1; i < length; i++) {
+          censoredChars[index + i] = '*';
+        }
+        if (length === 1) {
+          censoredChars[index] = '*';
+        }
+      }
+    }
+  });
+
+  return { censoredText: censoredChars.join(''), count };
+};
 
 const censorText = (text) => {
-  if (!text || typeof text !== 'string') return text;
-  let censored = text;
-  for (const word of badWords) {
-    const isTamilScript = /[\u0B80-\u0BFF]/.test(word);
-    const regex = isTamilScript 
-      ? new RegExp(word, 'gi')
-      : new RegExp(`\\b${word}\\b`, 'gi');
-      
-    censored = censored.replace(regex, (match) => {
-      if (match.length <= 1) return '*';
-      return match[0] + '*'.repeat(match.length - 1);
-    });
-  }
-  return censored;
+  return getProfanityStats(text).censoredText;
 };
 
 module.exports = {
@@ -438,6 +1088,12 @@ module.exports = {
   fetchGovRoadData,
   updateIntensityScore,
   rewriteComplaint,
+  getOfficialsHierarchy,
+  suggestLegalActs,
+  generateLegalPetition,
   getHaversineDistance,
   censorText,
+  getProfanityStats,
+  censorCustomWords,
+  getDynamicContact,
 };
