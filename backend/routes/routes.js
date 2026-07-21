@@ -23,9 +23,10 @@ const {
   generateReport, predictRiskZones,
   reverseGeocode, fetchGovRoadData,
   updateIntensityScore, rewriteComplaint,
+  getOfficialsHierarchy, suggestLegalActs,
   generateLegalPetition,
   getHaversineDistance, censorText, getProfanityStats,
-  censorCustomWords,
+  censorCustomWords, getDynamicContact,
 } = require('../services/services');
 
 // ═══════════════════════════════════════════
@@ -440,27 +441,9 @@ GPS Match Status: ${imageMetadata.gpsMatchStatus}`;
       locationData = await reverseGeocode(parseFloat(lat), parseFloat(lng));
     }
 
-    // Find auto-attach contacts for this district and category
-    const contactQuery = { district: locationData.district };
-    if (aiResult.category && aiResult.category !== 'other') {
-      contactQuery.department = aiResult.category;
-    }
-    let contacts = await Contact.find(contactQuery);
-
-    // If no direct department match, fallback to 'municipal' contact for that district
-    if (contacts.length === 0) {
-      contacts = await Contact.find({
-        district: locationData.district,
-        department: 'municipal'
-      });
-    }
-
-    // If still no contact matches, fallback to all contacts of that district
-    if (contacts.length === 0) {
-      contacts = await Contact.find({ district: locationData.district });
-    }
-
-    const contactIds = contacts.map(c => c._id);
+    // Dynamically retrieve or generate official contact for this district and department category
+    const dynamicContact = await getDynamicContact(locationData.district, aiResult.category || 'municipal');
+    const contactIds = dynamicContact ? [dynamicContact._id] : [];
 
     // Duplicate detection (nearby posts within 200m, same category)
     let duplicateInfo = { isDuplicate: false };
@@ -1101,17 +1084,73 @@ router.post('/rooms/:id/leave', requireAuth, attachUser, asyncHandler(async (req
   res.json({ success: true });
 }));
 
+// GET /api/rooms/:id/officials-hierarchy — fetch TN responsible officials hierarchy
+router.get('/rooms/:id/officials-hierarchy', requireAuth, attachUser, aiLimiter, asyncHandler(async (req, res) => {
+  const room = await ChatRoom.findOne({ _id: req.params.id, isActive: true });
+  if (!room) return res.status(404).json({ error: 'Strike room not found' });
+  
+  if (!room.postId) return res.status(400).json({ error: 'No post linked to this strike room' });
+  const post = await Post.findOne({ _id: room.postId, isDeleted: false }).lean();
+  if (!post) return res.status(404).json({ error: 'Linked post not found' });
+
+  const hierarchy = await getOfficialsHierarchy(post);
+  res.json({ hierarchy });
+}));
+
+// GET /api/legal-acts — fetch all statutory acts in the database (supports optional filtering by category or query search)
+router.get('/legal-acts', asyncHandler(async (req, res) => {
+  try {
+    const { category, q } = req.query;
+    const legalActs = require('../data/legalActs.json');
+    
+    let results = legalActs;
+    
+    // Filter by category (optionally matching general acts too)
+    if (category) {
+      results = results.filter(act => act.category === category || act.category === 'general');
+    }
+    
+    // Search query q
+    if (q) {
+      const query = q.toLowerCase();
+      results = results.filter(act => 
+        act.actName.toLowerCase().includes(query) || 
+        act.section.toLowerCase().includes(query) || 
+        act.summary.toLowerCase().includes(query)
+      );
+    }
+    
+    res.json({ acts: results });
+  } catch (err) {
+    console.error('Error fetching legal acts:', err);
+    res.status(500).json({ error: 'Internal Server Error loading legal acts' });
+  }
+}));
+
+// GET /api/rooms/:id/suggest-acts — fetch suggested statutory acts based on issue
+router.get('/rooms/:id/suggest-acts', requireAuth, attachUser, aiLimiter, asyncHandler(async (req, res) => {
+  const room = await ChatRoom.findOne({ _id: req.params.id, isActive: true });
+  if (!room) return res.status(404).json({ error: 'Strike room not found' });
+  
+  if (!room.postId) return res.status(400).json({ error: 'No post linked to this strike room' });
+  const post = await Post.findOne({ _id: room.postId, isDeleted: false }).lean();
+  if (!post) return res.status(404).json({ error: 'Linked post not found' });
+
+  const acts = await suggestLegalActs(post);
+  res.json({ acts });
+}));
+
 // POST /api/rooms/:id/legal-document — generate official legal petition/complaint
 router.post('/rooms/:id/legal-document', requireAuth, attachUser, aiLimiter, asyncHandler(async (req, res) => {
   const { 
     representativeName, 
     addressedAuthority, 
     customDemands, 
-    destinationType = 'municipal',
+    docType = 'municipal',
     petitionerFatherSpouseName = '',
     petitionerAge = '',
     petitionerResidingAddress = '',
-    statutoryAct = 'district_municipalities'
+    selectedActs = []
   } = req.body;
   const room = await ChatRoom.findOne({ _id: req.params.id, isActive: true });
   if (!room) return res.status(404).json({ error: 'Strike room not found' });
@@ -1128,11 +1167,11 @@ router.post('/rooms/:id/legal-document', requireAuth, attachUser, aiLimiter, asy
     representativeName, 
     addressedAuthority, 
     customDemands, 
-    destinationType,
+    docType,
     petitionerFatherSpouseName,
     petitionerAge,
     petitionerResidingAddress,
-    statutoryAct
+    selectedActs
   };
   const document = await generateLegalPetition(post, room, extraDetails);
 

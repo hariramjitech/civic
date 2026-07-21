@@ -6,15 +6,16 @@ import { MapContainer, TileLayer, Marker } from 'react-leaflet';
 import { 
   Flame, Users, ArrowRight, Shield, Bell, 
   MapPin, Loader2, Send, MessageSquare,
-  FileText, Printer, Download, Copy, Eye, Sparkles, X
+  FileText, Printer, Download, Copy, Eye, Sparkles, X,
+  Scale, FileCheck, Check, ChevronLeft, ChevronRight, Gavel, Briefcase
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 function renderMarkdownText(text = '') {
-  const lines = String(text).split(/\n+/).filter(Boolean);
+  const blocks = String(text).split('\n\n').filter(Boolean);
   const boldPattern = /\*\*(.+?)\*\*/g;
 
-  return lines.map((line, lineIndex) => {
+  const parseInline = (line, blockIdx, lineIdx) => {
     const parts = [];
     let lastIndex = 0;
     let match;
@@ -23,21 +24,62 @@ function renderMarkdownText(text = '') {
       if (match.index > lastIndex) {
         parts.push(line.slice(lastIndex, match.index));
       }
-      parts.push(<strong key={`b-${lineIndex}-${match.index}`}>{match[1]}</strong>);
+      parts.push(<strong key={`b-${blockIdx}-${lineIdx}-${match.index}`} className="font-extrabold text-gray-900">{match[1]}</strong>);
       lastIndex = match.index + match[0].length;
     }
 
     if (lastIndex < line.length) {
       parts.push(line.slice(lastIndex));
     }
+    return parts;
+  };
 
+  return blocks.map((block, blockIdx) => {
+    const trimmed = block.trim();
+    if (trimmed.startsWith('### ')) {
+      return (
+        <h3 key={`h3-${blockIdx}`} className="text-xs font-extrabold text-gray-900 border-b border-gray-200 pb-1 mt-3 mb-1 uppercase tracking-wide font-sans">
+          {parseInline(trimmed.replace('### ', ''), blockIdx, 0)}
+        </h3>
+      );
+    }
+    if (trimmed.startsWith('## ')) {
+      return (
+        <h2 key={`h2-${blockIdx}`} className="text-sm font-extrabold text-gray-900 border-b-2 border-gray-300 pb-1.5 mt-5 mb-2 uppercase tracking-wide font-sans">
+          {parseInline(trimmed.replace('## ', ''), blockIdx, 0)}
+        </h2>
+      );
+    }
+    if (trimmed.startsWith('# ')) {
+      return (
+        <h1 key={`h1-${blockIdx}`} className="text-base font-black text-center text-gray-900 border-b-4 border-gray-950 pb-2 mb-6 uppercase tracking-wider font-sans">
+          {parseInline(trimmed.replace('# ', ''), blockIdx, 0)}
+        </h1>
+      );
+    }
+    if (trimmed.startsWith('- ') || trimmed.startsWith('* ')) {
+      const items = trimmed.split(/\n[-*]\s+/);
+      return (
+        <ul key={`ul-${blockIdx}`} className="list-disc pl-5 my-2 space-y-1 text-xs">
+          {items.map((item, idx) => (
+            <li key={`li-${blockIdx}-${idx}`} className="text-gray-800">
+              {parseInline(item.replace(/^[-*]\s+/, ''), blockIdx, idx)}
+            </li>
+          ))}
+        </ul>
+      );
+    }
+    
+    const lines = trimmed.split('\n');
     return (
-      <span key={`line-${lineIndex}`}>
-        {parts.map((part, partIndex) =>
-          typeof part === 'string' ? <React.Fragment key={`t-${lineIndex}-${partIndex}`}>{part}</React.Fragment> : part
-        )}
-        {lineIndex < lines.length - 1 && <br />}
-      </span>
+      <p key={`p-${blockIdx}`} className="text-xs text-gray-850 leading-relaxed text-justify space-y-1 font-serif">
+        {lines.map((line, lineIdx) => (
+          <React.Fragment key={`l-${blockIdx}-${lineIdx}`}>
+            {parseInline(line, blockIdx, lineIdx)}
+            {lineIdx < lines.length - 1 && <br />}
+          </React.Fragment>
+        ))}
+      </p>
     );
   });
 }
@@ -71,11 +113,17 @@ export default function StrikeRooms() {
   const [generatedDoc, setGeneratedDoc] = useState(null);
   const [isEditingDoc, setIsEditingDoc] = useState(false);
   const [includeSignatures, setIncludeSignatures] = useState(true);
-  const [destinationType, setDestinationType] = useState('municipal');
   const [petitionerFatherSpouseName, setPetitionerFatherSpouseName] = useState('');
   const [petitionerAge, setPetitionerAge] = useState('');
   const [petitionerResidingAddress, setPetitionerResidingAddress] = useState('');
-  const [statutoryAct, setStatutoryAct] = useState('district_municipalities');
+
+  const [hierarchy, setHierarchy] = useState([]);
+  const [loadingHierarchy, setLoadingHierarchy] = useState(false);
+  const [suggestedActs, setSuggestedActs] = useState([]);
+  const [loadingActs, setLoadingActs] = useState(false);
+  const [selectedActs, setSelectedActs] = useState([]);
+  const [docType, setDocType] = useState('municipal');
+  const [docStep, setDocStep] = useState(1);
 
   const messagesEndRef = useRef(null);
 
@@ -171,10 +219,20 @@ export default function StrikeRooms() {
     if (!activeRoom) {
       setLinkedPost(null);
       setRoomDetailsLoading(false);
+      setHierarchy([]);
+      setSuggestedActs([]);
+      setSelectedActs([]);
+      setGeneratedDoc(null);
+      setDocStep(1);
       return;
     }
 
     const loadRoomDetails = async () => {
+      setHierarchy([]);
+      setSuggestedActs([]);
+      setSelectedActs([]);
+      setGeneratedDoc(null);
+      setDocStep(1);
       try {
         setRoomDetailsLoading(true);
         const res = await api.get(`/rooms/${activeRoom._id}`);
@@ -185,6 +243,9 @@ export default function StrikeRooms() {
           try {
             const postRes = await api.get(`/posts/${activeRoom.postId}`);
             setLinkedPost(postRes.data.post);
+            // Fetch hierarchy and suggested acts
+            fetchOfficialsHierarchy(activeRoom._id);
+            fetchSuggestedActs(activeRoom._id);
           } catch (postErr) {
             console.error('Failed to load linked post:', postErr);
             if (postErr.response?.status === 404) {
@@ -390,6 +451,35 @@ export default function StrikeRooms() {
     }
   };
 
+  const fetchOfficialsHierarchy = async (roomId) => {
+    try {
+      setLoadingHierarchy(true);
+      const res = await api.get(`/rooms/${roomId}/officials-hierarchy`);
+      setHierarchy(res.data.hierarchy || []);
+      const l4 = res.data.hierarchy?.find(h => h.level === 'L4');
+      if (l4) {
+        setAddressedAuth(l4.designation);
+      }
+    } catch (err) {
+      console.error('Failed to load officials hierarchy:', err);
+    } finally {
+      setLoadingHierarchy(false);
+    }
+  };
+
+  const fetchSuggestedActs = async (roomId) => {
+    try {
+      setLoadingActs(true);
+      const res = await api.get(`/rooms/${roomId}/suggest-acts`);
+      setSuggestedActs(res.data.acts || []);
+      setSelectedActs(res.data.acts?.filter(act => act.selectedByDefault) || []);
+    } catch (err) {
+      console.error('Failed to load suggested acts:', err);
+    } finally {
+      setLoadingActs(false);
+    }
+  };
+
   const handleGenerateDocument = async (e) => {
     e.preventDefault();
     if (!activeRoom) return;
@@ -401,11 +491,11 @@ export default function StrikeRooms() {
         representativeName: repName,
         addressedAuthority: authority,
         customDemands,
-        destinationType,
+        docType,
         petitionerFatherSpouseName,
         petitionerAge,
         petitionerResidingAddress,
-        statutoryAct
+        selectedActs
       });
       setGeneratedDoc(res.data.document);
       setIsEditingDoc(false);
@@ -453,22 +543,26 @@ export default function StrikeRooms() {
 
     // Render markdown headings and list elements in printing HTML
     let bodyHtml = generatedDoc
-      .replace(/###\s+(.+)/g, '<h3 style="font-family: Arial, sans-serif; font-size: 15px; margin-top: 15px; border-bottom: 1px solid #ddd; padding-bottom: 4px;">$1</h3>')
-      .replace(/##\s+(.+)/g, '<h2 style="font-family: Arial, sans-serif; font-size: 17px; margin-top: 20px; border-bottom: 1.5px solid #bbb; padding-bottom: 6px;">$1</h2>')
-      .replace(/#\s+(.+)/g, '<h1 style="text-align: center; text-transform: uppercase; font-size: 20px; border-bottom: 2px solid #000; padding-bottom: 8px; margin-bottom: 20px;">$1</h1>')
+      .replace(/###\s+(.+)/g, '<h3 style="font-family: Arial, sans-serif; font-size: 14px; margin-top: 15px; border-bottom: 1px solid #ddd; padding-bottom: 4px; text-transform: uppercase;">$1</h3>')
+      .replace(/##\s+(.+)/g, '<h2 style="font-family: Arial, sans-serif; font-size: 16px; margin-top: 20px; border-bottom: 1.5px solid #bbb; padding-bottom: 6px; text-transform: uppercase;">$1</h2>')
+      .replace(/#\s+(.+)/g, '<h1 style="text-align: center; text-transform: uppercase; font-size: 18px; border-bottom: 2px solid #000; padding-bottom: 8px; margin-bottom: 20px; font-family: Arial, sans-serif;">$1</h1>')
       .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
       .replace(/\*(.+?)\*/g, '<em>$1</em>')
-      .replace(/-\s+(.+)/g, '<li style="margin-bottom: 6px; font-size: 13.5px;">$1</li>')
-      .replace(/\n\n/g, '<p style="font-size: 13.5px; text-align: justify; line-height: 1.6; margin-bottom: 15px;"></p>');
+      .replace(/-\s+(.+)/g, '<li style="margin-bottom: 6px; font-size: 13px;">$1</li>')
+      .replace(/\n\n/g, '<p style="font-size: 13px; text-align: justify; line-height: 1.6; margin-bottom: 15px;"></p>');
 
     const petitionHtml = `
       <html>
         <head>
           <title>Grievance Petition - ${linkedPost.title}</title>
           <style>
+            @page {
+              size: A4;
+              margin: 20mm;
+            }
             @media print {
               body {
-                padding: 10px;
+                padding: 0;
                 color: #000 !important;
                 background: #fff !important;
               }
@@ -486,7 +580,8 @@ export default function StrikeRooms() {
             }
             .petition-body {
               white-space: pre-wrap;
-              font-size: 14px;
+              font-size: 13px;
+              text-align: justify;
             }
             .official-contacts {
               margin-top: 30px;
@@ -494,6 +589,7 @@ export default function StrikeRooms() {
               border: 1px solid #ccc;
               background-color: #f9f9f9;
               border-radius: 5px;
+              font-family: Arial, sans-serif;
             }
             .signature-table {
               width: 100%;
@@ -504,7 +600,7 @@ export default function StrikeRooms() {
               border: 1px solid #333;
               padding: 8px;
               text-align: left;
-              font-size: 12px;
+              font-size: 11px;
             }
             .signature-table th {
               background-color: #f2f2f2;
@@ -521,18 +617,18 @@ export default function StrikeRooms() {
           </div>
           
           <div class="official-contacts">
-            <h3 style="font-family: Arial, sans-serif; font-size: 14px; margin-top: 0; margin-bottom: 10px; border-bottom: 1px solid #aaa; padding-bottom: 3px;">
-              OFFICIAL DEPT CONTACT DETAILS (FOR SUBMISSION REFERENCE)
+            <h3 style="font-family: Arial, sans-serif; font-size: 13px; margin-top: 0; margin-bottom: 10px; border-bottom: 1px solid #aaa; padding-bottom: 3px; text-transform: uppercase;">
+              Official Department Contact Details (For Submission Reference)
             </h3>
             ${contactsText}
           </div>
 
           ${includeSignatures ? `
             <div class="page-break"></div>
-            <h1 style="text-align: center; font-family: Arial, sans-serif; font-size: 18px; text-transform: uppercase; border-bottom: 2px solid #000; padding-bottom: 8px; margin-bottom: 10px;">
+            <h1 style="text-align: center; font-family: Arial, sans-serif; font-size: 16px; text-transform: uppercase; border-bottom: 2px solid #000; padding-bottom: 8px; margin-bottom: 10px;">
               Supporting Citizens & Local Residents Endorsement Signatures Log
             </h1>
-            <p style="font-size: 11.5px; margin-bottom: 15px; text-align: justify; line-height: 1.4;">
+            <p style="font-size: 11px; margin-bottom: 15px; text-align: justify; line-height: 1.4; color: #333;">
               We, the undersigned residents, voters, and local stakeholders of the area, do hereby endorse the facts and statements detailed in the attached Civic Grievance Petition (Grievance Ref: ${linkedPost._id}) regarding <strong>"${linkedPost.title}"</strong>. We formally petition the municipal administration and regional departments to initiate repairs/inspections immediately to ensure safety and restore public welfare.
             </p>
             <table class="signature-table">
@@ -557,7 +653,7 @@ export default function StrikeRooms() {
                 `).join('')}
               </tbody>
             </table>
-            <p style="font-size: 10px; color: #555; text-align: right; margin-top: 10px;">
+            <p style="font-size: 9px; color: #555; text-align: right; margin-top: 10px;">
               * Verified Mobilized CivicTN Petition Log. Total digital supporters on app: ${memberCount}.
             </p>
           ` : ''}
@@ -579,16 +675,18 @@ export default function StrikeRooms() {
   const resetDocState = () => {
     setShowDocModal(false);
     setRepName('');
-    setAddressedAuth('District Collector');
+    const l4 = hierarchy?.find(h => h.level === 'L4');
+    setAddressedAuth(l4 ? l4.designation : 'District Collector');
     setCustomAuth('');
     setCustomDemands('');
     setGeneratedDoc(null);
     setIsEditingDoc(false);
-    setDestinationType('municipal');
     setPetitionerFatherSpouseName('');
     setPetitionerAge('');
     setPetitionerResidingAddress('');
-    setStatutoryAct('district_municipalities');
+    setSelectedActs(suggestedActs?.filter(act => act.selectedByDefault) || []);
+    setDocType('municipal');
+    setDocStep(1);
   };
 
   const handleAutoFillLocation = () => {
@@ -778,6 +876,105 @@ export default function StrikeRooms() {
                   </div>
                 </div>
 
+                {/* Responsible Authority Hierarchy Card */}
+                <div className="p-4 rounded-xl border border-[var(--border-default)] bg-[var(--bg-surface)] space-y-3">
+                  <div className="flex items-center justify-between border-b border-[var(--border-subtle)] pb-2">
+                    <div className="flex items-center gap-2">
+                      <div className="w-7 h-7 rounded-lg bg-emerald-50 border border-emerald-200 flex items-center justify-center">
+                        <Users size={13} className="text-emerald-600" />
+                      </div>
+                      <span className="text-xs font-bold text-[var(--text-primary)]">Officials Hierarchy</span>
+                    </div>
+                    <span className="text-[8px] uppercase font-extrabold tracking-wider bg-emerald-500/10 text-emerald-400 px-2 py-0.5 rounded border border-emerald-500/20">
+                      Line of Command
+                    </span>
+                  </div>
+
+                  {loadingHierarchy ? (
+                    <div className="flex flex-col items-center py-6 space-y-2">
+                      <Loader2 size={16} className="animate-spin text-[var(--teal-500)]" />
+                      <span className="text-[9px] text-[var(--text-muted)]">Resolving local authorities...</span>
+                    </div>
+                  ) : hierarchy && hierarchy.length > 0 ? (
+                    <div className="relative pl-3 space-y-4 before:absolute before:left-[9px] before:top-2 before:bottom-2 before:w-[2px] before:bg-gradient-to-b before:from-emerald-500/20 before:via-teal-500/30 before:to-emerald-500/10">
+                      {hierarchy.map((level, idx) => (
+                        <div key={level.level} className="relative pl-5 group">
+                          {/* Connector Dot */}
+                          <div className="absolute left-[-21px] top-1 w-4.5 h-4.5 rounded-full bg-[var(--bg-surface)] border-2 border-emerald-500 flex items-center justify-center text-[8px] font-black text-emerald-400 group-hover:scale-110 transition-transform shadow-[0_0_8px_rgba(16,185,129,0.3)]">
+                            {idx + 1}
+                          </div>
+
+                          <div className="space-y-1">
+                            <div className="flex items-baseline justify-between flex-wrap gap-x-2">
+                              <span className="text-[10px] font-extrabold text-[var(--text-primary)] tracking-wide group-hover:text-emerald-400 transition-colors">
+                                {level.designation}
+                              </span>
+                              <span className="text-[8px] uppercase font-bold tracking-wider text-rose-400/80 bg-rose-500/5 px-1.5 py-0.5 rounded border border-rose-500/10">
+                                {level.timeframe}
+                              </span>
+                            </div>
+                            
+                            <p className="text-[8.5px] text-emerald-500 font-bold uppercase tracking-wider">
+                              {level.department}
+                            </p>
+                            <p className="text-[9px] text-[var(--text-muted)] leading-relaxed italic">
+                              "{level.role}"
+                            </p>
+
+                            {level.contact ? (
+                              <div className="mt-1.5 p-2 rounded-lg bg-[var(--bg-elevated)] border border-[var(--border-subtle)] space-y-1.5 text-[8.5px] group-hover:border-emerald-500/30 transition-colors">
+                                <div className="flex items-center justify-between">
+                                  <span className="font-extrabold text-[var(--text-secondary)]">
+                                    👤 {level.contact.officerName || 'Designated Official'}
+                                  </span>
+                                  <span className="text-[7.5px] font-bold uppercase text-[var(--teal-500)]">Active</span>
+                                </div>
+                                
+                                {level.contact.phone && level.contact.phone.length > 0 && (
+                                  <div className="text-[8px] text-[var(--text-muted)] font-mono">
+                                    📞 {level.contact.phone.join(', ')}
+                                  </div>
+                                )}
+                                {level.contact.email && (
+                                  <div className="text-[8px] text-[var(--text-muted)] font-mono truncate">
+                                    ✉️ {level.contact.email}
+                                  </div>
+                                )}
+                                
+                                <button
+                                  onClick={() => {
+                                    setAddressedAuth(level.designation);
+                                    setShowDocModal(true);
+                                    setDocStep(2);
+                                  }}
+                                  className="mt-1 w-full py-1 text-center bg-emerald-500/10 hover:bg-emerald-500 hover:text-gray-950 text-emerald-400 font-extrabold text-[8px] uppercase tracking-wider rounded border border-emerald-500/20 hover:border-emerald-500 transition-all cursor-pointer"
+                                >
+                                  Address Petition Here
+                                </button>
+                              </div>
+                            ) : (
+                              <button
+                                onClick={() => {
+                                  setAddressedAuth(level.designation);
+                                  setShowDocModal(true);
+                                  setDocStep(2);
+                                }}
+                                className="mt-1 py-0.5 px-2 bg-[var(--bg-elevated)] hover:bg-emerald-500/20 text-[var(--text-secondary)] hover:text-emerald-400 font-bold text-[8px] uppercase tracking-wider rounded border border-[var(--border-default)] hover:border-emerald-500/30 transition-all cursor-pointer"
+                              >
+                                Address Petition here
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-[9px] text-[var(--text-muted)] italic text-center py-2">
+                      Resolving local governance structure...
+                    </p>
+                  )}
+                </div>
+
                 {/* Legal Petitions Card */}
                 <div className="p-4 rounded-xl border border-[var(--border-default)] bg-[var(--bg-surface)] space-y-3">
                   <div className="flex items-center gap-2">
@@ -790,8 +987,8 @@ export default function StrikeRooms() {
                     Draft a formal, legally structured representation from this strike room's data. Volunteers can print the generated document and take it directly to authorities.
                   </p>
                   <button
-                    onClick={() => { setShowDocModal(true); setGeneratedDoc(null); }}
-                    className="w-full py-2.5 bg-gradient-to-r from-teal-500 to-emerald-500 hover:from-teal-400 hover:to-emerald-400 text-white font-bold text-[10px] uppercase tracking-wider rounded-lg transition-all shadow-sm flex items-center justify-center gap-1.5"
+                    onClick={() => { setShowDocModal(true); setGeneratedDoc(null); setDocStep(1); }}
+                    className="w-full py-2.5 bg-gradient-to-r from-teal-500 to-emerald-500 hover:from-teal-400 hover:to-emerald-400 text-white font-bold text-[10px] uppercase tracking-wider rounded-lg transition-all shadow-sm flex items-center justify-center gap-1.5 cursor-pointer"
                   >
                     <FileText size={12} />
                     <span>Generate Legal Document</span>
@@ -904,129 +1101,247 @@ export default function StrikeRooms() {
       </div>
       {/* ── LEGAL PETITION GENERATOR MODAL ── */}
       {showDocModal && (
-        <div className="fixed inset-0 flex items-center justify-center bg-black/30 backdrop-blur-sm p-4 overflow-y-auto" style={{ zIndex: 9999 }}>
-          <div className="glass-panel p-6 rounded-2xl max-w-3xl w-full space-y-4 animate-scaleIn my-8 max-h-[90vh] overflow-y-auto flex flex-col shadow-xl">
+        <div className="fixed inset-0 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 overflow-y-auto" style={{ zIndex: 9999 }}>
+          <div className="glass-panel p-6 rounded-2xl max-w-3xl w-full space-y-4 animate-scaleIn my-8 max-h-[95vh] overflow-y-auto flex flex-col shadow-2xl border border-emerald-500/20">
             {/* Modal Header */}
             <div className="flex items-center justify-between border-b border-[var(--border-subtle)] pb-3 flex-shrink-0">
-              <h3 className="font-display font-extrabold text-[var(--teal-500)] text-sm sm:text-base flex items-center gap-2">
-                <Shield size={18} className="text-[var(--teal-500)]" />
-                <span>Prepare Legal Grievance Petition</span>
-              </h3>
-              <button onClick={resetDocState} className="text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors">
+              <div className="flex items-center space-x-2">
+                <Gavel size={18} className="text-emerald-400" />
+                <h3 className="font-display font-extrabold text-sm sm:text-base text-[var(--teal-500)]">
+                  Prepare Legal Grievance Petition Wizard
+                </h3>
+              </div>
+              <button onClick={resetDocState} className="text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors cursor-pointer">
                 <X size={18} />
               </button>
             </div>
 
+            {/* Wizard Steps Header (if not generated yet) */}
+            {!generatedDoc && (
+              <div className="flex items-center justify-center space-x-4 border-b border-gray-900 pb-3 flex-shrink-0 text-[10px] font-extrabold uppercase tracking-wider select-none">
+                <div className={`flex items-center space-x-1.5 ${docStep === 1 ? 'text-emerald-400 animate-pulse' : 'text-[var(--text-muted)]'}`}>
+                  <span className={`w-5 h-5 rounded-full flex items-center justify-center border text-[9px] ${docStep === 1 ? 'border-emerald-400 bg-emerald-500/10' : 'border-[var(--border-default)]'}`}>1</span>
+                  <span>Type & Acts</span>
+                </div>
+                <div className="w-8 h-[1px] bg-gray-800" />
+                <div className={`flex items-center space-x-1.5 ${docStep === 2 ? 'text-emerald-400 animate-pulse' : 'text-[var(--text-muted)]'}`}>
+                  <span className={`w-5 h-5 rounded-full flex items-center justify-center border text-[9px] ${docStep === 2 ? 'border-emerald-400 bg-emerald-500/10' : 'border-[var(--border-default)]'}`}>2</span>
+                  <span>Credentials</span>
+                </div>
+                <div className="w-8 h-[1px] bg-gray-800" />
+                <div className={`flex items-center space-x-1.5 ${docStep === 3 ? 'text-emerald-400 animate-pulse' : 'text-[var(--text-muted)]'}`}>
+                  <span className={`w-5 h-5 rounded-full flex items-center justify-center border text-[9px] ${docStep === 3 ? 'border-emerald-400 bg-emerald-500/10' : 'border-[var(--border-default)]'}`}>3</span>
+                  <span>Authority</span>
+                </div>
+              </div>
+            )}
+
             {/* Modal Content */}
             {!generatedDoc ? (
-              /* SETUP FORM FORM */
-              <form onSubmit={handleGenerateDocument} className="space-y-4 flex-1 overflow-y-auto pr-1">
-                <p className="text-[11px] text-[var(--text-secondary)] leading-relaxed info-row">
-                  Fill out the parameters below to draft an official, ready-to-submit representation. The platform will compile details of <strong>{linkedPost?.title}</strong>,
-                  including coordinates, active supporting citizens ({memberCount}), and mapped department officials, to construct a highly professional document.
-                </p>
-
-                {/* Section 1: Submission & Destination */}
-                <div className="space-y-3">
-                  <h4 className="text-[11px] uppercase tracking-wider font-extrabold text-emerald-400 flex items-center space-x-1.5 border-b border-gray-900 pb-1.5">
-                    <span>1. Grievance Submission Destination</span>
-                  </h4>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
+              <div className="flex-1 overflow-y-auto pr-1">
+                {/* STEP 1: GRIEVANCE TYPE & ACTS */}
+                {docStep === 1 && (
+                  <div className="space-y-4">
+                    <div className="space-y-2">
                       <label className="block text-[10px] text-[var(--text-muted)] uppercase tracking-wider mb-1 font-bold">
-                        Grievance Destination / Purpose
+                        Select Legal Document Format
                       </label>
-                      <select
-                        value={destinationType}
-                        onChange={(e) => setDestinationType(e.target.value)}
-                        className="w-full glass-input text-xs"
-                      >
-                        <option value="municipal">Municipal/Administrative Office (Official Letter Complaint)</option>
-                        <option value="court">Madras High Court / District Court (PIL Writ Petition)</option>
-                      </select>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                        {/* Municipal */}
+                        <div 
+                          onClick={() => setDocType('municipal')}
+                          className={`p-3 rounded-xl border cursor-pointer transition-all flex flex-col space-y-1.5 ${docType === 'municipal' ? 'bg-emerald-500/10 border-emerald-400/80 shadow-[0_0_12px_rgba(16,185,129,0.1)]' : 'bg-[var(--bg-overlay)] border-[var(--border-default)] hover:border-[var(--text-muted)]'}`}
+                        >
+                          <span className="text-[11px] font-extrabold text-[var(--text-primary)] flex items-center gap-1.5">
+                            <FileText size={13} className="text-emerald-400" />
+                            Municipal Complaint
+                          </span>
+                          <span className="text-[9px] text-[var(--text-muted)] leading-relaxed">
+                            Formal administrative complaint representation to corporate/municipal heads.
+                          </span>
+                        </div>
+
+                        {/* High Court PIL */}
+                        <div 
+                          onClick={() => setDocType('court')}
+                          className={`p-3 rounded-xl border cursor-pointer transition-all flex flex-col space-y-1.5 ${docType === 'court' ? 'bg-emerald-500/10 border-emerald-400/80 shadow-[0_0_12px_rgba(16,185,129,0.1)]' : 'bg-[var(--bg-overlay)] border-[var(--border-default)] hover:border-[var(--text-muted)]'}`}
+                        >
+                          <span className="text-[11px] font-extrabold text-[var(--text-primary)] flex items-center gap-1.5">
+                            <Scale size={13} className="text-teal-400" />
+                            Writ PIL Petition
+                          </span>
+                          <span className="text-[9px] text-[var(--text-muted)] leading-relaxed">
+                            Public Interest Writ Petition under Art 226 before Madras High Court.
+                          </span>
+                        </div>
+
+                        {/* RTI */}
+                        <div 
+                          onClick={() => setDocType('rti')}
+                          className={`p-3 rounded-xl border cursor-pointer transition-all flex flex-col space-y-1.5 ${docType === 'rti' ? 'bg-emerald-500/10 border-emerald-400/80 shadow-[0_0_12px_rgba(16,185,129,0.1)]' : 'bg-[var(--bg-overlay)] border-[var(--border-default)] hover:border-[var(--text-muted)]'}`}
+                        >
+                          <span className="text-[11px] font-extrabold text-[var(--text-primary)] flex items-center gap-1.5">
+                            <Eye size={13} className="text-cyan-400" />
+                            RTI Application
+                          </span>
+                          <span className="text-[9px] text-[var(--text-muted)] leading-relaxed">
+                            Section 6(1) queries requesting quality checks, contractor, and budget logs.
+                          </span>
+                        </div>
+
+                        {/* Police */}
+                        <div 
+                          onClick={() => setDocType('police')}
+                          className={`p-3 rounded-xl border cursor-pointer transition-all flex flex-col space-y-1.5 ${docType === 'police' ? 'bg-emerald-500/10 border-emerald-400/80 shadow-[0_0_12px_rgba(16,185,129,0.1)]' : 'bg-[var(--bg-overlay)] border-[var(--border-default)] hover:border-[var(--text-muted)]'}`}
+                        >
+                          <span className="text-[11px] font-extrabold text-[var(--text-primary)] flex items-center gap-1.5">
+                            <Shield size={13} className="text-rose-400" />
+                            Police Complaint
+                          </span>
+                          <span className="text-[9px] text-[var(--text-muted)] leading-relaxed">
+                            Citing public endangerment, negligence, and nuisance against officers.
+                          </span>
+                        </div>
+
+                        {/* Consumer notice */}
+                        <div 
+                          onClick={() => setDocType('consumer')}
+                          className={`p-3 rounded-xl border cursor-pointer transition-all flex flex-col space-y-1.5 ${docType === 'consumer' ? 'bg-emerald-500/10 border-emerald-400/80 shadow-[0_0_12px_rgba(16,185,129,0.1)]' : 'bg-[var(--bg-overlay)] border-[var(--border-default)] hover:border-[var(--text-muted)]'}`}
+                        >
+                          <span className="text-[11px] font-extrabold text-[var(--text-primary)] flex items-center gap-1.5">
+                            <Briefcase size={13} className="text-orange-400" />
+                            Consumer Notice
+                          </span>
+                          <span className="text-[9px] text-[var(--text-muted)] leading-relaxed">
+                            Demand notice for deficiency of service by utilities under CP Act 2019.
+                          </span>
+                        </div>
+                      </div>
                     </div>
 
-                    <div>
-                      <label className="block text-[10px] text-[var(--text-muted)] uppercase tracking-wider mb-1 font-bold">
-                        Addressed Authority Designation
-                      </label>
-                      <select
-                        value={addressedAuth}
-                        onChange={(e) => setAddressedAuth(e.target.value)}
-                        className="w-full glass-input text-xs"
+                    <div className="space-y-3 border-t border-gray-900 pt-4">
+                      <div className="flex items-center justify-between border-b border-gray-900 pb-2">
+                        <span className="text-[10px] text-[var(--text-muted)] uppercase tracking-wider font-bold flex items-center gap-1">
+                          <Scale size={13} className="text-emerald-400" />
+                          Select Statutory Grounds & Acts (Citable Provisions)
+                        </span>
+                        {loadingActs && <Loader2 size={12} className="animate-spin text-emerald-400" />}
+                      </div>
+
+                      {loadingActs ? (
+                        <div className="py-4 text-center text-[10px] text-[var(--text-muted)]">
+                          Retrieving relevant legal provisions...
+                        </div>
+                      ) : suggestedActs && suggestedActs.length > 0 ? (
+                        <div className="space-y-2.5 max-h-[200px] overflow-y-auto pr-1">
+                          {suggestedActs.map((act) => {
+                            const isChecked = selectedActs.some(a => a.actName === act.actName && a.section === act.section);
+                            return (
+                              <div 
+                                key={`${act.actName}-${act.section}`}
+                                onClick={() => {
+                                  if (isChecked) {
+                                    setSelectedActs(selectedActs.filter(a => !(a.actName === act.actName && a.section === act.section)));
+                                  } else {
+                                    setSelectedActs([...selectedActs, act]);
+                                  }
+                                }}
+                                className={`p-2.5 rounded-lg border text-xs cursor-pointer transition-colors flex items-start gap-3 ${isChecked ? 'bg-emerald-500/5 border-emerald-500/30' : 'bg-[var(--bg-elevated)] border-[var(--border-default)] hover:border-emerald-500/20'}`}
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={isChecked}
+                                  onChange={() => {}}
+                                  className="mt-0.5 rounded border border-[var(--border-default)] text-[var(--teal-500)] focus:ring-[var(--teal-500)] cursor-pointer"
+                                />
+                                <div className="space-y-0.5">
+                                  <div className="font-extrabold text-[var(--text-primary)]">
+                                    {act.actName} (Section/Article: {act.section})
+                                  </div>
+                                  <div className="text-[9.5px] text-[var(--text-muted)] leading-relaxed">
+                                    {act.summary}
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        <div className="py-2 text-[9px] text-[var(--text-muted)] italic text-center">
+                          Failed to load acts. Standard fallbacks will be included.
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="flex justify-end pt-3 border-t border-gray-900">
+                      <button
+                        onClick={() => setDocStep(2)}
+                        className="px-5 py-2.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-gray-950 font-extrabold text-xs uppercase tracking-wider flex items-center space-x-1.5 shadow-lg shadow-emerald-950/20 cursor-pointer"
                       >
-                        <option value="District Collector">District Collector & District Magistrate</option>
-                        <option value="Municipal Corporation Commissioner">Commissioner of Municipal Corporation</option>
-                        <option value="Divisional Engineer (Highways Department)">Divisional Engineer (Highways Department)</option>
-                        <option value="Chief Engineer (Water Supply and Sewage Board)">Chief Engineer (Water Supply & Sewage Board)</option>
-                        <option value="Superintending Engineer (Electricity Distribution)">Superintending Engineer (Electricity Distribution)</option>
-                        <option value="Regional Transport Officer">Regional Transport Officer (RTO)</option>
-                        <option value="Other">Other / Custom Authority</option>
-                      </select>
+                        <span>Petitioner Credentials</span>
+                        <ChevronRight size={14} />
+                      </button>
                     </div>
                   </div>
-                </div>
+                )}
 
-                {/* Section 2: Petitioner Credentials */}
-                <div className="space-y-3 border-t border-gray-900 pt-3">
-                  <h4 className="text-[11px] uppercase tracking-wider font-extrabold text-emerald-400 flex items-center space-x-1.5 border-b border-gray-900 pb-1.5">
-                    <span>2. Lead Petitioner Legal Credentials</span>
-                  </h4>
-                  <p className="text-[9px] text-[var(--text-muted)] italic mt-0.5 leading-normal">
-                    * Formal legal petitions require verification of name, age, parentage, and residency to register officially in municipal databases and court registries.
-                  </p>
-                  
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div>
-                      <label className="block text-[10px] text-[var(--text-muted)] uppercase tracking-wider mb-1 font-bold">
-                        Lead Petitioner Full Name
-                      </label>
-                      <input
-                        type="text"
-                        placeholder="e.g. R. Subramanian"
-                        value={repName}
-                        onChange={(e) => setRepName(e.target.value)}
-                        className="w-full p-2.5 text-xs rounded-lg glass-input focus:ring-1 focus:ring-emerald-500"
-                        required
-                      />
+                {/* STEP 2: CREDENTIALS */}
+                {docStep === 2 && (
+                  <div className="space-y-4">
+                    <p className="text-[10px] text-[var(--text-muted)] italic leading-relaxed">
+                      * Formal legal representations and notices require verified petitioner details (name, age, parent/spouse name, and residential address) to be legally binding and registered officially in government indices.
+                    </p>
+
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <div>
+                        <label className="block text-[10px] text-[var(--text-muted)] uppercase tracking-wider mb-1 font-bold">
+                          Lead Petitioner Full Name
+                        </label>
+                        <input
+                          type="text"
+                          placeholder="e.g. R. Subramanian"
+                          value={repName}
+                          onChange={(e) => setRepName(e.target.value)}
+                          className="w-full p-2.5 text-xs rounded-lg glass-input focus:ring-1 focus:ring-emerald-500"
+                          required
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-[10px] text-[var(--text-muted)] uppercase tracking-wider mb-1 font-bold">
+                          Father's / Spouse's Name
+                        </label>
+                        <input
+                          type="text"
+                          placeholder="e.g. S. Ramasamy"
+                          value={petitionerFatherSpouseName}
+                          onChange={(e) => setPetitionerFatherSpouseName(e.target.value)}
+                          className="w-full p-2.5 text-xs rounded-lg glass-input focus:ring-1 focus:ring-emerald-500"
+                          required
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-[10px] text-[var(--text-muted)] uppercase tracking-wider mb-1 font-bold">
+                          Petitioner Age (Years)
+                        </label>
+                        <input
+                          type="number"
+                          placeholder="e.g. 45"
+                          value={petitionerAge}
+                          onChange={(e) => setPetitionerAge(e.target.value)}
+                          className="w-full p-2.5 text-xs rounded-lg glass-input focus:ring-1 focus:ring-emerald-500"
+                          required
+                          min="18"
+                          max="120"
+                        />
+                      </div>
                     </div>
 
-                    <div>
-                      <label className="block text-[10px] text-[var(--text-muted)] uppercase tracking-wider mb-1 font-bold">
-                        Father's / Spouse's Name
-                      </label>
-                      <input
-                        type="text"
-                        placeholder="e.g. S. Ramasamy"
-                        value={petitionerFatherSpouseName}
-                        onChange={(e) => setPetitionerFatherSpouseName(e.target.value)}
-                        className="w-full p-2.5 text-xs rounded-lg glass-input focus:ring-1 focus:ring-emerald-500"
-                        required
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-[10px] text-[var(--text-muted)] uppercase tracking-wider mb-1 font-bold">
-                        Petitioner Age (Years)
-                      </label>
-                      <input
-                        type="number"
-                        placeholder="e.g. 45"
-                        value={petitionerAge}
-                        onChange={(e) => setPetitionerAge(e.target.value)}
-                        className="w-full p-2.5 text-xs rounded-lg glass-input focus:ring-1 focus:ring-emerald-500"
-                        required
-                        min="18"
-                        max="120"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div className="md:col-span-2">
+                    <div className="space-y-1">
                       <div className="flex justify-between items-center mb-1">
                         <label className="block text-[10px] text-[var(--text-muted)] uppercase tracking-wider font-bold">
-                          Complete Residential Address
+                          Petitioner Residential Address
                         </label>
                         <button
                           type="button"
@@ -1056,100 +1371,133 @@ export default function StrikeRooms() {
                       />
                     </div>
 
+                    <div className="flex justify-between items-center pt-3 border-t border-gray-900">
+                      <button
+                        onClick={() => setDocStep(1)}
+                        className="px-4 py-2 rounded-lg border border-[var(--border-default)] text-[var(--text-muted)] hover:text-[var(--text-primary)] text-xs font-semibold flex items-center gap-1 cursor-pointer"
+                      >
+                        <ChevronLeft size={14} />
+                        <span>Back</span>
+                      </button>
+
+                      <button
+                        onClick={() => setDocStep(3)}
+                        disabled={!repName || !petitionerFatherSpouseName || !petitionerAge || !petitionerResidingAddress}
+                        className="px-5 py-2.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-gray-950 font-extrabold text-xs uppercase tracking-wider flex items-center space-x-1.5 shadow-lg shadow-emerald-950/20 cursor-pointer"
+                      >
+                        <span>Target Authority</span>
+                        <ChevronRight size={14} />
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* STEP 3: TARGET AUTHORITY & TIMELINES */}
+                {docStep === 3 && (
+                  <form onSubmit={handleGenerateDocument} className="space-y-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-[10px] text-[var(--text-muted)] uppercase tracking-wider mb-1 font-bold">
+                          Addressed Authority Designation
+                        </label>
+                        <select
+                          value={addressedAuth}
+                          onChange={(e) => setAddressedAuth(e.target.value)}
+                          className="w-full glass-input text-xs"
+                        >
+                          {hierarchy && hierarchy.length > 0 ? (
+                            <>
+                              {hierarchy.map(level => (
+                                <option key={level.level} value={level.designation}>{level.designation} ({level.department})</option>
+                              ))}
+                              <option value="Other">Other / Custom Authority</option>
+                            </>
+                          ) : (
+                            <>
+                              <option value="District Collector">District Collector & District Magistrate</option>
+                              <option value="Municipal Corporation Commissioner">Commissioner of Municipal Corporation</option>
+                              <option value="Divisional Engineer (Highways Department)">Divisional Engineer (Highways Department)</option>
+                              <option value="Chief Engineer (Water Supply and Sewage Board)">Chief Engineer (Water Supply & Sewage Board)</option>
+                              <option value="Superintending Engineer (Electricity Distribution)">Superintending Engineer (Electricity Distribution)</option>
+                              <option value="Other">Other / Custom Authority</option>
+                            </>
+                          )}
+                        </select>
+                      </div>
+
+                      {addressedAuth === 'Other' && (
+                        <div className="animate-fadeIn">
+                          <label className="block text-[10px] text-[var(--text-muted)] uppercase tracking-wider mb-1 font-bold">
+                            Enter Custom Addressed Authority Title
+                          </label>
+                          <input
+                            type="text"
+                            placeholder="e.g. Division Forest Officer, Wildlife Division"
+                            value={customAuth}
+                            onChange={(e) => setCustomAuth(e.target.value)}
+                            className="w-full p-2.5 text-xs rounded-lg glass-input focus:ring-1 focus:ring-emerald-500"
+                            required
+                          />
+                        </div>
+                      )}
+                    </div>
+
                     <div>
                       <label className="block text-[10px] text-[var(--text-muted)] uppercase tracking-wider mb-1 font-bold">
-                        Applicable TN Statutory Act
+                        Specific Action Timelines / Demands (Optional)
                       </label>
-                      <select
-                        value={statutoryAct}
-                        onChange={(e) => setStatutoryAct(e.target.value)}
-                        className="w-full glass-input text-xs"
-                      >
-                        <option value="district_municipalities">TN District Municipalities Act, 1920 (Ward roads/Drains)</option>
-                        <option value="chennai_corporation">Chennai City Municipal Corp. Act, 1919 (Chennai boundaries)</option>
-                        <option value="highways">Tamil Nadu Highways Act, 2001 (Highways/Bypasses)</option>
-                        <option value="water_drainage">TN Water Supply & Drainage Board Act, 1970 (Water/Sewage)</option>
-                        <option value="public_nuisance">Section 133 of CrPC / 152 of BNSS (Public Nuisance Order)</option>
-                      </select>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Section 3: Additional Demands */}
-                <div className="space-y-3 border-t border-gray-900 pt-3">
-                  <h4 className="text-[11px] uppercase tracking-wider font-extrabold text-emerald-400 flex items-center space-x-1.5 border-b border-gray-900 pb-1.5">
-                    <span>3. Additional Demands & Custom Instructions</span>
-                  </h4>
-                  
-                  {addressedAuth === 'Other' && (
-                    <div className="animate-fadeIn">
-                      <label className="block text-[10px] text-[var(--text-muted)] uppercase tracking-wider mb-1 font-bold">
-                        Enter Custom Addressed Authority Title
-                      </label>
-                      <input
-                        type="text"
-                        placeholder="e.g. Division Forest Officer, Wildlife Division"
-                        value={customAuth}
-                        onChange={(e) => setCustomAuth(e.target.value)}
+                      <textarea
+                        placeholder="e.g. requesting inspection within 48 hours, completion within 7 days, or installing hazard barricades immediately..."
+                        value={customDemands}
+                        onChange={(e) => setCustomDemands(e.target.value)}
+                        rows={3}
                         className="w-full p-2.5 text-xs rounded-lg glass-input focus:ring-1 focus:ring-emerald-500"
-                        required
                       />
                     </div>
-                  )}
 
-                  <div>
-                    <label className="block text-[10px] text-[var(--text-muted)] uppercase tracking-wider mb-1 font-bold">
-                      Specific Action Timelines / Demands (Optional)
-                    </label>
-                    <textarea
-                      placeholder="e.g. requesting inspection within 48 hours, completion within 7 days, or installing hazard barricades immediately..."
-                      value={customDemands}
-                      onChange={(e) => setCustomDemands(e.target.value)}
-                      rows={3}
-                      className="w-full p-2.5 text-xs rounded-lg glass-input focus:ring-1 focus:ring-emerald-500"
-                    />
-                  </div>
-                </div>
+                    <div className="flex justify-between items-center pt-3 border-t border-gray-900">
+                      <button
+                        type="button"
+                        onClick={() => setDocStep(2)}
+                        className="px-4 py-2 rounded-lg border border-[var(--border-default)] text-[var(--text-muted)] hover:text-[var(--text-primary)] text-xs font-semibold flex items-center gap-1 cursor-pointer"
+                      >
+                        <ChevronLeft size={14} />
+                        <span>Back</span>
+                      </button>
 
-                {/* Submit Action */}
-                <div className="flex justify-end space-x-2.5 pt-2 border-t border-gray-900 flex-shrink-0">
-                  <button
-                    type="button"
-                    onClick={resetDocState}
-                    className="px-4 py-2 rounded-lg border border-[var(--border-default)] text-[var(--text-muted)] hover:text-[var(--text-primary)] text-xs font-semibold"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={generatingDoc}
-                    className="px-5 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-gray-950 font-extrabold text-xs uppercase tracking-wider flex items-center space-x-2 shadow-lg shadow-emerald-950/20"
-                  >
-                    {generatingDoc ? (
-                      <>
-                        <Loader2 size={14} className="animate-spin" />
-                        <span>Drafting Representation...</span>
-                      </>
-                    ) : (
-                      <>
-                        <Sparkles size={14} />
-                        <span>Generate Legal Petition</span>
-                      </>
-                    )}
-                  </button>
-                </div>
-              </form>
+                      <button
+                        type="submit"
+                        disabled={generatingDoc}
+                        className="px-5 py-2.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-gray-950 font-extrabold text-xs uppercase tracking-wider flex items-center space-x-2 shadow-lg shadow-emerald-950/20 cursor-pointer"
+                      >
+                        {generatingDoc ? (
+                          <>
+                            <Loader2 size={14} className="animate-spin" />
+                            <span>Drafting Legal Document...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Sparkles size={14} />
+                            <span>Compile & Generate</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </form>
+                )}
+              </div>
             ) : (
               /* DRAFT PREVIEW AND REVIEW MODE */
               <div className="flex-1 flex flex-col min-h-0 space-y-4 overflow-hidden">
                 <div className="flex items-center justify-between bg-gray-950/50 p-2.5 rounded-lg border border-gray-900 flex-shrink-0">
-                  <span className="text-[11px] text-[var(--text-secondary)] font-semibold">
-                    State: AI Draft Completed. Verify and edit details below.
+                  <span className="text-[11px] text-[var(--text-secondary)] font-semibold flex items-center gap-1.5">
+                    <FileCheck size={14} className="text-emerald-400" />
+                    State: AI Draft Completed. Verify details below.
                   </span>
                   <div className="flex items-center space-x-2">
                     <button
                       onClick={() => setIsEditingDoc(!isEditingDoc)}
-                      className={`px-3 py-1 rounded text-[10px] font-bold uppercase transition-all flex items-center space-x-1 ${
+                      className={`px-3 py-1 rounded text-[10px] font-bold uppercase transition-all flex items-center space-x-1 cursor-pointer ${
                         isEditingDoc
                           ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
                           : 'bg-[var(--bg-elevated)] text-[var(--text-muted)] border border-[var(--border-default)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-overlay)]'
@@ -1159,23 +1507,23 @@ export default function StrikeRooms() {
                     </button>
                     <button
                       onClick={() => setGeneratedDoc(null)}
-                      className="px-3 py-1 rounded bg-rose-50 text-rose-600 border border-rose-200 hover:bg-rose-100 text-[10px] font-bold uppercase"
+                      className="px-3 py-1 rounded bg-rose-50 text-rose-600 border border-rose-200 hover:bg-rose-100 text-[10px] font-bold uppercase cursor-pointer"
                     >
                       Redraft
                     </button>
                   </div>
                 </div>
 
-                {/* Editor or Previewer Canvas */}
+                {/* Editor or A4 Previewer Canvas */}
                 <div className="flex-1 min-h-0 overflow-y-auto border border-gray-900 rounded-xl bg-gray-950/20 p-4">
                   {isEditingDoc ? (
                     <textarea
                       value={generatedDoc}
                       onChange={(e) => setGeneratedDoc(e.target.value)}
-                      className="w-full h-full min-h-[300px] bg-transparent text-[var(--text-primary)] font-mono text-xs border-0 outline-none focus:ring-0 p-0 resize-none leading-relaxed"
+                      className="w-full h-full min-h-[350px] bg-transparent text-[var(--text-primary)] font-mono text-xs border-0 outline-none focus:ring-0 p-0 resize-none leading-relaxed"
                     />
                   ) : (
-                    <div className="prose prose-invert max-w-none text-xs leading-relaxed space-y-3 font-serif selection:bg-emerald-950 selection:text-emerald-300">
+                    <div className="min-h-[297mm] font-serif leading-relaxed text-xs text-justify p-8 bg-white border border-gray-200 shadow-md printable-area text-gray-900 space-y-4 select-text">
                       {renderMarkdownText(generatedDoc)}
                     </div>
                   )}
@@ -1188,9 +1536,9 @@ export default function StrikeRooms() {
                     id="includeSignaturesOpt"
                     checked={includeSignatures}
                     onChange={(e) => setIncludeSignatures(e.target.checked)}
-                    className="rounded border border-[var(--border-default)] text-[var(--teal-500)] focus:ring-[var(--teal-500)]"
+                    className="rounded border border-[var(--border-default)] text-[var(--teal-500)] focus:ring-[var(--teal-500)] cursor-pointer"
                   />
-                  <label htmlFor="includeSignaturesOpt" className="text-[10px] text-gray-450 font-bold uppercase cursor-pointer selection:none">
+                  <label htmlFor="includeSignaturesOpt" className="text-[10px] text-gray-400 font-bold uppercase cursor-pointer select-none">
                     Include physical signature sheets log in final printable package
                   </label>
                 </div>
@@ -1200,7 +1548,7 @@ export default function StrikeRooms() {
                   <button
                     type="button"
                     onClick={resetDocState}
-                    className="px-4 py-2 rounded-lg border border-[var(--border-default)] text-[var(--text-muted)] hover:text-[var(--text-primary)] text-xs font-semibold"
+                    className="px-4 py-2 rounded-lg border border-[var(--border-default)] text-[var(--text-muted)] hover:text-[var(--text-primary)] text-xs font-semibold cursor-pointer"
                   >
                     Close
                   </button>
@@ -1208,21 +1556,21 @@ export default function StrikeRooms() {
                   <div className="flex items-center space-x-2">
                     <button
                       onClick={handleCopyToClipboard}
-                      className="px-3.5 py-2 rounded-lg bg-[var(--bg-elevated)] hover:bg-[var(--bg-overlay)] text-[var(--text-secondary)] text-xs font-bold border border-[var(--border-default)] flex items-center space-x-1.5 transition-all"
+                      className="px-3.5 py-2 rounded-lg bg-[var(--bg-elevated)] hover:bg-[var(--bg-overlay)] text-[var(--text-secondary)] text-xs font-bold border border-[var(--border-default)] flex items-center space-x-1.5 transition-all cursor-pointer"
                     >
                       <Copy size={13} />
                       <span>Copy Text</span>
                     </button>
                     <button
                       onClick={handleDownloadMarkdown}
-                      className="px-3.5 py-2 rounded-lg bg-[var(--bg-elevated)] hover:bg-[var(--bg-overlay)] text-[var(--text-secondary)] text-xs font-bold border border-[var(--border-default)] flex items-center space-x-1.5 transition-all"
+                      className="px-3.5 py-2 rounded-lg bg-[var(--bg-elevated)] hover:bg-[var(--bg-overlay)] text-[var(--text-secondary)] text-xs font-bold border border-[var(--border-default)] flex items-center space-x-1.5 transition-all cursor-pointer"
                     >
                       <Download size={13} />
                       <span>Download MD</span>
                     </button>
                     <button
                       onClick={handlePrintDoc}
-                      className="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-gray-950 font-extrabold text-xs uppercase tracking-wider flex items-center space-x-1.5 shadow-lg shadow-emerald-950/20"
+                      className="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-gray-950 font-extrabold text-xs uppercase tracking-wider flex items-center space-x-1.5 shadow-lg shadow-emerald-950/20 cursor-pointer"
                     >
                       <Printer size={13} />
                       <span>Print / Save PDF</span>

@@ -1,0 +1,62 @@
+{
+  "electricity": {
+    "phone": [
+      "1912"
+    ],
+    "email": "support.electricity@tn.gov.in",
+    "designation": "Superintending Engineer, TANGEDCO {{district}}",
+    "officerName": "Superintending Engineer, {{district}}",
+    "address": "TANGEDCO Office, {{district}}, Tamil Nadu",
+    "portal": "https://www.tangedco.gov.in"
+  },
+  "water": {
+    "phone": [
+      "044-28454545"
+    ],
+    "email": "support.water@tn.gov.in",
+    "designation": "Executive Engineer, TWAD Board {{district}}",
+    "officerName": "Executive Engineer (Water), {{district}}",
+    "address": "TWAD Board Office, {{district}}, Tamil Nadu",
+    "portal": "https://www.twadboard.gov.in"
+  },
+  "roads": {
+    "phone": [
+      "044-25362048"
+    ],
+    "email": "support.roads@tn.gov.in",
+    "designation": "Executive Engineer, Highways Department {{district}}",
+    "officerName": "Executive Engineer (Highways), {{district}}",
+    "address": "Highways Division Office, {{district}}, Tamil Nadu",
+    "portal": "https://www.highways.tn.gov.in"
+  },
+  "police": {
+    "phone": [
+      "100"
+    ],
+    "email": "sp{{districtLowerClean}}@tn.gov.in",
+    "designation": "Superintendent of Police, {{district}} District",
+    "officerName": "Superintendent of Police, {{district}}",
+    "address": "District Police Office, {{district}}, Tamil Nadu",
+    "portal": "https://www.tnpolice.gov.in"
+  },
+  "sanitation": {
+    "phone": [
+      "1913"
+    ],
+    "email": "commissioner@{{districtLowerClean}}corporation.gov.in",
+    "designation": "Municipal Commissioner / Officer, {{district}}",
+    "officerName": "Municipal Commissioner, {{district}}",
+    "address": "Municipal Corporation Office, {{district}}, Tamil Nadu",
+    "portal": "https://www.tnurban.tn.gov.in"
+  },
+  "municipal": {
+    "phone": [
+      "1913"
+    ],
+    "email": "commissioner@{{districtLowerClean}}corporation.gov.in",
+    "designation": "Municipal Commissioner / Officer, {{district}}",
+    "officerName": "Municipal Commissioner, {{district}}",
+    "address": "Municipal Corporation Office, {{district}}, Tamil Nadu",
+    "portal": "https://www.tnurban.tn.gov.in"
+  }
+}
