@@ -330,11 +330,11 @@ export default function Landing() {
 
       <RevealOnScroll className="py-12">
         <div className="text-center mb-10 max-w-3xl mx-auto py-4">
-          <div className="section-label mb-2 text-teal-400 dark:text-teal-300 font-bold">Real-Time Insights</div>
-          <h2 className="font-display text-2xl md:text-3xl font-extrabold text-white">
+          <div className="section-label mb-2 text-teal-600 dark:text-teal-400 font-bold">Real-Time Insights</div>
+          <h2 className="font-display text-2xl md:text-3xl font-extrabold text-[var(--text-primary)]">
             Civic & Infrastructure Intelligence Hub
           </h2>
-          <p className="text-xs text-slate-300 mt-2 leading-relaxed">
+          <p className="text-xs text-[var(--text-secondary)] mt-2 leading-relaxed">
             Stay updated with live infrastructure reports, government projects, and local news across Tamil Nadu.
           </p>
         </div>
@@ -714,8 +714,8 @@ export default function Landing() {
       {/* ── HOW IT WORKS ── */}
       <RevealOnScroll className="py-12">
         <div className="text-center mb-10 max-w-3xl mx-auto py-4">
-          <div className="section-label mb-2 text-teal-400 dark:text-teal-300 font-bold">Process</div>
-          <h2 className="font-display text-2xl md:text-3xl font-extrabold text-white">
+          <div className="section-label mb-2 text-teal-600 dark:text-teal-400 font-bold">Process</div>
+          <h2 className="font-display text-2xl md:text-3xl font-extrabold text-[var(--text-primary)]">
             How CivicTN Works
           </h2>
         </div>
@@ -754,8 +754,8 @@ export default function Landing() {
       {/* ── FEATURE GRID ── */}
       <RevealOnScroll className="py-12">
         <div className="text-center mb-10 max-w-3xl mx-auto py-4">
-          <div className="section-label mb-2 text-teal-400 dark:text-teal-300 font-bold">Platform Capabilities</div>
-          <h2 className="font-display text-2xl md:text-3xl font-extrabold text-white">
+          <div className="section-label mb-2 text-teal-600 dark:text-teal-400 font-bold">Platform Capabilities</div>
+          <h2 className="font-display text-2xl md:text-3xl font-extrabold text-[var(--text-primary)]">
             Built for Impact
           </h2>
         </div>
