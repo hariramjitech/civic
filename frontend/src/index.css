@@ -14,11 +14,11 @@
   /* Layout */
   --nav-height: 68px;
 
-  /* Background layers - Glassmorphism Light Theme */
-  --bg-base: transparent;
-  --bg-surface: rgba(255, 255, 255, 0.92);
-  --bg-elevated: rgba(255, 255, 255, 0.84);
-  --bg-overlay: rgba(255, 255, 255, 0.88);
+  /* Background layers - Light Theme (Solid for maximum contrast) */
+  --bg-base: #f8fafc;
+  --bg-surface: #ffffff;
+  --bg-elevated: #f8fafc;
+  --bg-overlay: #f1f5f9;
 
   /* Borders */
   --border-subtle: rgba(255, 255, 255, 0.2);
@@ -132,16 +132,11 @@
     inset: 0;
     z-index: -1;
     background-color: #0b1519;
-    background-image:
-      linear-gradient(
-        160deg,
-        rgba(11, 21, 25, 0.35) 0%,
-        rgba(8, 14, 18, 0.45) 100%
-      ),
-      url('/civic_pattern_bg.png');
+    background-image: url('/civic_pattern_bg.png');
     background-size: cover;
     background-position: center center;
     background-repeat: no-repeat;
+    opacity: 0.12; /* Ambient grid lines (12% opacity) */
     pointer-events: none;
     transform: translate3d(0, 0, 0); /* Force GPU acceleration */
   }
@@ -1043,10 +1038,10 @@ html[data-theme='dark'] .leaflet-tile-pane,
 /* 1. Dark Theme Overrides */
 html[data-theme='dark'],
 :root[data-theme='dark'] {
-  --bg-base: transparent;
-  --bg-surface: rgba(15, 23, 42, 0.92);
-  --bg-elevated: rgba(30, 41, 59, 0.84);
-  --bg-overlay: rgba(51, 65, 85, 0.88);
+  --bg-base: #020617;
+  --bg-surface: #0f172a;
+  --bg-elevated: #1e293b;
+  --bg-overlay: #334155;
 
   --border-subtle: rgba(255, 255, 255, 0.08);
   --border-default: rgba(255, 255, 255, 0.15);
@@ -1091,14 +1086,7 @@ html[data-theme='dark'],
 
 html[data-theme='dark'] body::before,
 :root[data-theme='dark'] body::before {
-  background-color: #020608;
-  background-image:
-    linear-gradient(
-      160deg,
-      rgba(2, 6, 8, 0.75) 0%,
-      rgba(2, 6, 8, 0.85) 100%
-    ),
-    url('/civic_pattern_bg.png');
+  opacity: 0.08; /* Subtler grid lines in dark mode (8% opacity) */
 }
 
 /* 2. High Contrast Theme Override */

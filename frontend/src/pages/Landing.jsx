@@ -232,7 +232,7 @@ export default function Landing() {
         initial={{ opacity: 0, y: 24 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.55, ease: [0.4, 0, 0.2, 1] }}
-        className="text-center py-14 md:py-20 px-6 md:px-12 rounded-3xl bg-white/40 dark:bg-slate-950/45 backdrop-blur-md border border-white/20 dark:border-slate-800/40 shadow-xl mb-12 mt-2"
+        className="text-center py-16 md:py-24 px-6 md:px-12 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-md mb-16 mt-4"
       >
         {/* Platform badge */}
         <motion.div
@@ -298,10 +298,9 @@ export default function Landing() {
       <StaggerContainer className="metrics-grid" inView={true}>
         {METRICS.map((m, i) => (
           <StaggerItem key={i}>
-            <div className="bg-[var(--bg-surface)] py-6 px-4 text-center border-b md:border-b-0 md:border-r border-[var(--border-default)] last:border-none">
+            <div className="bg-white dark:bg-slate-900 py-6 px-4 text-center border-b md:border-b-0 md:border-r border-slate-200/80 dark:border-slate-800 last:border-none">
               <div
-                className="font-display text-2xl sm:text-3xl font-black mb-1"
-                style={{ color: m.color }}
+                className="font-display text-2xl sm:text-3xl font-black mb-1 text-[var(--teal-500)] dark:text-[var(--teal-400)]"
               >
                 {liveStats && i === 0 ? `${liveStats.districts || 25}+` : m.value}
               </div>
@@ -311,9 +310,8 @@ export default function Landing() {
         ))}
       </StaggerContainer>
 
-      {/* ── CIVIC & INFRASTRUCTURE INTELLIGENCE HUB ── */}
-      <RevealOnScroll className="my-16">
-        <div className="text-center mb-10 bg-white/40 dark:bg-slate-950/45 backdrop-blur-md border border-white/20 dark:border-slate-800/40 px-6 py-6 rounded-2xl max-w-2xl mx-auto shadow-md">
+      <RevealOnScroll className="py-16">
+        <div className="text-center mb-10 max-w-3xl mx-auto py-4">
           <div className="section-label mb-2">Real-Time Insights</div>
           <h2 className="font-display text-2xl md:text-3xl font-extrabold text-[var(--text-primary)]">
             Civic & Infrastructure Intelligence Hub
@@ -324,7 +322,7 @@ export default function Landing() {
         </div>
 
         {/* Dashboard Box */}
-        <div className="card p-6 md:p-8 relative overflow-hidden bg-gradient-to-br from-[var(--bg-surface)] to-[var(--bg-elevated)] border border-[var(--border-default)] rounded-2xl shadow-md">
+        <div className="card p-6 md:p-8 relative overflow-hidden shadow-md">
 
           {/* Guest or Logged In without location */}
           {(!isSignedIn || locationStatus === 'idle') && (
@@ -696,8 +694,8 @@ export default function Landing() {
       </RevealOnScroll>
 
       {/* ── HOW IT WORKS ── */}
-      <RevealOnScroll className="mb-16">
-        <div className="text-center mb-10 bg-white/40 dark:bg-slate-950/45 backdrop-blur-md border border-white/20 dark:border-slate-800/40 px-6 py-5 rounded-2xl max-w-md mx-auto shadow-md">
+      <RevealOnScroll className="py-16">
+        <div className="text-center mb-10 max-w-2xl mx-auto py-4">
           <div className="section-label mb-2">Process</div>
           <h2 className="font-display text-2xl md:text-3xl font-extrabold text-[var(--text-primary)]">
             How CivicTN Works
@@ -736,8 +734,8 @@ export default function Landing() {
       </RevealOnScroll>
 
       {/* ── FEATURE GRID ── */}
-      <RevealOnScroll className="mb-16">
-        <div className="text-center mb-10 bg-white/40 dark:bg-slate-950/45 backdrop-blur-md border border-white/20 dark:border-slate-800/40 px-6 py-5 rounded-2xl max-w-md mx-auto shadow-md">
+      <RevealOnScroll className="py-16">
+        <div className="text-center mb-10 max-w-2xl mx-auto py-4">
           <div className="section-label mb-2">Platform Capabilities</div>
           <h2 className="font-display text-2xl md:text-3xl font-extrabold text-[var(--text-primary)]">
             Built for Impact
@@ -783,7 +781,7 @@ export default function Landing() {
       </RevealOnScroll>
 
       {/* ── ESCALATION LEVELS INFO ── */}
-      <RevealOnScroll className="mb-16" delay={0.05}>
+      <RevealOnScroll className="py-16" delay={0.05}>
         <div className="card p-6 md:p-8">
           <div className="flex items-center gap-2 mb-4">
             <TrendingUp size={16} className="text-[var(--teal-500)]" />
@@ -827,8 +825,8 @@ export default function Landing() {
         </div>
       </RevealOnScroll>
 
-      <RevealOnScroll delay={0.08}>
-        <section className="text-center py-12 px-6 bg-gradient-to-br from-[var(--teal-glow)] to-transparent border border-[var(--border-default)] rounded-2xl shadow-sm">
+      <RevealOnScroll className="py-16" delay={0.08}>
+        <section className="text-center py-16 px-6 bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-3xl shadow-md">
           <h2 className="font-display text-2xl font-extrabold text-[var(--text-primary)] mb-2.5">
             Ready to Make Your City Better?
           </h2>
