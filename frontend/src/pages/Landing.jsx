@@ -266,7 +266,7 @@ export default function Landing() {
           className="font-display text-4xl sm:text-5xl md:text-6xl font-black tracking-tight leading-none text-[var(--text-primary)] mb-5"
         >
           Report Civic Issues.
-          <span className="block mt-1 bg-gradient-to-r from-[var(--teal-400)] via-[var(--teal-500)] to-[var(--teal-600)] bg-clip-text text-transparent">
+          <span className="block mt-1 bg-gradient-to-r from-teal-600 via-teal-700 to-teal-800 dark:from-teal-300 dark:via-teal-400 dark:to-teal-500 bg-clip-text text-transparent">
             Anonymously. Instantly.
           </span>
         </motion.h1>
