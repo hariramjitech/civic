@@ -32,22 +32,50 @@ export default function Navbar({ role }) {
   ];
 
   return (
-    <header className="fixed top-0 left-0 right-0 z-50 flex justify-center px-4 md:px-8 pointer-events-none">
-      {/* Floating Pill Container Docked to Top */}
+    <header className="fixed top-4 left-0 right-0 z-50 flex justify-center px-4 md:px-8 pointer-events-none">
+      {/* Floating Pill Container */}
       <div
-        className={`w-full max-w-6xl rounded-b-[2rem] bg-white/82 dark:bg-slate-900/82 backdrop-blur-md border-b border-l border-r border-slate-200/80 dark:border-slate-800/80 shadow-[0_12px_40px_rgba(0,0,0,0.10)] pointer-events-auto transition-all duration-300 ${
-          scrolled ? 'py-3 px-6 md:px-8' : 'py-4 px-8 md:px-10'
+        className={`w-full max-w-6xl rounded-2xl bg-white/75 dark:bg-slate-900/75 border border-slate-200/50 dark:border-slate-800/50 backdrop-blur-lg shadow-lg pointer-events-auto transition-all duration-300 ${
+          scrolled
+            ? 'py-2.5 px-5 md:px-6 shadow-xl bg-white/85 dark:bg-slate-900/85 backdrop-blur-xl'
+            : 'py-3.5 px-6 md:px-8 shadow-md'
         } flex items-center justify-between relative`}
       >
-        {/* Left Side: Navigation Links (Desktop) */}
-        <nav className="hidden lg:flex items-center gap-6 z-10" aria-label="Main navigation">
+        {/* Left Side: Logo */}
+        <div className="flex-1 flex items-center justify-start z-10">
+          <Link
+            to="/"
+            className="flex items-center gap-2.5 no-underline group"
+            aria-label="CivicTN — Home"
+          >
+            <div
+              className="w-8 h-8 rounded-xl flex items-center justify-center shadow-md group-hover:rotate-6 transition-transform duration-300"
+              style={{ background: 'linear-gradient(135deg, var(--teal-500), var(--teal-400))' }}
+            >
+              <PlusCircle size={16} className="text-white" />
+            </div>
+            <div className="flex flex-col">
+              <span
+                className="font-display font-black text-base tracking-tight text-slate-900 dark:text-white leading-none"
+              >
+                CivicTN
+              </span>
+              <span className="text-[7.5px] font-bold tracking-widest text-slate-400 dark:text-slate-500 uppercase mt-0.5">
+                Solid Infrastructure
+              </span>
+            </div>
+          </Link>
+        </div>
+
+        {/* Center: Navigation Links (Desktop) */}
+        <nav className="hidden lg:flex items-center justify-center gap-7 z-10" aria-label="Main navigation">
           {links.map((link) => {
             const active = isActive(link.path);
             return (
               <Link
                 key={link.path}
                 to={link.path}
-                className="relative text-sm font-semibold tracking-tight no-underline transition-colors duration-200 text-slate-700 dark:text-slate-300 hover:text-slate-950 dark:hover:text-white flex items-center gap-1.5 group py-1"
+                className="relative text-sm font-semibold tracking-tight no-underline transition-colors duration-200 text-slate-600 dark:text-slate-400 hover:text-slate-950 dark:hover:text-white flex items-center gap-1.5 group py-1"
                 aria-current={active ? 'page' : undefined}
               >
                 <span>{link.label}</span>
@@ -71,40 +99,13 @@ export default function Navbar({ role }) {
           })}
         </nav>
 
-        {/* Center: Logo */}
-        <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-10">
-          <Link
-            to="/"
-            className="flex items-center gap-2 no-underline group"
-            aria-label="CivicTN — Home"
-          >
-            <div
-              className="w-7 h-7 rounded-lg flex items-center justify-center shadow-md group-hover:rotate-6 transition-transform duration-200"
-              style={{ background: 'linear-gradient(135deg, var(--teal-500), var(--teal-400))' }}
-            >
-              <PlusCircle size={15} className="text-white" />
-            </div>
-            <div className="flex flex-col">
-              <span
-                className="font-display font-black text-base tracking-tight text-slate-900 dark:text-white leading-none"
-              >
-                CivicTN
-              </span>
-              <span className="text-[7.5px] font-bold tracking-widest text-slate-400 dark:text-slate-500 uppercase mt-0.5">
-                Solid Infrastructure
-              </span>
-            </div>
-          </Link>
-        </div>
-
         {/* Right Side: Auth Actions & Notification */}
-        <div className="flex items-center gap-3.5 z-10">
-
+        <div className="flex-1 flex items-center justify-end gap-3.5 z-10">
           <SignedIn>
             {/* Notification Bell */}
             <div className="relative">
               <button
-                className="hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full p-2 cursor-pointer flex items-center justify-center transition-colors relative focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-1"
+                className="hover:bg-slate-100/80 dark:hover:bg-slate-800/80 rounded-full p-2 cursor-pointer flex items-center justify-center transition-colors relative focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-1"
                 style={{ outline: 'none' }}
                 aria-label="Notifications"
               >
@@ -116,11 +117,11 @@ export default function Navbar({ role }) {
             </div>
 
             {/* Clerk Avatar trigger */}
-            <div className="flex items-center gap-2 bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700/50 rounded-full py-0.5 pr-2.5 pl-1">
+            <div className="flex items-center gap-2 bg-slate-50/50 dark:bg-slate-800/50 border border-slate-200/40 dark:border-slate-700/40 rounded-full py-0.5 pr-2.5 pl-1">
               <UserButton
                 appearance={{
                   elements: {
-                    userButtonAvatarBox: 'w-6 h-6 border shadow-sm',
+                    userButtonAvatarBox: 'w-6 h-6 border shadow-sm border-slate-200/50 dark:border-slate-700/50',
                   }
                 }}
               />
@@ -145,7 +146,7 @@ export default function Navbar({ role }) {
             >
               <Link
                 to="/submit"
-                className="btn btn-primary rounded-full text-xs px-5 py-2.5 flex items-center gap-1.5 no-underline"
+                className="btn btn-primary rounded-full text-xs px-4.5 py-2 flex items-center gap-1.5 no-underline shadow-teal"
                 aria-label="Report a civic issue"
               >
                 Report Issue
@@ -156,7 +157,7 @@ export default function Navbar({ role }) {
 
           <SignedOut>
             <SignInButton mode="modal">
-              <button className="text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white text-xs font-bold px-2 py-1 transition-colors cursor-pointer focus-visible:outline-none">
+              <button className="text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white text-xs font-bold px-2.5 py-1.5 transition-colors cursor-pointer focus-visible:outline-none">
                 Sign in
               </button>
             </SignInButton>
@@ -164,7 +165,7 @@ export default function Navbar({ role }) {
               <motion.button
                 whileHover={{ scale: 1.03 }}
                 whileTap={{ scale: 0.97 }}
-                className="btn btn-primary rounded-full px-5 py-2.5 text-xs font-bold flex items-center gap-1 cursor-pointer"
+                className="btn btn-primary rounded-full px-4.5 py-2 text-xs font-bold flex items-center gap-1 cursor-pointer shadow-teal"
                 aria-label="Join the CivicTN platform"
               >
                 Join Platform
@@ -176,7 +177,7 @@ export default function Navbar({ role }) {
           {/* Mobile hamburger */}
           <button
             onClick={() => setIsOpen(!isOpen)}
-            className="hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full p-2 cursor-pointer flex lg:hidden items-center justify-center transition-colors focus-visible:outline-none"
+            className="hover:bg-slate-100/80 dark:hover:bg-slate-800/80 rounded-full p-2 cursor-pointer flex lg:hidden items-center justify-center transition-colors focus-visible:outline-none"
             aria-label={isOpen ? 'Close navigation menu' : 'Open navigation menu'}
             aria-expanded={isOpen}
           >
@@ -189,11 +190,11 @@ export default function Navbar({ role }) {
       <AnimatePresence>
         {isOpen && (
           <motion.div
-            initial={{ opacity: 0, y: -20 }}
+            initial={{ opacity: 0, y: -15 }}
             animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -20 }}
+            exit={{ opacity: 0, y: -15 }}
             transition={{ duration: 0.2, ease: 'easeOut' }}
-            className="absolute top-20 left-4 right-4 bg-white/95 dark:bg-slate-900/97 backdrop-blur-lg border border-slate-200/80 dark:border-slate-800 rounded-3xl shadow-xl p-4 space-y-1 pointer-events-auto overflow-hidden"
+            className="absolute top-[4.5rem] left-4 right-4 bg-white/90 dark:bg-slate-900/90 backdrop-blur-lg border border-slate-200/50 dark:border-slate-800/50 rounded-2xl shadow-2xl p-4 space-y-1.5 pointer-events-auto overflow-hidden"
             role="navigation"
             aria-label="Mobile navigation"
           >
@@ -205,7 +206,7 @@ export default function Navbar({ role }) {
                   <Link
                     to={link.path}
                     aria-current={active ? 'page' : undefined}
-                    className={`flex items-center gap-3 px-4 py-2.5 rounded-2xl text-sm font-semibold transition-colors no-underline ${
+                    className={`flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm font-semibold transition-colors no-underline ${
                       active
                         ? 'text-[var(--teal-600)] bg-[var(--teal-glow)]'
                         : 'text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 hover:text-slate-950 dark:hover:text-white'

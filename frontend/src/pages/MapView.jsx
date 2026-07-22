@@ -3,7 +3,10 @@ import { useCivic } from '../context/CivicContext';
 import api from '../lib/api';
 import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
 import L from 'leaflet';
-import { MapPin, ExternalLink, BarChart2, Info, RefreshCw } from 'lucide-react';
+import {
+  MapPin, ExternalLink, RefreshCw, Calendar, ChevronDown,
+  Navigation, Flame, AlertTriangle, ShieldCheck, Layers, Eye
+} from 'lucide-react';
 import { Link } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import SeverityBadge from '../components/SeverityBadge';
@@ -16,13 +19,13 @@ L.Icon.Default.mergeOptions({
   shadowUrl:     'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
 });
 
-const SEV_COLORS = { critical: '#f43f5e', high: '#f97316', medium: '#eab308', low: '#22c55e' };
+const SEV_COLORS = { critical: '#e11d48', high: '#ea580c', medium: '#ca8a04', low: '#16a34a' };
 
 const createIcon = (severity) => L.divIcon({
   className: '',
-  html: `<div style="width:14px;height:14px;border-radius:50%;background:${SEV_COLORS[severity] || '#14b8a6'};border:2.5px solid rgba(255,255,255,0.9);box-shadow:0 0 10px ${SEV_COLORS[severity] || '#14b8a6'}70;"></div>`,
-  iconSize: [14, 14],
-  iconAnchor: [7, 7],
+  html: `<div style="width:16px;height:16px;border-radius:50%;background:${SEV_COLORS[severity] || '#0d9488'};border:3px solid #ffffff;box-shadow:0 2px 10px ${SEV_COLORS[severity] || '#0d9488'}80;"></div>`,
+  iconSize: [16, 16],
+  iconAnchor: [8, 8],
 });
 
 function MapSync({ center, zoom }) {
@@ -36,7 +39,7 @@ function MapSync({ center, zoom }) {
 const CATEGORIES = ['', 'roads', 'sanitation', 'water', 'electricity', 'municipal', 'other'];
 const SEVERITIES  = ['', 'critical', 'high', 'medium', 'low'];
 
-const getPlainTextPreview = (value = '', maxLength = 100) => {
+const getPlainTextPreview = (value = '', maxLength = 90) => {
   const plain = String(value)
     .replace(/\*\*(.*?)\*\*/g, '$1')
     .replace(/\*(.*?)\*/g, '$1')
@@ -50,8 +53,9 @@ const getPlainTextPreview = (value = '', maxLength = 100) => {
 export default function MapView() {
   const [points, setPoints]             = useState([]);
   const [loading, setLoading]           = useState(true);
-  const [filterCat,  setFilterCat]      = useState('');
-  const [filterSev,  setFilterSev]      = useState('');
+  const [filterCat, setFilterCat]       = useState('');
+  const [filterSev, setFilterSev]       = useState('');
+  const [activeTab, setActiveTab]       = useState('');
   const [focus, setFocus]               = useState([13.0827, 80.2707]);
   const [zoom, setZoom]                 = useState(10);
   const [selectedPoint, setSelectedPoint] = useState(null);
@@ -73,22 +77,13 @@ export default function MapView() {
 
   useEffect(() => { fetchPoints(); }, []);
 
-  const filtered = points.filter(p =>
-    (!filterCat || p.category === filterCat) &&
-    (!filterSev || p.severity === filterSev)
-  );
+  const filtered = points.filter(p => {
+    if (filterCat && p.category !== filterCat) return false;
+    if (filterSev && p.severity !== filterSev) return false;
+    return true;
+  });
 
-  // Compute district stats from filtered points
-  const districtStats = filtered.reduce((acc, p) => {
-    if (!acc[p.district]) acc[p.district] = { count: 0, resolved: 0 };
-    acc[p.district].count++;
-    if (p.status === 'resolved') acc[p.district].resolved++;
-    return acc;
-  }, {});
-
-  const topDistricts = Object.entries(districtStats)
-    .sort((a, b) => b[1].count - a[1].count)
-    .slice(0, 8);
+  const selectedPost = points.find(p => p._id === selectedPoint);
 
   const handleFocus = (p) => {
     const [lng, lat] = p.location.coordinates;
@@ -102,142 +97,92 @@ export default function MapView() {
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.35, ease: [0.4, 0, 0.2, 1] }}
-      style={{ display: 'flex', flexDirection: 'column', gap: 16, height: 'calc(100vh - 120px)', minHeight: 600 }}
+      className="max-w-7xl mx-auto space-y-6 pb-12"
     >
+      {/* ── UNIFIED CARD CONTAINER (Matching Image 1 Reference UI) ── */}
+      <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-3xl p-6 sm:p-8 shadow-xl space-y-6">
 
-      {/* ── HEADER + FILTERS ── */}
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
-        <div>
-          <h1 style={{
-            fontFamily: 'var(--font-display)', fontSize: 22, fontWeight: 800,
-            background: 'linear-gradient(135deg, var(--teal-400), #6ee7b7)',
-            WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text', marginBottom: 2,
-          }}>
-            GIS Infrastructure Map
-          </h1>
-          <p style={{ fontSize: 12, color: 'var(--text-muted)' }}>Tamil Nadu — live complaint heatmap</p>
-        </div>
+        {/* Top Header & Filter Controls Row */}
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <h1 className="font-display font-black text-2xl tracking-tight text-slate-900 dark:text-white">
+              Location
+            </h1>
+            <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
+              {filtered.length} Live
+            </span>
+          </div>
 
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-          <select value={filterCat} onChange={e => setFilterCat(e.target.value)} className="glass-input" style={{ width: 'auto', padding: '7px 32px 7px 10px', fontSize: 12 }}>
-            <option value="">All Categories</option>
-            {CATEGORIES.filter(Boolean).map(c => <option key={c} value={c}>{c.charAt(0).toUpperCase() + c.slice(1)}</option>)}
-          </select>
-          <select value={filterSev} onChange={e => setFilterSev(e.target.value)} className="glass-input" style={{ width: 'auto', padding: '7px 32px 7px 10px', fontSize: 12 }}>
-            <option value="">All Severities</option>
-            {SEVERITIES.filter(Boolean).map(s => <option key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1)}</option>)}
-          </select>
-          <button onClick={fetchPoints} className="btn btn-secondary btn-sm"><RefreshCw size={13} /></button>
-        </div>
-      </div>
+          {/* Time & Category Filter Pills */}
+          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 lg:pb-0 no-scrollbar">
+            {[
+              { id: '', label: 'All Incidents' },
+              { id: 'roads', label: 'Roads' },
+              { id: 'sanitation', label: 'Sanitation' },
+              { id: 'water', label: 'Water' },
+              { id: 'electricity', label: 'Electricity' },
+              { id: 'municipal', label: 'Municipal' },
+            ].map(tab => (
+              <button
+                key={tab.id}
+                onClick={() => setFilterCat(tab.id)}
+                className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all duration-200 cursor-pointer ${
+                  filterCat === tab.id
+                    ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 shadow-sm'
+                    : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200/70 dark:hover:bg-slate-700/70'
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
 
-      {/* ── MAIN SPLIT LAYOUT ── */}
-      <div className="map-split-layout">
-
-        {/* ── LEFT SIDEBAR ── */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12, minHeight: 0, overflow: 'hidden' }}>
-
-          {/* Legend */}
-          <div className="card" style={{ padding: 14, flexShrink: 0 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10 }}>
-              <Info size={13} style={{ color: 'var(--teal-400)' }} />
-              <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-primary)' }}>Map Legend</span>
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
-              {Object.entries(SEV_COLORS).map(([sev, color]) => (
-                <div key={sev} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12 }}>
-                  <div style={{ width: 10, height: 10, borderRadius: '50%', background: color, boxShadow: `0 0 6px ${color}60`, flexShrink: 0 }} />
-                  <span style={{ color: 'var(--text-secondary)', textTransform: 'capitalize' }}>{sev}</span>
-                </div>
+          {/* Dropdown Selects & Refresh */}
+          <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
+            <select
+              value={filterSev}
+              onChange={e => setFilterSev(e.target.value)}
+              className="glass-input text-xs py-1.5 px-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-300 outline-none cursor-pointer"
+            >
+              <option value="">All Severities</option>
+              {SEVERITIES.filter(Boolean).map(s => (
+                <option key={s} value={s}>
+                  {s.charAt(0).toUpperCase() + s.slice(1)} Severity
+                </option>
               ))}
-            </div>
-          </div>
+            </select>
 
-          {/* District stats */}
-          {topDistricts.length > 0 && (
-            <div className="card" style={{ padding: 14, flexShrink: 0 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10 }}>
-                <BarChart2 size={13} style={{ color: 'var(--teal-400)' }} />
-                <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-primary)' }}>Top Districts</span>
-              </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {topDistricts.map(([dist, data]) => {
-                  const resolvedPct = data.count > 0 ? Math.round((data.resolved / data.count) * 100) : 0;
-                  return (
-                    <div key={dist}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, marginBottom: 3 }}>
-                        <span style={{ fontWeight: 600, color: 'var(--text-secondary)' }}>{dist}</span>
-                        <span style={{ color: 'var(--text-muted)' }}>{data.count}</span>
-                      </div>
-                      <div className="progress-bar" style={{ height: 4 }}>
-                        <div className="progress-bar-fill" style={{
-                          width: `${resolvedPct}%`,
-                          background: resolvedPct > 50 ? '#22c55e' : 'var(--teal-500)',
-                        }} />
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
-          {/* Incident list */}
-          <div className="card" style={{ padding: 14, flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-              <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-primary)' }}>Incidents</span>
-              <span style={{ fontSize: 10, background: 'rgba(20,184,166,0.1)', color: 'var(--teal-400)', border: '1px solid rgba(20,184,166,0.2)', padding: '1px 6px', borderRadius: 4, fontWeight: 700 }}>
-                {filtered.length} Live
-              </span>
-            </div>
-            {loading ? (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {[1,2,3,4].map(n => <div key={n} className="skeleton" style={{ height: 40 }} />)}
-              </div>
-            ) : (
-              <div style={{ overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: 6 }}>
-                {filtered.map(p => (
-                  <button
-                    key={p._id}
-                    onClick={() => handleFocus(p)}
-                    style={{
-                      textAlign: 'left', padding: '10px 12px', borderRadius: 8,
-                      border: `1px solid ${selectedPoint === p._id ? 'rgba(20,184,166,0.35)' : 'var(--border-subtle)'}`,
-                      background: selectedPoint === p._id ? 'rgba(20,184,166,0.06)' : 'var(--bg-elevated)',
-                      cursor: 'pointer', transition: 'all 0.15s', width: '100%',
-                    }}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 3 }}>
-                      <div style={{
-                        width: 7, height: 7, borderRadius: '50%', flexShrink: 0,
-                        background: SEV_COLORS[p.severity] || 'var(--teal-400)',
-                      }} />
-                      <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {p.title}
-                      </span>
-                    </div>
-                    <div style={{ fontSize: 10, color: 'var(--text-muted)', display: 'flex', gap: 8, paddingLeft: 13 }}>
-                      <span style={{ textTransform: 'capitalize' }}>{p.category}</span>
-                      <span>·</span>
-                      <span style={{ textTransform: 'uppercase', fontSize: 9 }}>{p.status?.replace('_',' ')}</span>
-                    </div>
-                  </button>
-                ))}
-              </div>
-            )}
+            <button
+              onClick={fetchPoints}
+              className="btn btn-secondary btn-sm rounded-xl py-1.5 px-3 cursor-pointer"
+              title="Refresh Map Data"
+            >
+              <RefreshCw size={13} className={loading ? 'animate-spin' : ''} />
+            </button>
           </div>
         </div>
 
-        {/* ── MAP ── */}
-        <div style={{ borderRadius: 12, overflow: 'hidden', border: '1px solid var(--border-subtle)', position: 'relative' }}>
+        {/* Location Address Bar (Matching Blue MapPin address bar in Image 1) */}
+        <div className="flex items-center gap-2 text-xs font-medium text-teal-600 dark:text-teal-400 bg-teal-50/60 dark:bg-teal-950/30 border border-teal-100 dark:border-teal-900/50 rounded-xl px-4 py-2.5">
+          <MapPin size={16} className="text-teal-500 flex-shrink-0" />
+          <span className="truncate">
+            {selectedPost
+              ? `${selectedPost.title} — ${selectedPost.district || 'Tamil Nadu, India'}`
+              : 'Coimbatore & Chennai Region, Tamil Nadu 641001, India'}
+          </span>
+        </div>
+
+        {/* Embedded Full-Width Map Container */}
+        <div className="relative rounded-2xl overflow-hidden border border-slate-200/80 dark:border-slate-800 shadow-inner h-[340px] md:h-[400px]">
           {loading && (
-            <div style={{
-              position: 'absolute', inset: 0, zIndex: 1000,
-              background: 'var(--bg-translucent)', display: 'flex', alignItems: 'center', justifyContent: 'center',
-            }}>
-              <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>Loading map data...</span>
+            <div className="absolute inset-0 z-20 bg-white/70 dark:bg-slate-900/70 backdrop-blur-sm flex items-center justify-center">
+              <div className="flex items-center gap-2 text-xs font-semibold text-slate-600 dark:text-slate-400">
+                <RefreshCw size={14} className="animate-spin text-teal-500" />
+                <span>Loading map layer...</span>
+              </div>
             </div>
           )}
+
           <MapContainer center={focus} zoom={zoom} style={{ height: '100%', width: '100%' }}>
             <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
             <MapSync center={focus} zoom={zoom} />
@@ -247,15 +192,15 @@ export default function MapView() {
               return (
                 <Marker key={p._id} position={[lat, lng]} icon={createIcon(p.severity)}>
                   <Popup>
-                    <div style={{ fontSize: 12, minWidth: 160, fontFamily: 'var(--font-sans)' }}>
-                      <div style={{ fontWeight: 700, marginBottom: 4, color: 'var(--text-primary)' }}>{p.title}</div>
-                      <p style={{ fontSize: 11, color: 'var(--text-secondary)', lineHeight: 1.5, marginBottom: 8 }}>
+                    <div className="p-1 max-w-[200px]">
+                      <div className="font-bold text-xs text-slate-900 dark:text-white mb-1">{p.title}</div>
+                      <p className="text-[11px] text-slate-600 dark:text-slate-400 leading-snug mb-2">
                         {descriptionPreview}
                       </p>
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <div className="flex items-center justify-between pt-1 border-t border-slate-100 dark:border-slate-800">
                         <SeverityBadge severity={p.severity} showIcon={false} />
-                        <Link to={`/posts/${p._id}`} style={{ display: 'flex', alignItems: 'center', gap: 3, fontSize: 11, color: 'var(--teal-400)', fontWeight: 600 }}>
-                          View <ExternalLink size={9} />
+                        <Link to={`/posts/${p._id}`} className="text-xs font-semibold text-teal-600 dark:text-teal-400 flex items-center gap-1">
+                          View <ExternalLink size={10} />
                         </Link>
                       </div>
                     </div>
@@ -265,26 +210,147 @@ export default function MapView() {
             })}
           </MapContainer>
 
-          {/* Floating stats chip */}
+          {/* Floating Chip Legend on Top Right of Map */}
           {!loading && (
-            <div style={{
-              position: 'absolute', top: 12, right: 12, zIndex: 500,
-              background: 'var(--bg-surface)', backdropFilter: 'blur(8px)',
-              border: '1px solid var(--border-default)', borderRadius: 8,
-              padding: '6px 12px', display: 'flex', gap: 12,
-            }}>
+            <div className="absolute top-3 right-3 z-[400] bg-white/90 dark:bg-slate-900/90 backdrop-blur-md border border-slate-200/70 dark:border-slate-800 rounded-xl px-3 py-1.5 shadow-md flex items-center gap-3 text-[11px] font-semibold">
               {Object.entries(SEV_COLORS).map(([sev, color]) => {
                 const count = filtered.filter(p => p.severity === sev).length;
-                return count > 0 ? (
-                  <div key={sev} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11 }}>
-                    <div style={{ width: 7, height: 7, borderRadius: '50%', background: color }} />
-                    <span style={{ color: 'var(--text-muted)' }}>{count}</span>
+                return (
+                  <div key={sev} className="flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full" style={{ background: color }} />
+                    <span className="text-slate-700 dark:text-slate-300 uppercase text-[9px] font-bold">{sev.slice(0, 1)}</span>
+                    <span className="text-slate-500 font-mono">{count}</span>
                   </div>
-                ) : null;
+                );
               })}
             </div>
           )}
         </div>
+
+        {/* ── STATIONS / INCIDENTS LIST TABLE SECTION ── */}
+        <div className="space-y-4 pt-2">
+          <div className="flex items-center justify-between">
+            <h2 className="font-display font-bold text-base text-slate-900 dark:text-white">
+              Stations list:
+            </h2>
+            <span className="text-xs font-medium text-slate-500 dark:text-slate-400">
+              Showing {filtered.length} locations
+            </span>
+          </div>
+
+          {/* Table Header & Rows */}
+          <div className="overflow-x-auto border border-slate-200/80 dark:border-slate-800 rounded-2xl">
+            <table className="w-full text-left text-xs">
+              <thead className="bg-slate-50/80 dark:bg-slate-800/50 text-slate-500 dark:text-slate-400 font-semibold border-b border-slate-200/80 dark:border-slate-800">
+                <tr>
+                  <th className="py-3 px-4">Station / Incident Name</th>
+                  <th className="py-3 px-4">Category</th>
+                  <th className="py-3 px-4">Severity</th>
+                  <th className="py-3 px-4">Status</th>
+                  <th className="py-3 px-4 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60 bg-white dark:bg-slate-900">
+                {loading ? (
+                  [1, 2, 3, 4].map(n => (
+                    <tr key={n} className="animate-pulse">
+                      <td className="py-3 px-4"><div className="h-10 bg-slate-100 dark:bg-slate-800 rounded-xl w-48" /></td>
+                      <td className="py-3 px-4"><div className="h-5 bg-slate-100 dark:bg-slate-800 rounded-lg w-16" /></td>
+                      <td className="py-3 px-4"><div className="h-5 bg-slate-100 dark:bg-slate-800 rounded-lg w-16" /></td>
+                      <td className="py-3 px-4"><div className="h-5 bg-slate-100 dark:bg-slate-800 rounded-lg w-16" /></td>
+                      <td className="py-3 px-4"><div className="h-8 bg-slate-100 dark:bg-slate-800 rounded-xl w-24 ml-auto" /></td>
+                    </tr>
+                  ))
+                ) : filtered.length === 0 ? (
+                  <tr>
+                    <td colSpan={5} className="py-8 text-center text-slate-400 font-medium">
+                      No matching infrastructure incidents found.
+                    </td>
+                  </tr>
+                ) : (
+                  filtered.map(p => {
+                    const isSelected = selectedPoint === p._id;
+                    const imageUrl = p.images?.[0];
+                    return (
+                      <tr
+                        key={p._id}
+                        onClick={() => handleFocus(p)}
+                        className={`transition-colors duration-150 cursor-pointer ${
+                          isSelected
+                            ? 'bg-teal-50/50 dark:bg-teal-950/20'
+                            : 'hover:bg-slate-50/80 dark:hover:bg-slate-800/40'
+                        }`}
+                      >
+                        {/* Name + Thumbnail Image / Icon */}
+                        <td className="py-3 px-4">
+                          <div className="flex items-center gap-3">
+                            {imageUrl ? (
+                              <img
+                                src={imageUrl}
+                                alt={p.title}
+                                className="w-10 h-10 rounded-xl object-cover border border-slate-200 dark:border-slate-700 flex-shrink-0"
+                              />
+                            ) : (
+                              <div className="w-10 h-10 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200/60 dark:border-slate-700/60 flex items-center justify-center text-teal-600 dark:text-teal-400 flex-shrink-0 font-bold">
+                                {p.category ? p.category.charAt(0).toUpperCase() : 'C'}
+                              </div>
+                            )}
+                            <div className="min-w-0">
+                              <div className="font-bold text-slate-900 dark:text-white truncate">
+                                {p.title}
+                              </div>
+                              <div className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
+                                {p.district ? `${p.district}, Tamil Nadu` : 'Location coords logged'}
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+
+                        {/* Category */}
+                        <td className="py-3 px-4">
+                          <span className="capitalize font-semibold text-slate-700 dark:text-slate-300">
+                            {p.category || 'General'}
+                          </span>
+                        </td>
+
+                        {/* Severity */}
+                        <td className="py-3 px-4">
+                          <SeverityBadge severity={p.severity} showIcon={false} />
+                        </td>
+
+                        {/* Status */}
+                        <td className="py-3 px-4">
+                          <span className="uppercase text-[10px] font-extrabold px-2 py-0.5 rounded-full border bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700">
+                            {p.status ? p.status.replace('_', ' ') : 'Reported'}
+                          </span>
+                        </td>
+
+                        {/* Actions */}
+                        <td className="py-3 px-4 text-right">
+                          <div className="flex items-center justify-end gap-2" onClick={e => e.stopPropagation()}>
+                            <button
+                              onClick={() => handleFocus(p)}
+                              className="px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-semibold shadow-xs transition-colors cursor-pointer"
+                            >
+                              Focus
+                            </button>
+                            <Link
+                              to={`/posts/${p._id}`}
+                              className="px-3 py-1.5 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-xs font-semibold shadow-xs transition-colors no-underline inline-flex items-center gap-1"
+                            >
+                              Details
+                            </Link>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
       </div>
     </motion.div>
   );
