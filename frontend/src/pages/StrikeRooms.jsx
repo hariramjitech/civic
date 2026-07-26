@@ -123,7 +123,11 @@ export default function StrikeRooms() {
   const [suggestedActs, setSuggestedActs] = useState([]);
   const [loadingActs, setLoadingActs] = useState(false);
   const [selectedActs, setSelectedActs] = useState([]);
-  const [docType, setDocType] = useState('municipal');
+  const [expandedAct, setExpandedAct] = useState(null);
+  const [actDetails, setActDetails] = useState({});
+  const [loadingActDetails, setLoadingActDetails] = useState(false);
+  const [activeLangTab, setActiveLangTab] = useState('en');
+  const [docType, setDocType] = useState('collector');
   const [docStep, setDocStep] = useState(1);
 
   const messagesEndRef = useRef(null);
@@ -478,6 +482,42 @@ export default function StrikeRooms() {
       console.error('Failed to load suggested acts:', err);
     } finally {
       setLoadingActs(false);
+    }
+  };
+
+  const toggleActExpand = async (act) => {
+    const key = `${act.actName}-${act.section}`.toLowerCase();
+    if (expandedAct === key) {
+      setExpandedAct(null);
+      return;
+    }
+    setExpandedAct(key);
+    setActiveLangTab('en');
+
+    if (actDetails[key]) return; // already cached
+
+    setLoadingActDetails(true);
+    try {
+      let corpusName = 'bns';
+      if (act.actName.toLowerCase().includes('constitution')) {
+        corpusName = 'constitution';
+      } else if (act.actName.toLowerCase().includes('penal')) {
+        corpusName = 'ipc';
+      }
+      
+      const num = act.section.replace(/\D/g, '');
+      const endpoint = `/laws/${corpusName}/${corpusName === 'constitution' ? 'article' : 'section'}/${num}`;
+      
+      const res = await api.get(endpoint);
+      setActDetails(prev => ({
+        ...prev,
+        [key]: res.data
+      }));
+    } catch (err) {
+      console.error('Failed to load detail translations:', err);
+      toast.error('Failed to load detail translations.');
+    } finally {
+      setLoadingActDetails(false);
     }
   };
 
@@ -976,6 +1016,126 @@ export default function StrikeRooms() {
                   )}
                 </div>
 
+                {/* Relevant Legal Grounds Card */}
+                <div className="p-4 rounded-xl border border-[var(--border-default)] bg-[var(--bg-surface)] space-y-3">
+                  <div className="flex items-center justify-between border-b border-[var(--border-subtle)] pb-2">
+                    <div className="flex items-center gap-2">
+                      <div className="w-7 h-7 rounded-lg bg-teal-50 border border-teal-200 flex items-center justify-center">
+                        <Scale size={13} className="text-teal-600 animate-pulse" />
+                      </div>
+                      <span className="text-xs font-bold text-[var(--text-primary)]">Statutory & Legal Grounds</span>
+                    </div>
+                    <span className="text-[8px] uppercase font-extrabold tracking-wider bg-teal-500/10 text-teal-400 px-2 py-0.5 rounded border border-teal-500/20">
+                      Grievance Basis
+                    </span>
+                  </div>
+
+                  {loadingActs ? (
+                    <div className="flex flex-col items-center py-6 gap-2">
+                      <Loader2 size={16} className="animate-spin text-[var(--teal-500)]" />
+                      <span className="text-[9px] text-[var(--text-muted)]">Resolving legal grounds...</span>
+                    </div>
+                  ) : suggestedActs && suggestedActs.length > 0 ? (
+                    <div className="space-y-3">
+                      {suggestedActs.map((act, idx) => {
+                        const key = `${act.actName}-${act.section}`.toLowerCase();
+                        const isExpanded = expandedAct === key;
+                        
+                        let badgeText = 'BNS';
+                        let badgeStyle = 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20';
+                        if (act.actName.toLowerCase().includes('constitution')) {
+                          badgeText = 'Const';
+                          badgeStyle = 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20';
+                        } else if (act.actName.toLowerCase().includes('penal')) {
+                          badgeText = 'IPC';
+                          badgeStyle = 'bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20';
+                        }
+
+                        return (
+                          <div 
+                            key={idx} 
+                            className="p-3 bg-[var(--bg-elevated)] border border-[var(--border-subtle)] rounded-xl hover:border-[var(--teal-500)]/30 transition-all space-y-2 cursor-pointer group"
+                            onClick={() => toggleActExpand(act)}
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <div className="flex items-center gap-1.5 min-w-0">
+                                <span className={`text-[8px] font-bold px-1.5 py-0.5 border rounded uppercase ${badgeStyle} shrink-0`}>
+                                  {badgeText}
+                                </span>
+                                <span className="text-[9px] font-bold text-[var(--text-primary)] truncate">
+                                  {act.section}
+                                </span>
+                              </div>
+                              <span className="text-[8px] text-[var(--text-muted)] group-hover:text-[var(--teal-500)] font-semibold transition-colors shrink-0">
+                                {isExpanded ? 'Hide' : 'Expand'}
+                              </span>
+                            </div>
+                            
+                            <p className="text-[10px] font-medium text-[var(--text-secondary)] leading-relaxed">
+                              {act.summary}
+                            </p>
+
+                            {isExpanded && (
+                              <div 
+                                className="pt-3 mt-3 border-t border-[var(--border-subtle)] space-y-3"
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                {loadingActDetails && !actDetails[key] ? (
+                                  <div className="flex flex-col items-center py-4 gap-1.5">
+                                    <Loader2 size={12} className="animate-spin text-[var(--teal-500)]" />
+                                    <span className="text-[8px] text-[var(--text-muted)]">Fetching official translations...</span>
+                                  </div>
+                                ) : actDetails[key] ? (
+                                  <div className="space-y-2.5 animate-fade-in select-text">
+                                    <div className="flex border-b border-[var(--border-subtle)] pb-1 gap-1">
+                                      {[
+                                        { id: 'en', label: 'English' },
+                                        { id: 'ml', label: 'മലയാളം' },
+                                        { id: 'hi', label: 'हिन्दी' }
+                                      ].map(lang => (
+                                        <button
+                                          key={lang.id}
+                                          type="button"
+                                          onClick={() => setActiveLangTab(lang.id)}
+                                          className={`px-2 py-0.5 text-[8px] font-extrabold rounded-md cursor-pointer transition-colors ${
+                                            activeLangTab === lang.id
+                                              ? 'bg-[var(--teal-glow)] text-[var(--teal-500)] border border-[var(--teal-500)]/20'
+                                              : 'text-[var(--text-muted)] hover:text-[var(--text-primary)]'
+                                          }`}
+                                        >
+                                          {lang.label}
+                                        </button>
+                                      ))}
+                                    </div>
+
+                                    <p className="text-[10px] leading-relaxed text-[var(--text-secondary)] font-normal whitespace-pre-line max-h-36 overflow-y-auto pr-1 bg-[var(--bg-surface)] p-2 rounded-lg border border-[var(--border-subtle)]">
+                                      {actDetails[key].languages?.[activeLangTab] || 'Translation unavailable.'}
+                                    </p>
+
+                                    {actDetails[key].note && (
+                                      <div className="text-[8px] text-amber-600 dark:text-amber-400 font-semibold bg-amber-500/5 p-2 rounded-lg border border-amber-500/10 leading-normal">
+                                        ⚠️ {actDetails[key].note}
+                                      </div>
+                                    )}
+                                  </div>
+                                ) : (
+                                  <div className="text-[8.5px] text-[var(--text-muted)] italic text-center py-2">
+                                    Could not load details.
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div className="p-3 bg-[var(--bg-elevated)] rounded-xl border border-[var(--border-subtle)] text-[10px] text-[var(--text-muted)] italic select-none text-center">
+                      No citable legal grounds fetched.
+                    </div>
+                  )}
+                </div>
+
                 {/* Legal Petitions Card */}
                 <div className="p-4 rounded-xl border border-[var(--border-default)] bg-[var(--bg-surface)] space-y-3">
                   <div className="flex items-center gap-2">
@@ -1148,6 +1308,20 @@ export default function StrikeRooms() {
                         Select Legal Document Format
                       </label>
                       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                        {/* Collectorate Grievance */}
+                        <div 
+                          onClick={() => setDocType('collector')}
+                          className={`p-3 rounded-xl border cursor-pointer transition-all flex flex-col space-y-1.5 ${docType === 'collector' ? 'bg-emerald-500/10 border-emerald-400/80 shadow-[0_0_12px_rgba(16,185,129,0.1)]' : 'bg-[var(--bg-overlay)] border-[var(--border-default)] hover:border-[var(--text-muted)]'}`}
+                        >
+                          <span className="text-[11px] font-extrabold text-[var(--text-primary)] flex items-center gap-1.5">
+                            <Gavel size={13} className="text-amber-400" />
+                            Collectorate Grievance
+                          </span>
+                          <span className="text-[9px] text-[var(--text-muted)] leading-relaxed">
+                            District Collector & Magistrate Mass Representation for Grievance Day.
+                          </span>
+                        </div>
+
                         {/* Municipal */}
                         <div 
                           onClick={() => setDocType('municipal')}
@@ -1237,32 +1411,100 @@ export default function StrikeRooms() {
                         <div className="space-y-2.5 max-h-[200px] overflow-y-auto pr-1">
                           {suggestedActs.map((act) => {
                             const isChecked = selectedActs.some(a => a.actName === act.actName && a.section === act.section);
+                            const key = `${act.actName}-${act.section}`.toLowerCase();
+                            const isExpanded = expandedAct === key;
+
                             return (
                               <div 
                                 key={`${act.actName}-${act.section}`}
-                                onClick={() => {
-                                  if (isChecked) {
-                                    setSelectedActs(selectedActs.filter(a => !(a.actName === act.actName && a.section === act.section)));
-                                  } else {
-                                    setSelectedActs([...selectedActs, act]);
-                                  }
-                                }}
-                                className={`p-2.5 rounded-lg border text-xs cursor-pointer transition-colors flex items-start gap-3 ${isChecked ? 'bg-emerald-500/5 border-emerald-500/30' : 'bg-[var(--bg-elevated)] border-[var(--border-default)] hover:border-emerald-500/20'}`}
+                                className={`p-2.5 rounded-lg border text-xs transition-colors flex flex-col gap-2 ${isChecked ? 'bg-emerald-500/5 border-emerald-500/30' : 'bg-[var(--bg-elevated)] border-[var(--border-default)] hover:border-emerald-500/20'}`}
                               >
-                                <input
-                                  type="checkbox"
-                                  checked={isChecked}
-                                  onChange={() => {}}
-                                  className="mt-0.5 rounded border border-[var(--border-default)] text-[var(--teal-500)] focus:ring-[var(--teal-500)] cursor-pointer"
-                                />
-                                <div className="space-y-0.5">
-                                  <div className="font-extrabold text-[var(--text-primary)]">
-                                    {act.actName} (Section/Article: {act.section})
-                                  </div>
-                                  <div className="text-[9.5px] text-[var(--text-muted)] leading-relaxed">
-                                    {act.summary}
+                                <div 
+                                  className="flex items-start gap-3 cursor-pointer w-full"
+                                  onClick={() => {
+                                    if (isChecked) {
+                                      setSelectedActs(selectedActs.filter(a => !(a.actName === act.actName && a.section === act.section)));
+                                    } else {
+                                      setSelectedActs([...selectedActs, act]);
+                                    }
+                                  }}
+                                >
+                                  <input
+                                    type="checkbox"
+                                    checked={isChecked}
+                                    onChange={() => {}}
+                                    className="mt-0.5 rounded border border-[var(--border-default)] text-[var(--teal-500)] focus:ring-[var(--teal-500)] cursor-pointer"
+                                  />
+                                  <div className="space-y-0.5 flex-1 min-w-0">
+                                    <div className="font-extrabold text-[var(--text-primary)] flex items-center justify-between gap-2">
+                                      <span className="truncate">{act.actName} (Section/Article: {act.section})</span>
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          toggleActExpand(act);
+                                        }}
+                                        className="text-[9px] text-[var(--teal-500)] hover:underline font-bold shrink-0 cursor-pointer"
+                                      >
+                                        {isExpanded ? 'Hide Info' : 'Read Text'}
+                                      </button>
+                                    </div>
+                                    <div className="text-[9.5px] text-[var(--text-muted)] leading-relaxed">
+                                      {act.summary}
+                                    </div>
                                   </div>
                                 </div>
+
+                                {isExpanded && (
+                                  <div 
+                                    className="pl-8 pt-2 mt-2 border-t border-[var(--border-subtle)] space-y-2 select-text"
+                                    onClick={(e) => e.stopPropagation()}
+                                  >
+                                    {loadingActDetails && !actDetails[key] ? (
+                                      <div className="flex items-center gap-1.5 py-2">
+                                        <Loader2 size={10} className="animate-spin text-[var(--teal-500)]" />
+                                        <span className="text-[8px] text-[var(--text-muted)]">Fetching official translations...</span>
+                                      </div>
+                                    ) : actDetails[key] ? (
+                                      <div className="space-y-2 animate-fade-in">
+                                        <div className="flex border-b border-[var(--border-subtle)] pb-1 gap-1">
+                                          {[
+                                            { id: 'en', label: 'English' },
+                                            { id: 'ml', label: 'മലയാളം' },
+                                            { id: 'hi', label: 'हिन्दी' }
+                                          ].map(lang => (
+                                            <button
+                                              key={lang.id}
+                                              type="button"
+                                              onClick={() => setActiveLangTab(lang.id)}
+                                              className={`px-2 py-0.5 text-[8px] font-extrabold rounded-md cursor-pointer transition-colors ${
+                                                activeLangTab === lang.id
+                                                  ? 'bg-[var(--teal-glow)] text-[var(--teal-500)] border border-[var(--teal-500)]/20'
+                                                  : 'text-[var(--text-muted)] hover:text-[var(--text-primary)]'
+                                              }`}
+                                            >
+                                              {lang.label}
+                                            </button>
+                                          ))}
+                                        </div>
+
+                                        <p className="text-[9.5px] leading-relaxed text-[var(--text-secondary)] font-normal whitespace-pre-line max-h-24 overflow-y-auto pr-1 bg-[var(--bg-surface)] p-2 rounded-lg border border-[var(--border-subtle)]">
+                                          {actDetails[key].languages?.[activeLangTab] || 'Translation unavailable.'}
+                                        </p>
+
+                                        {actDetails[key].note && (
+                                          <div className="text-[8px] text-amber-600 dark:text-amber-400 font-semibold bg-amber-500/5 p-1 px-2 rounded-md border border-amber-500/10 leading-normal">
+                                            ⚠️ {actDetails[key].note}
+                                          </div>
+                                        )}
+                                      </div>
+                                    ) : (
+                                      <div className="text-[8.5px] text-[var(--text-muted)] italic text-center py-2">
+                                        Could not load details.
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
                               </div>
                             );
                           })}

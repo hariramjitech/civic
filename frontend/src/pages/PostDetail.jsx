@@ -6,7 +6,9 @@ import {
   Heart, MessageSquare, Phone, Mail, Globe, MapPin,
   AlertTriangle, ArrowLeft, Send, Plus, Flame, Clock,
   CheckCircle, Loader2, Trash2, Volume2, VolumeX,
-  Share2, Eye, Sparkles, Calendar, Users, Wrench
+  Share2, Eye, Sparkles, Calendar, Users, Wrench,
+  Scale, BookOpen, Gavel, FileText, Printer, Download, Copy, Check,
+  ChevronRight, ChevronLeft, X, Briefcase, Shield
 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import toast from 'react-hot-toast';
@@ -126,6 +128,82 @@ export default function PostDetail() {
   const [showPollForm, setShowPollForm] = useState(false);
   const [creatingStrikeRoom, setCreatingStrikeRoom] = useState(false);
 
+  // Suggested legal acts state
+  const [suggestedActs, setSuggestedActs] = useState([]);
+  const [loadingActs, setLoadingActs] = useState(false);
+  const [expandedAct, setExpandedAct] = useState(null);
+  const [actDetails, setActDetails] = useState({});
+  const [loadingActDetails, setLoadingActDetails] = useState(false);
+  const [activeLangTab, setActiveLangTab] = useState('en');
+
+  // Legal Petition Generator Modal States
+  const [showDocModal, setShowDocModal] = useState(false);
+  const [docType, setDocType] = useState('collector');
+  const [docStep, setDocStep] = useState(1);
+  const [repName, setRepName] = useState(userProfile?.fullName || '');
+  const [petitionerFatherSpouseName, setPetitionerFatherSpouseName] = useState('');
+  const [petitionerAge, setPetitionerAge] = useState('');
+  const [petitionerResidingAddress, setPetitionerResidingAddress] = useState('');
+  const [customAuth, setCustomAuth] = useState('');
+  const [addressedAuth, setAddressedAuth] = useState('');
+  const [customDemands, setCustomDemands] = useState('');
+  const [selectedActs, setSelectedActs] = useState([]);
+  const [generatingDoc, setGeneratingDoc] = useState(false);
+  const [generatedDoc, setGeneratedDoc] = useState(null);
+  const [isEditingDoc, setIsEditingDoc] = useState(false);
+  const [copiedDoc, setCopiedDoc] = useState(false);
+
+  const handleGenerateDocument = async (e) => {
+    e.preventDefault();
+    if (!post) return;
+
+    if (!isSignedIn) {
+      toast.error('Please sign in to generate formal legal petitions.');
+      return;
+    }
+
+    try {
+      setGeneratingDoc(true);
+      const authority = addressedAuth === 'Other' ? customAuth : (addressedAuth || post.attachedContacts?.[0]?.officerName || 'District Collector / Magistrate');
+      
+      const res = await api.post(`/posts/${post._id}/legal-document`, {
+        representativeName: repName || userProfile?.fullName || 'Citizen Complainant',
+        addressedAuthority: authority,
+        customDemands,
+        docType,
+        petitionerFatherSpouseName,
+        petitionerAge,
+        petitionerResidingAddress,
+        selectedActs: selectedActs.length > 0 ? selectedActs : suggestedActs
+      });
+      setGeneratedDoc(res.data.document);
+    } catch (err) {
+      console.error('Failed to generate document:', err);
+      toast.error(err.response?.data?.error || 'Failed to generate legal petition draft.');
+    } finally {
+      setGeneratingDoc(false);
+    }
+  };
+
+  const resetDocState = () => {
+    setShowDocModal(false);
+    setGeneratedDoc(null);
+    setDocStep(1);
+    setIsEditingDoc(false);
+  };
+
+  const handleCopyDoc = () => {
+    if (!generatedDoc) return;
+    navigator.clipboard.writeText(generatedDoc);
+    setCopiedDoc(true);
+    toast.success('Legal document draft copied to clipboard!');
+    setTimeout(() => setCopiedDoc(false), 2000);
+  };
+
+  const handlePrintDoc = () => {
+    window.print();
+  };
+
   // Campaign State
   const [campaign, setCampaign] = useState(null);
   const [showCampaignForm, setShowCampaignForm] = useState(false);
@@ -144,6 +222,42 @@ export default function PostDetail() {
 
   const isOwner = post ? myPostIds.has(post._id) : false;
   const showStatusEditControls = post ? (isOwner || ['admin', 'department', 'officer'].includes(role)) : false;
+
+  const toggleActExpand = async (act) => {
+    const key = `${act.actName}-${act.section}`.toLowerCase();
+    if (expandedAct === key) {
+      setExpandedAct(null);
+      return;
+    }
+    setExpandedAct(key);
+    setActiveLangTab('en');
+
+    if (actDetails[key]) return; // already cached
+
+    setLoadingActDetails(true);
+    try {
+      let corpusName = 'bns';
+      if (act.actName.toLowerCase().includes('constitution')) {
+        corpusName = 'constitution';
+      } else if (act.actName.toLowerCase().includes('penal')) {
+        corpusName = 'ipc';
+      }
+      
+      const num = act.section.replace(/\D/g, '');
+      const endpoint = `/laws/${corpusName}/${corpusName === 'constitution' ? 'article' : 'section'}/${num}`;
+      
+      const res = await api.get(endpoint);
+      setActDetails(prev => ({
+        ...prev,
+        [key]: res.data
+      }));
+    } catch (err) {
+      console.error('Failed to load detail translations:', err);
+      toast.error('Failed to load detail translations.');
+    } finally {
+      setLoadingActDetails(false);
+    }
+  };
 
   const speakPost = () => {
     if (!window.speechSynthesis) {
@@ -338,6 +452,17 @@ export default function PostDetail() {
         setCampaign(campaignRes.data.campaign);
       } catch (cErr) {
         console.warn('Failed to load campaign:', cErr.message);
+      }
+
+      // Fetch suggested acts dynamically
+      setLoadingActs(true);
+      try {
+        const actsRes = await api.get(`/posts/${id}/suggest-acts`);
+        setSuggestedActs(actsRes.data.acts || []);
+      } catch (aErr) {
+        console.warn('Failed to fetch legal grounds:', aErr.message);
+      } finally {
+        setLoadingActs(false);
       }
     } catch (err) {
       console.error(err);
@@ -1516,6 +1641,137 @@ export default function PostDetail() {
             </div>
           )}
 
+          {/* Relevant Legal Grounds Card */}
+          <div className="glass-panel p-5 rounded-2xl space-y-4 border border-[var(--border-subtle)] bg-[var(--bg-surface)] shadow-md">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="font-display font-extrabold text-sm text-[var(--text-primary)] flex items-center gap-2">
+                  <Scale size={16} className="text-[var(--teal-500)] animate-pulse" />
+                  Statutory & Legal Grounds
+                </h3>
+                <p className="text-[9px] text-[var(--text-muted)] uppercase tracking-widest mt-0.5 font-bold">Citable Legal Protections</p>
+              </div>
+              <button
+                onClick={() => {
+                  setSelectedActs(suggestedActs);
+                  setRepName(userProfile?.fullName || '');
+                  setShowDocModal(true);
+                  setGeneratedDoc(null);
+                  setDocStep(1);
+                }}
+                className="px-2.5 py-1.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-extrabold text-[9px] uppercase tracking-wider rounded-lg transition-all shadow-sm flex items-center gap-1 cursor-pointer"
+              >
+                <Gavel size={11} />
+                <span>Draft Petition</span>
+              </button>
+            </div>
+
+            {loadingActs ? (
+              <div className="flex flex-col items-center py-6 gap-2">
+                <Loader2 size={16} className="animate-spin text-[var(--teal-500)]" />
+                <span className="text-[9px] text-[var(--text-muted)]">Resolving legal grounds...</span>
+              </div>
+            ) : suggestedActs && suggestedActs.length > 0 ? (
+              <div className="space-y-3">
+                {suggestedActs.map((act, idx) => {
+                  const key = `${act.actName}-${act.section}`.toLowerCase();
+                  const isExpanded = expandedAct === key;
+                  
+                  let badgeText = 'BNS';
+                  let badgeStyle = 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20';
+                  if (act.actName.toLowerCase().includes('constitution')) {
+                    badgeText = 'Const';
+                    badgeStyle = 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20';
+                  } else if (act.actName.toLowerCase().includes('penal')) {
+                    badgeText = 'IPC';
+                    badgeStyle = 'bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20';
+                  }
+
+                  return (
+                    <div 
+                      key={idx} 
+                      className="p-3.5 bg-[var(--bg-elevated)] border border-[var(--border-subtle)] rounded-2xl hover:border-[var(--teal-500)]/30 transition-all space-y-2 cursor-pointer group"
+                      onClick={() => toggleActExpand(act)}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <span className={`text-[8px] font-bold px-1.5 py-0.5 border rounded uppercase ${badgeStyle} shrink-0`}>
+                            {badgeText}
+                          </span>
+                          <span className="text-[10px] font-bold text-[var(--text-primary)] truncate">
+                            {act.section}
+                          </span>
+                        </div>
+                        <span className="text-[8px] text-[var(--text-muted)] group-hover:text-[var(--teal-500)] font-semibold transition-colors shrink-0">
+                          {isExpanded ? 'Hide' : 'Expand'}
+                        </span>
+                      </div>
+                      
+                      <p className="text-[10.5px] font-medium text-[var(--text-secondary)] leading-relaxed">
+                        {act.summary}
+                      </p>
+
+                      {isExpanded && (
+                        <div 
+                          className="pt-3 mt-3 border-t border-[var(--border-subtle)] space-y-3"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          {loadingActDetails && !actDetails[key] ? (
+                            <div className="flex flex-col items-center py-4 gap-1.5">
+                              <Loader2 size={12} className="animate-spin text-[var(--teal-500)]" />
+                              <span className="text-[8px] text-[var(--text-muted)]">Fetching official translations...</span>
+                            </div>
+                          ) : actDetails[key] ? (
+                            <div className="space-y-2.5 animate-fade-in select-text">
+                              <div className="flex border-b border-[var(--border-subtle)] pb-1 gap-1">
+                                {[
+                                  { id: 'en', label: 'English' },
+                                  { id: 'ml', label: 'മലയാളം' },
+                                  { id: 'hi', label: 'हिन्दी' }
+                                ].map(lang => (
+                                  <button
+                                    key={lang.id}
+                                    type="button"
+                                    onClick={() => setActiveLangTab(lang.id)}
+                                    className={`px-2 py-0.5 text-[8.5px] font-extrabold rounded-md cursor-pointer transition-colors ${
+                                      activeLangTab === lang.id
+                                        ? 'bg-[var(--teal-glow)] text-[var(--teal-500)] border border-[var(--teal-500)]/20'
+                                        : 'text-[var(--text-muted)] hover:text-[var(--text-primary)]'
+                                    }`}
+                                  >
+                                    {lang.label}
+                                  </button>
+                                ))}
+                              </div>
+
+                              <p className="text-[10px] leading-relaxed text-[var(--text-secondary)] font-normal whitespace-pre-line max-h-36 overflow-y-auto pr-1 bg-[var(--bg-surface)] p-2 rounded-xl border border-[var(--border-subtle)]">
+                                {actDetails[key].languages?.[activeLangTab] || 'Translation unavailable.'}
+                              </p>
+
+                              {actDetails[key].note && (
+                                <div className="text-[8px] text-amber-600 dark:text-amber-400 font-semibold bg-amber-500/5 p-2 rounded-lg border border-amber-500/10 leading-normal">
+                                  ⚠️ {actDetails[key].note}
+                                </div>
+                              )}
+                            </div>
+                          ) : (
+                            <div className="text-[8.5px] text-[var(--text-muted)] italic text-center py-2">
+                              Could not load details.
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="p-3 bg-[var(--bg-elevated)] rounded-xl border border-[var(--border-subtle)] text-xs text-[var(--text-muted)] italic select-none text-center">
+                No statutory grounds resolved for this category.
+              </div>
+            )}
+          </div>
+
           {/* Official Contacts Info Card */}
           <div className="glass-panel p-5 rounded-2xl space-y-4 border border-[var(--border-subtle)] bg-[var(--bg-surface)] shadow-md">
             <div>
@@ -1727,6 +1983,484 @@ export default function PostDetail() {
 
         </div>
       </div>
+      {/* ── LEGAL PETITION GENERATOR MODAL ── */}
+      {showDocModal && (
+        <div className="fixed inset-0 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 overflow-y-auto" style={{ zIndex: 9999 }}>
+          <div className="glass-panel p-6 rounded-2xl max-w-3xl w-full space-y-4 animate-scaleIn my-8 max-h-[95vh] overflow-y-auto flex flex-col shadow-2xl border border-emerald-500/20 bg-[var(--bg-surface)]">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between border-b border-[var(--border-subtle)] pb-3 flex-shrink-0">
+              <div className="flex items-center space-x-2">
+                <Gavel size={18} className="text-emerald-400" />
+                <h3 className="font-display font-extrabold text-sm sm:text-base text-[var(--teal-500)]">
+                  Prepare Official Legal Grievance Petition Wizard
+                </h3>
+              </div>
+              <button onClick={resetDocState} className="text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors cursor-pointer">
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Wizard Steps Header */}
+            {!generatedDoc && (
+              <div className="flex items-center justify-center space-x-4 border-b border-gray-800 pb-3 flex-shrink-0 text-[10px] font-extrabold uppercase tracking-wider select-none">
+                <div className={`flex items-center space-x-1.5 ${docStep === 1 ? 'text-emerald-400 animate-pulse' : 'text-[var(--text-muted)]'}`}>
+                  <span className={`w-5 h-5 rounded-full flex items-center justify-center border text-[9px] ${docStep === 1 ? 'border-emerald-400 bg-emerald-500/10' : 'border-[var(--border-default)]'}`}>1</span>
+                  <span>Type & Acts</span>
+                </div>
+                <div className="w-8 h-[1px] bg-gray-800" />
+                <div className={`flex items-center space-x-1.5 ${docStep === 2 ? 'text-emerald-400 animate-pulse' : 'text-[var(--text-muted)]'}`}>
+                  <span className={`w-5 h-5 rounded-full flex items-center justify-center border text-[9px] ${docStep === 2 ? 'border-emerald-400 bg-emerald-500/10' : 'border-[var(--border-default)]'}`}>2</span>
+                  <span>Credentials</span>
+                </div>
+                <div className="w-8 h-[1px] bg-gray-800" />
+                <div className={`flex items-center space-x-1.5 ${docStep === 3 ? 'text-emerald-400 animate-pulse' : 'text-[var(--text-muted)]'}`}>
+                  <span className={`w-5 h-5 rounded-full flex items-center justify-center border text-[9px] ${docStep === 3 ? 'border-emerald-400 bg-emerald-500/10' : 'border-[var(--border-default)]'}`}>3</span>
+                  <span>Authority</span>
+                </div>
+              </div>
+            )}
+
+            {/* Modal Content */}
+            {!generatedDoc ? (
+              <div className="flex-1 overflow-y-auto pr-1">
+                {/* STEP 1: GRIEVANCE TYPE & ACTS */}
+                {docStep === 1 && (
+                  <div className="space-y-4">
+                    <div className="space-y-2">
+                      <label className="block text-[10px] text-[var(--text-muted)] uppercase tracking-wider mb-1 font-bold">
+                        Select Target Filing Body / Document Format
+                      </label>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                        {/* District Collector */}
+                        <div 
+                          onClick={() => setDocType('collector')}
+                          className={`p-3 rounded-xl border cursor-pointer transition-all flex flex-col space-y-1.5 ${docType === 'collector' ? 'bg-emerald-500/10 border-emerald-400/80 shadow-[0_0_12px_rgba(16,185,129,0.1)]' : 'bg-[var(--bg-overlay)] border-[var(--border-default)] hover:border-[var(--text-muted)]'}`}
+                        >
+                          <span className="text-[11px] font-extrabold text-[var(--text-primary)] flex items-center gap-1.5">
+                            <Gavel size={13} className="text-amber-400" />
+                            Collectorate Grievance
+                          </span>
+                          <span className="text-[9px] text-[var(--text-muted)] leading-relaxed">
+                            District Collector & Magistrate Mass Representation for Grievance Day.
+                          </span>
+                        </div>
+
+                        {/* Municipal */}
+                        <div 
+                          onClick={() => setDocType('municipal')}
+                          className={`p-3 rounded-xl border cursor-pointer transition-all flex flex-col space-y-1.5 ${docType === 'municipal' ? 'bg-emerald-500/10 border-emerald-400/80 shadow-[0_0_12px_rgba(16,185,129,0.1)]' : 'bg-[var(--bg-overlay)] border-[var(--border-default)] hover:border-[var(--text-muted)]'}`}
+                        >
+                          <span className="text-[11px] font-extrabold text-[var(--text-primary)] flex items-center gap-1.5">
+                            <FileText size={13} className="text-emerald-400" />
+                            Municipal Complaint
+                          </span>
+                          <span className="text-[9px] text-[var(--text-muted)] leading-relaxed">
+                            Formal administrative complaint representation to corporate/municipal heads.
+                          </span>
+                        </div>
+
+                        {/* High Court PIL */}
+                        <div 
+                          onClick={() => setDocType('court')}
+                          className={`p-3 rounded-xl border cursor-pointer transition-all flex flex-col space-y-1.5 ${docType === 'court' ? 'bg-emerald-500/10 border-emerald-400/80 shadow-[0_0_12px_rgba(16,185,129,0.1)]' : 'bg-[var(--bg-overlay)] border-[var(--border-default)] hover:border-[var(--text-muted)]'}`}
+                        >
+                          <span className="text-[11px] font-extrabold text-[var(--text-primary)] flex items-center gap-1.5">
+                            <Scale size={13} className="text-teal-400" />
+                            Writ PIL Petition
+                          </span>
+                          <span className="text-[9px] text-[var(--text-muted)] leading-relaxed">
+                            Public Interest Writ Petition under Art 226 before Madras High Court.
+                          </span>
+                        </div>
+
+                        {/* RTI */}
+                        <div 
+                          onClick={() => setDocType('rti')}
+                          className={`p-3 rounded-xl border cursor-pointer transition-all flex flex-col space-y-1.5 ${docType === 'rti' ? 'bg-emerald-500/10 border-emerald-400/80 shadow-[0_0_12px_rgba(16,185,129,0.1)]' : 'bg-[var(--bg-overlay)] border-[var(--border-default)] hover:border-[var(--text-muted)]'}`}
+                        >
+                          <span className="text-[11px] font-extrabold text-[var(--text-primary)] flex items-center gap-1.5">
+                            <Eye size={13} className="text-cyan-400" />
+                            RTI Application
+                          </span>
+                          <span className="text-[9px] text-[var(--text-muted)] leading-relaxed">
+                            Section 6(1) queries requesting quality checks, contractor, and budget logs.
+                          </span>
+                        </div>
+
+                        {/* Police */}
+                        <div 
+                          onClick={() => setDocType('police')}
+                          className={`p-3 rounded-xl border cursor-pointer transition-all flex flex-col space-y-1.5 ${docType === 'police' ? 'bg-emerald-500/10 border-emerald-400/80 shadow-[0_0_12px_rgba(16,185,129,0.1)]' : 'bg-[var(--bg-overlay)] border-[var(--border-default)] hover:border-[var(--text-muted)]'}`}
+                        >
+                          <span className="text-[11px] font-extrabold text-[var(--text-primary)] flex items-center gap-1.5">
+                            <Shield size={13} className="text-rose-400" />
+                            Police Complaint
+                          </span>
+                          <span className="text-[9px] text-[var(--text-muted)] leading-relaxed">
+                            Citing public endangerment, negligence, and nuisance against officers.
+                          </span>
+                        </div>
+
+                        {/* Consumer notice */}
+                        <div 
+                          onClick={() => setDocType('consumer')}
+                          className={`p-3 rounded-xl border cursor-pointer transition-all flex flex-col space-y-1.5 ${docType === 'consumer' ? 'bg-emerald-500/10 border-emerald-400/80 shadow-[0_0_12px_rgba(16,185,129,0.1)]' : 'bg-[var(--bg-overlay)] border-[var(--border-default)] hover:border-[var(--text-muted)]'}`}
+                        >
+                          <span className="text-[11px] font-extrabold text-[var(--text-primary)] flex items-center gap-1.5">
+                            <Briefcase size={13} className="text-orange-400" />
+                            Consumer Notice
+                          </span>
+                          <span className="text-[9px] text-[var(--text-muted)] leading-relaxed">
+                            Demand notice for deficiency of service by utilities under CP Act 2019.
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="space-y-3 border-t border-gray-800 pt-4">
+                      <div className="flex items-center justify-between border-b border-gray-800 pb-2">
+                        <span className="text-[10px] text-[var(--text-muted)] uppercase tracking-wider font-bold flex items-center gap-1">
+                          <Scale size={13} className="text-emerald-400" />
+                          Select Statutory Grounds & Acts (Citable Provisions)
+                        </span>
+                        {loadingActs && <Loader2 size={12} className="animate-spin text-emerald-400" />}
+                      </div>
+
+                      {loadingActs ? (
+                        <div className="py-4 text-center text-[10px] text-[var(--text-muted)]">
+                          Retrieving relevant legal provisions...
+                        </div>
+                      ) : suggestedActs && suggestedActs.length > 0 ? (
+                        <div className="space-y-2.5 max-h-[200px] overflow-y-auto pr-1">
+                          {suggestedActs.map((act) => {
+                            const isChecked = selectedActs.some(a => a.actName === act.actName && a.section === act.section);
+                            const key = `${act.actName}-${act.section}`.toLowerCase();
+                            const isExpanded = expandedAct === key;
+
+                            return (
+                              <div 
+                                key={`${act.actName}-${act.section}`}
+                                className={`p-2.5 rounded-lg border text-xs transition-colors flex flex-col gap-2 ${isChecked ? 'bg-emerald-500/5 border-emerald-500/30' : 'bg-[var(--bg-elevated)] border-[var(--border-default)] hover:border-emerald-500/20'}`}
+                              >
+                                <div 
+                                  className="flex items-start gap-3 cursor-pointer w-full"
+                                  onClick={() => {
+                                    if (isChecked) {
+                                      setSelectedActs(selectedActs.filter(a => !(a.actName === act.actName && a.section === act.section)));
+                                    } else {
+                                      setSelectedActs([...selectedActs, act]);
+                                    }
+                                  }}
+                                >
+                                  <input
+                                    type="checkbox"
+                                    checked={isChecked}
+                                    onChange={() => {}}
+                                    className="mt-0.5 rounded border border-[var(--border-default)] text-[var(--teal-500)] focus:ring-[var(--teal-500)] cursor-pointer"
+                                  />
+                                  <div className="space-y-0.5 flex-1 min-w-0">
+                                    <div className="font-extrabold text-[var(--text-primary)] flex items-center justify-between gap-2">
+                                      <span className="truncate">{act.actName} (Section/Article: {act.section})</span>
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          toggleActExpand(act);
+                                        }}
+                                        className="text-[9px] text-[var(--teal-500)] hover:underline font-bold shrink-0 cursor-pointer"
+                                      >
+                                        {isExpanded ? 'Hide Info' : 'Read Text'}
+                                      </button>
+                                    </div>
+                                    <div className="text-[9.5px] text-[var(--text-muted)] leading-relaxed">
+                                      {act.summary}
+                                    </div>
+                                  </div>
+                                </div>
+
+                                {isExpanded && (
+                                  <div 
+                                    className="pl-8 pt-2 mt-2 border-t border-[var(--border-subtle)] space-y-2 select-text"
+                                    onClick={(e) => e.stopPropagation()}
+                                  >
+                                    {loadingActDetails && !actDetails[key] ? (
+                                      <div className="flex items-center gap-1.5 py-2">
+                                        <Loader2 size={10} className="animate-spin text-[var(--teal-500)]" />
+                                        <span className="text-[8px] text-[var(--text-muted)]">Fetching official translations...</span>
+                                      </div>
+                                    ) : actDetails[key] ? (
+                                      <div className="space-y-2 animate-fade-in">
+                                        <div className="flex border-b border-[var(--border-subtle)] pb-1 gap-1">
+                                          {[
+                                            { id: 'en', label: 'English' },
+                                            { id: 'ml', label: 'മലയാളം' },
+                                            { id: 'hi', label: 'हिन्दी' }
+                                          ].map(lang => (
+                                            <button
+                                              key={lang.id}
+                                              type="button"
+                                              onClick={() => setActiveLangTab(lang.id)}
+                                              className={`px-2 py-0.5 text-[8px] font-extrabold rounded-md cursor-pointer transition-colors ${
+                                                activeLangTab === lang.id
+                                                  ? 'bg-[var(--teal-glow)] text-[var(--teal-500)] border border-[var(--teal-500)]/20'
+                                                  : 'text-[var(--text-muted)] hover:text-[var(--text-primary)]'
+                                              }`}
+                                            >
+                                              {lang.label}
+                                            </button>
+                                          ))}
+                                        </div>
+
+                                        <p className="text-[9.5px] leading-relaxed text-[var(--text-secondary)] font-normal whitespace-pre-line max-h-24 overflow-y-auto pr-1 bg-[var(--bg-surface)] p-2 rounded-lg border border-[var(--border-subtle)]">
+                                          {actDetails[key].languages?.[activeLangTab] || 'Translation unavailable.'}
+                                        </p>
+
+                                        {actDetails[key].note && (
+                                          <div className="text-[8px] text-amber-600 dark:text-amber-400 font-semibold bg-amber-500/5 p-1 px-2 rounded-md border border-amber-500/10 leading-normal">
+                                            ⚠️ {actDetails[key].note}
+                                          </div>
+                                        )}
+                                      </div>
+                                    ) : (
+                                      <div className="text-[8.5px] text-[var(--text-muted)] italic text-center py-2">
+                                        Could not load details.
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        <div className="py-2 text-[9px] text-[var(--text-muted)] italic text-center">
+                          Standard statutory fallbacks will be included in draft.
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="flex justify-end pt-3 border-t border-gray-800">
+                      <button
+                        onClick={() => setDocStep(2)}
+                        className="px-5 py-2.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-gray-950 font-extrabold text-xs uppercase tracking-wider flex items-center space-x-1.5 shadow-lg shadow-emerald-950/20 cursor-pointer"
+                      >
+                        <span>Petitioner Credentials</span>
+                        <ChevronRight size={14} />
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* STEP 2: CREDENTIALS */}
+                {docStep === 2 && (
+                  <div className="space-y-4">
+                    <p className="text-[10px] text-[var(--text-muted)] italic leading-relaxed">
+                      * Formal legal representations and notices require verified petitioner details (name, age, parent/spouse name, and residential address) to be legally binding and registered officially in government indices.
+                    </p>
+
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <div>
+                        <label className="block text-[10px] text-[var(--text-muted)] uppercase tracking-wider mb-1 font-bold">
+                          Lead Petitioner Full Name
+                        </label>
+                        <input
+                          type="text"
+                          value={repName}
+                          onChange={(e) => setRepName(e.target.value)}
+                          placeholder="e.g. R. K. Sundaram"
+                          className="glass-input text-xs w-full py-2"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] text-[var(--text-muted)] uppercase tracking-wider mb-1 font-bold">
+                          Father / Spouse Name
+                        </label>
+                        <input
+                          type="text"
+                          value={petitionerFatherSpouseName}
+                          onChange={(e) => setPetitionerFatherSpouseName(e.target.value)}
+                          placeholder="e.g. S/o Late K. Ramanathan"
+                          className="glass-input text-xs w-full py-2"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] text-[var(--text-muted)] uppercase tracking-wider mb-1 font-bold">
+                          Age (Years)
+                        </label>
+                        <input
+                          type="text"
+                          value={petitionerAge}
+                          onChange={(e) => setPetitionerAge(e.target.value)}
+                          placeholder="e.g. 42"
+                          className="glass-input text-xs w-full py-2"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-[10px] text-[var(--text-muted)] uppercase tracking-wider mb-1 font-bold">
+                        Residential Address
+                      </label>
+                      <input
+                        type="text"
+                        value={petitionerResidingAddress}
+                        onChange={(e) => setPetitionerResidingAddress(e.target.value)}
+                        placeholder="e.g. Door No 14/B, 2nd Cross Street, Anna Nagar, Chennai"
+                        className="glass-input text-xs w-full py-2"
+                      />
+                    </div>
+
+                    <div className="flex justify-between pt-3 border-t border-gray-800">
+                      <button
+                        onClick={() => setDocStep(1)}
+                        className="px-4 py-2 rounded-lg bg-[var(--bg-elevated)] hover:bg-[var(--bg-surface)] text-[var(--text-secondary)] font-bold text-xs uppercase tracking-wider flex items-center space-x-1 border border-[var(--border-default)] cursor-pointer"
+                      >
+                        <ChevronLeft size={14} />
+                        <span>Back</span>
+                      </button>
+                      <button
+                        onClick={() => setDocStep(3)}
+                        className="px-5 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-gray-950 font-extrabold text-xs uppercase tracking-wider flex items-center space-x-1.5 shadow-lg shadow-emerald-950/20 cursor-pointer"
+                      >
+                        <span>Target Authority</span>
+                        <ChevronRight size={14} />
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* STEP 3: AUTHORITY & GENERATE */}
+                {docStep === 3 && (
+                  <form onSubmit={handleGenerateDocument} className="space-y-4">
+                    <div>
+                      <label className="block text-[10px] text-[var(--text-muted)] uppercase tracking-wider mb-1 font-bold">
+                        Addressed Authority Title / Respondent
+                      </label>
+                      <select
+                        value={addressedAuth}
+                        onChange={(e) => setAddressedAuth(e.target.value)}
+                        className="glass-input text-xs w-full py-2 text-[var(--text-primary)]"
+                      >
+                        <option value="">Select Addressed Authority / Officer...</option>
+                        <option value="The District Collector & District Magistrate">The District Collector & Magistrate (Collectorate Office)</option>
+                        <option value="The Commissioner, Municipal Corporation">The Commissioner (Municipal Corporation)</option>
+                        <option value="The Executive Engineer (Public Works Department / Highways)">The Executive Engineer (PWD / Highways)</option>
+                        <option value="The Inspector of Police (Local Station)">The Inspector of Police (Local Station)</option>
+                        <option value="Other">Other / Custom Authority Name...</option>
+                      </select>
+
+                      {addressedAuth === 'Other' && (
+                        <input
+                          type="text"
+                          value={customAuth}
+                          onChange={(e) => setCustomAuth(e.target.value)}
+                          placeholder="e.g. The Superintending Engineer, TANGEDCO"
+                          className="glass-input text-xs w-full py-2 mt-2"
+                          required
+                        />
+                      )}
+                    </div>
+
+                    <div>
+                      <label className="block text-[10px] text-[var(--text-muted)] uppercase tracking-wider mb-1 font-bold">
+                        Specific Relief Demands / Prayers (Optional)
+                      </label>
+                      <textarea
+                        rows={3}
+                        value={customDemands}
+                        onChange={(e) => setCustomDemands(e.target.value)}
+                        placeholder="e.g. 1. Order immediate field inspection within 24 hours. 2. Direct delinquent contractors to resurface road defect within 48 hours. 3. Issue safety barricading immediately."
+                        className="glass-input text-xs w-full p-2.5"
+                      />
+                    </div>
+
+                    <div className="flex justify-between pt-3 border-t border-gray-800">
+                      <button
+                        type="button"
+                        onClick={() => setDocStep(2)}
+                        className="px-4 py-2 rounded-lg bg-[var(--bg-elevated)] hover:bg-[var(--bg-surface)] text-[var(--text-secondary)] font-bold text-xs uppercase tracking-wider flex items-center space-x-1 border border-[var(--border-default)] cursor-pointer"
+                      >
+                        <ChevronLeft size={14} />
+                        <span>Back</span>
+                      </button>
+                      <button
+                        type="submit"
+                        disabled={generatingDoc}
+                        className="px-6 py-2.5 rounded-lg bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-white font-extrabold text-xs uppercase tracking-wider flex items-center space-x-2 shadow-lg shadow-emerald-950/30 disabled:opacity-50 cursor-pointer"
+                      >
+                        {generatingDoc ? (
+                          <>
+                            <Loader2 size={14} className="animate-spin" />
+                            <span>Drafting Legal Document...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Sparkles size={14} />
+                            <span>Generate Formal Legal Petition</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </form>
+                )}
+              </div>
+            ) : (
+              /* GENERATED DOCUMENT PREVIEW & ACTIONS */
+              <div className="flex-1 overflow-y-auto space-y-4 pr-1 animate-fadeIn">
+                <div className="flex items-center justify-between bg-[var(--bg-elevated)] p-2.5 rounded-xl border border-[var(--border-subtle)] flex-wrap gap-2 print:hidden">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] uppercase font-bold text-emerald-400 tracking-wider bg-emerald-500/10 px-2.5 py-1 rounded border border-emerald-500/20">
+                      ✅ Legal Draft Ready to Print
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={handlePrintDoc}
+                      className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-[10px] uppercase tracking-wider rounded-lg flex items-center gap-1.5 transition-all shadow-sm cursor-pointer"
+                    >
+                      <Printer size={12} />
+                      <span>Print / Save PDF</span>
+                    </button>
+                    <button
+                      onClick={handleCopyDoc}
+                      className="px-3 py-1.5 bg-[var(--bg-surface)] hover:bg-[var(--bg-elevated)] text-[var(--teal-500)] border border-[var(--teal-500)]/30 font-extrabold text-[10px] uppercase tracking-wider rounded-lg flex items-center gap-1.5 transition-all cursor-pointer"
+                    >
+                      {copiedDoc ? <Check size={12} className="text-emerald-400" /> : <Copy size={12} />}
+                      <span>{copiedDoc ? 'Copied!' : 'Copy Draft'}</span>
+                    </button>
+                    <button
+                      onClick={() => setIsEditingDoc(!isEditingDoc)}
+                      className="px-3 py-1.5 bg-[var(--bg-surface)] text-[var(--text-secondary)] border border-[var(--border-default)] font-extrabold text-[10px] uppercase tracking-wider rounded-lg flex items-center gap-1 cursor-pointer"
+                    >
+                      <span>{isEditingDoc ? 'Preview' : 'Edit Text'}</span>
+                    </button>
+                    <button
+                      onClick={() => setGeneratedDoc(null)}
+                      className="px-3 py-1.5 bg-[var(--bg-surface)] text-[var(--text-muted)] font-extrabold text-[10px] uppercase tracking-wider rounded-lg hover:text-[var(--text-primary)] cursor-pointer"
+                    >
+                      Regenerate
+                    </button>
+                  </div>
+                </div>
+
+                {isEditingDoc ? (
+                  <textarea
+                    rows={20}
+                    value={generatedDoc}
+                    onChange={(e) => setGeneratedDoc(e.target.value)}
+                    className="w-full p-4 rounded-xl font-mono text-xs bg-[var(--bg-surface)] border border-[var(--border-default)] text-[var(--text-primary)] focus:outline-none leading-relaxed"
+                  />
+                ) : (
+                  <div className="p-6 bg-white text-gray-950 rounded-xl font-serif text-xs leading-relaxed space-y-3 select-text shadow-inner border border-gray-300 print:p-0 print:border-none print:shadow-none">
+                    {renderMarkdownText(generatedDoc)}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </motion.div>
   );
 }
