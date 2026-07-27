@@ -17,6 +17,8 @@ const {
   upload, uploadToCloudinary,
   postLimiter, aiLimiter, asyncHandler,
   generateChatAlias,
+  encryptField, decryptField,
+  encryptTokenDeterministic, decryptToken,
 } = require('../middleware/middleware');
 const { fetchGeneralNews, fetchDistrictNews } = require('../services/newsService');
 const {
@@ -45,6 +47,10 @@ router.get('/auth/me', requireAuth, attachUser, asyncHandler(async (req, res) =>
     avatar: user.avatar,
     role: user.role,
     district: user.district,
+    email: decryptField(user.email),
+    phoneNumber: decryptField(user.phoneNumber),
+    age: decryptField(user.age),
+    aadhaarNumber: decryptField(user.aadhaarNumber),
     // Personal accountability — own history (visible only to self)
     myStats: {
       postCount: user.postTokens?.length || 0,
@@ -54,15 +60,34 @@ router.get('/auth/me', requireAuth, attachUser, asyncHandler(async (req, res) =>
   });
 }));
 
-// Update user profile (district, displayName for private use)
+// Update user profile (district, displayName, email, phoneNumber, age, aadhaarNumber)
 router.patch('/auth/profile', requireAuth, attachUser, asyncHandler(async (req, res) => {
-  const { district } = req.body;
+  const { district, displayName, email, phoneNumber, age, aadhaarNumber } = req.body;
+  const updateObj = {};
+  if (district !== undefined) updateObj.district = district;
+  if (displayName !== undefined) updateObj.displayName = displayName;
+  if (email !== undefined) updateObj.email = encryptField(email);
+  if (phoneNumber !== undefined) updateObj.phoneNumber = encryptField(phoneNumber);
+  if (age !== undefined) updateObj.age = encryptField(age);
+  if (aadhaarNumber !== undefined) updateObj.aadhaarNumber = encryptField(aadhaarNumber);
+
   const user = await User.findByIdAndUpdate(
     req.user._id,
-    { district },
+    updateObj,
     { returnDocument: 'after' }
   );
-  res.json({ success: true, district: user.district });
+
+  res.json({
+    success: true,
+    user: {
+      district: user.district,
+      displayName: user.displayName,
+      email: decryptField(user.email),
+      phoneNumber: decryptField(user.phoneNumber),
+      age: decryptField(user.age),
+      aadhaarNumber: decryptField(user.aadhaarNumber),
+    }
+  });
 }));
 
 // Get user's own post history (private — shows their anonToken posts)
@@ -519,8 +544,9 @@ GPS Match Status: ${imageMetadata.gpsMatchStatus}`;
     await updateIntensityScore(post._id);
 
     // Track anon token on user (for ownership claim, visible only to them)
+    const encryptedToken = encryptTokenDeterministic(postAnonToken);
     await User.findByIdAndUpdate(req.user._id, {
-      $addToSet: { postTokens: postAnonToken }
+      $addToSet: { postTokens: encryptedToken }
     });
 
     const populated = await Post.findById(post._id)
@@ -910,8 +936,9 @@ router.post('/posts/:id/comments', requireAuth, attachUser, asyncHandler(async (
   await updateIntensityScore(req.params.id);
 
   // Track comment token for user's own history
+  const encryptedCommentToken = encryptTokenDeterministic(commentAnonToken);
   await User.findByIdAndUpdate(req.user._id, {
-    $addToSet: { commentTokens: commentAnonToken }
+    $addToSet: { commentTokens: encryptedCommentToken }
   });
 
   cache.invalidatePattern('posts:');

@@ -1,249 +1,246 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { UserButton, SignedIn, SignedOut, SignInButton } from '@clerk/clerk-react';
+import { UserButton, SignedIn, SignedOut, SignInButton, useUser } from '@clerk/clerk-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Megaphone, Map, MessageSquare, Flame,
-  PlusCircle, Bell, User, Shield, Menu, X, ArrowRight
+  PlusCircle, Bell, User, Shield, Home, Plus, Zap
 } from 'lucide-react';
+import { useAccessibility } from '../context/AccessibilityContext';
+import { useCivic } from '../context/CivicContext';
 
 export default function Navbar({ role }) {
   const location = useLocation();
-  const [isOpen, setIsOpen] = useState(false);
-  const [scrolled, setScrolled] = useState(false);
-
+  const { user } = useUser();
+  const { setIsWidgetOpen } = useAccessibility();
+  const { hideMobileBottomNav } = useCivic();
   const isActive = (path) => location.pathname === path;
 
-  // Close mobile menu on route change
-  useEffect(() => { setIsOpen(false); }, [location.pathname]);
-
-  // Track page scroll to add compact styling
-  useEffect(() => {
-    const handleScroll = () => setScrolled(window.scrollY > 15);
-    window.addEventListener('scroll', handleScroll, { passive: true });
-    return () => window.removeEventListener('scroll', handleScroll);
-  }, []);
-
   const links = [
-    { path: '/feed',    label: 'Feed',       icon: Megaphone },
-    { path: '/map',     label: 'Civic Map',  icon: Map },
-    { path: '/chat',    label: 'Discussion', icon: MessageSquare },
-    { path: '/strikes', label: 'Strikes',    icon: Flame },
+    { path: '/feed',    label: 'Feed',        icon: Megaphone },
+    { path: '/map',     label: 'Civic Map',   icon: Map },
+    { path: '/chat',    label: 'Discussion',  icon: MessageSquare },
+    { path: '/strikes', label: 'Strikes',     icon: Flame },
+    { path: '/my-account', label: 'Profile',  icon: User },
   ];
 
+  const displayName = user?.firstName || user?.username || 'Civic User';
+
   return (
-    <header className="fixed top-4 left-0 right-0 z-50 flex justify-center px-4 md:px-8 pointer-events-none">
-      {/* Floating Pill Container */}
-      <div
-        className={`w-full max-w-6xl rounded-2xl bg-white/75 dark:bg-slate-900/75 border border-slate-200/50 dark:border-slate-800/50 backdrop-blur-lg shadow-lg pointer-events-auto transition-all duration-300 ${
-          scrolled
-            ? 'py-2.5 px-5 md:px-6 shadow-xl bg-white/85 dark:bg-slate-900/85 backdrop-blur-xl'
-            : 'py-3.5 px-6 md:px-8 shadow-md'
-        } flex items-center justify-between relative`}
-      >
-        {/* Left Side: Logo */}
-        <div className="flex-1 flex items-center justify-start z-10">
-          <Link
-            to="/"
-            className="flex items-center gap-2.5 no-underline group"
-            aria-label="CivicTN — Home"
-          >
-            <div
-              className="w-8 h-8 rounded-xl flex items-center justify-center shadow-md group-hover:rotate-6 transition-transform duration-300"
-              style={{ background: 'linear-gradient(135deg, var(--teal-500), var(--teal-400))' }}
-            >
-              <PlusCircle size={16} className="text-white" />
+    <>
+      {/* ─────────────────────────────── DESKTOP SIDEBAR ─────────────────────────── */}
+      <aside className="hidden lg:flex flex-col fixed top-0 left-0 bottom-0 w-[240px] z-50 border-r border-[var(--border-subtle)] bg-[var(--bg-surface)]">
+        
+        {/* Brand */}
+        <div className="px-5 pt-6 pb-5">
+          <Link to="/" className="flex items-center gap-3 group no-underline">
+            <div className="w-9 h-9 rounded-xl flex items-center justify-center shadow-md relative overflow-hidden"
+              style={{ background: 'linear-gradient(135deg, var(--teal-500), var(--teal-600))' }}>
+              <Zap size={18} className="text-white" />
             </div>
-            <div className="flex flex-col">
-              <span
-                className="font-display font-black text-base tracking-tight text-slate-900 dark:text-white leading-none"
-              >
-                CivicTN
-              </span>
-              <span className="text-[7.5px] font-bold tracking-widest text-slate-400 dark:text-slate-500 uppercase mt-0.5">
-                Solid Infrastructure
-              </span>
+            <div className="flex flex-col leading-none">
+              <span className="font-display font-black text-[17px] tracking-tight text-[var(--text-primary)]">CivicTN</span>
+              <span className="text-[9px] font-bold tracking-widest text-[var(--text-muted)] uppercase mt-0.5">Smart Infrastructure</span>
             </div>
           </Link>
         </div>
 
-        {/* Center: Navigation Links (Desktop) */}
-        <nav className="hidden lg:flex items-center justify-center gap-7 z-10" aria-label="Main navigation">
+        {/* Nav Links */}
+        <nav className="flex-1 px-3 space-y-0.5" aria-label="Desktop sidebar navigation">
           {links.map((link) => {
             const active = isActive(link.path);
+            const Icon = link.icon;
             return (
               <Link
                 key={link.path}
                 to={link.path}
-                className="relative text-sm font-semibold tracking-tight no-underline transition-colors duration-200 text-slate-600 dark:text-slate-400 hover:text-slate-950 dark:hover:text-white flex items-center gap-1.5 group py-1"
-                aria-current={active ? 'page' : undefined}
+                className={`nav-link group flex items-center gap-3.5 px-3.5 py-2.5 rounded-xl text-sm font-semibold transition-all duration-200 no-underline relative ${
+                  active
+                    ? 'text-[var(--text-primary)] font-bold'
+                    : 'text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-elevated)]'
+                }`}
               >
-                <span>{link.label}</span>
-                {/* Active Indicator Underline */}
+                {/* Active background pill */}
                 {active && (
                   <motion.div
-                    layoutId="activeUnderline"
-                    className="absolute -bottom-1 left-0 right-0 h-0.5 rounded-full"
-                    style={{ background: 'var(--teal-500)' }}
+                    layoutId="desktop-nav-active"
+                    className="absolute inset-0 rounded-xl bg-[var(--bg-elevated)]"
                     transition={{ type: 'spring', stiffness: 380, damping: 30 }}
                   />
                 )}
-                {!active && (
-                  <span
-                    className="absolute -bottom-1 left-0 w-0 h-0.5 rounded-full transition-all duration-200 group-hover:w-full"
-                    style={{ background: 'rgba(13,148,136,0.45)' }}
+                <div className="relative z-10 flex items-center gap-3.5">
+                  <Icon
+                    size={20}
+                    strokeWidth={active ? 2.5 : 1.75}
+                    className={active ? 'text-[var(--teal-500)]' : 'text-[var(--text-muted)] group-hover:text-[var(--text-secondary)]'}
                   />
+                  <span className={active ? 'text-[var(--text-primary)]' : ''}>{link.label}</span>
+                </div>
+                {/* Active accent dot */}
+                {active && (
+                  <div className="absolute right-3 top-1/2 -translate-y-1/2 w-1.5 h-1.5 rounded-full bg-[var(--teal-500)] z-10" />
                 )}
               </Link>
             );
           })}
+
+
+
+          {/* Admin Link */}
+          {role && role !== 'citizen' && (
+            <Link
+              to="/admin"
+              className={`flex items-center gap-3.5 px-3.5 py-2.5 rounded-xl text-sm font-semibold transition-all duration-200 no-underline ${
+                isActive('/admin')
+                  ? 'text-rose-500 bg-rose-500/8'
+                  : 'text-[var(--text-muted)] hover:text-rose-500 hover:bg-rose-500/5'
+              }`}
+            >
+              <Shield size={20} strokeWidth={isActive('/admin') ? 2.5 : 1.75} className={isActive('/admin') ? 'text-rose-500' : ''} />
+              <span>Admin Panel</span>
+            </Link>
+          )}
         </nav>
 
-        {/* Right Side: Auth Actions & Notification */}
-        <div className="flex-1 flex items-center justify-end gap-3.5 z-10">
+        {/* Bottom CTA + Profile */}
+        <div className="px-3 pb-5 pt-4 border-t border-[var(--border-subtle)] space-y-3">
           <SignedIn>
-            {/* Notification Bell */}
-            <div className="relative">
-              <button
-                className="hover:bg-slate-100/80 dark:hover:bg-slate-800/80 rounded-full p-2 cursor-pointer flex items-center justify-center transition-colors relative focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-1"
-                style={{ outline: 'none' }}
-                aria-label="Notifications"
-              >
-                <Bell size={15} className="text-slate-600 dark:text-slate-400" />
-                <span className="absolute top-1.5 right-1.5 w-1.5 h-1.5 rounded-full bg-rose-500">
-                  <span className="absolute inset-0 rounded-full bg-rose-500 animate-ping opacity-75" />
-                </span>
-              </button>
-            </div>
+            {/* Report Issue CTA */}
+            <Link
+              to="/submit"
+              className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl text-sm font-bold text-white shadow-teal transition-all no-underline hover:opacity-90 active:scale-[0.98]"
+              style={{ background: 'linear-gradient(135deg, var(--teal-500), var(--teal-600))' }}
+            >
+              <Plus size={16} strokeWidth={2.5} />
+              Report Issue
+            </Link>
 
-            {/* Clerk Avatar trigger */}
-            <div className="flex items-center gap-2 bg-slate-50/50 dark:bg-slate-800/50 border border-slate-200/40 dark:border-slate-700/40 rounded-full py-0.5 pr-2.5 pl-1">
+            {/* Profile Row */}
+            <div className="flex items-center gap-2.5 px-2.5 py-2 rounded-xl hover:bg-[var(--bg-elevated)] transition-colors cursor-pointer">
               <UserButton
                 appearance={{
                   elements: {
-                    userButtonAvatarBox: 'w-6 h-6 border shadow-sm border-slate-200/50 dark:border-slate-700/50',
+                    userButtonAvatarBox: 'w-8 h-8 ring-2 ring-[var(--border-default)]',
                   }
                 }}
               />
-              {role && role !== 'citizen' && (
-                <span
-                  className="text-[7.5px] font-black uppercase tracking-widest px-1 rounded-md hidden sm:inline-block"
-                  style={{
-                    color: 'var(--teal-500)',
-                    background: 'var(--teal-glow)',
-                  }}
-                >
-                  {role}
-                </span>
-              )}
+              <div className="flex flex-col min-w-0 flex-1">
+                <span className="text-xs font-bold text-[var(--text-primary)] truncate">{displayName}</span>
+                {role && role !== 'citizen' && (
+                  <span className="text-[8px] font-black tracking-widest text-[var(--teal-500)] uppercase">{role}</span>
+                )}
+              </div>
             </div>
-
-            {/* CTA Button: Report Issue */}
-            <motion.div
-              whileHover={{ scale: 1.03 }}
-              whileTap={{ scale: 0.97 }}
-              className="hidden md:block"
-            >
-              <Link
-                to="/submit"
-                className="btn btn-primary rounded-full text-xs px-4.5 py-2 flex items-center gap-1.5 no-underline shadow-teal"
-                aria-label="Report a civic issue"
-              >
-                Report Issue
-                <ArrowRight size={13} />
-              </Link>
-            </motion.div>
           </SignedIn>
 
           <SignedOut>
             <SignInButton mode="modal">
-              <button className="text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white text-xs font-bold px-2.5 py-1.5 transition-colors cursor-pointer focus-visible:outline-none">
+              <button className="w-full text-center py-2.5 text-xs font-bold text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors cursor-pointer border border-[var(--border-default)] rounded-xl bg-[var(--bg-elevated)] hover:bg-[var(--bg-overlay)]">
                 Sign in
               </button>
             </SignInButton>
             <SignInButton mode="modal">
               <motion.button
-                whileHover={{ scale: 1.03 }}
-                whileTap={{ scale: 0.97 }}
-                className="btn btn-primary rounded-full px-4.5 py-2 text-xs font-bold flex items-center gap-1 cursor-pointer shadow-teal"
-                aria-label="Join the CivicTN platform"
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+                className="w-full py-2.5 text-center text-xs font-bold text-white rounded-xl cursor-pointer"
+                style={{ background: 'linear-gradient(135deg, var(--teal-500), var(--teal-600))' }}
               >
-                Join Platform
-                <ArrowRight size={13} />
+                Join CivicTN
               </motion.button>
             </SignInButton>
           </SignedOut>
-
-          {/* Mobile hamburger */}
-          <button
-            onClick={() => setIsOpen(!isOpen)}
-            className="hover:bg-slate-100/80 dark:hover:bg-slate-800/80 rounded-full p-2 cursor-pointer flex lg:hidden items-center justify-center transition-colors focus-visible:outline-none"
-            aria-label={isOpen ? 'Close navigation menu' : 'Open navigation menu'}
-            aria-expanded={isOpen}
-          >
-            {isOpen ? <X size={16} className="text-slate-600 dark:text-slate-400" /> : <Menu size={16} className="text-slate-600 dark:text-slate-400" />}
-          </button>
         </div>
-      </div>
+      </aside>
 
-      {/* Mobile Drawer */}
-      <AnimatePresence>
-        {isOpen && (
-          <motion.div
-            initial={{ opacity: 0, y: -15 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -15 }}
-            transition={{ duration: 0.2, ease: 'easeOut' }}
-            className="absolute top-[4.5rem] left-4 right-4 bg-white/90 dark:bg-slate-900/90 backdrop-blur-lg border border-slate-200/50 dark:border-slate-800/50 rounded-2xl shadow-2xl p-4 space-y-1.5 pointer-events-auto overflow-hidden"
-            role="navigation"
-            aria-label="Mobile navigation"
-          >
-            {links.map((link, idx) => {
-              const Icon = link.icon;
-              const active = isActive(link.path);
-              return (
-                <div key={link.path}>
-                  <Link
-                    to={link.path}
-                    aria-current={active ? 'page' : undefined}
-                    className={`flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm font-semibold transition-colors no-underline ${
-                      active
-                        ? 'text-[var(--teal-600)] bg-[var(--teal-glow)]'
-                        : 'text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 hover:text-slate-950 dark:hover:text-white'
-                    }`}
-                  >
-                    <Icon size={14} style={{ color: active ? 'var(--teal-500)' : undefined }} className={!active ? 'text-slate-400' : ''} />
-                    <span>{link.label}</span>
-                  </Link>
-                </div>
-              );
-            })}
+      {/* ─────────────────────────────── MOBILE TOP HEADER ─────────────────────────── */}
+      <header className="flex lg:hidden fixed top-0 left-0 right-0 h-14 bg-[var(--bg-surface)]/90 border-b border-[var(--border-subtle)] items-center justify-between px-4 z-40 backdrop-blur-xl">
+        <Link to="/" className="flex items-center gap-2 no-underline">
+          <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'linear-gradient(135deg, var(--teal-500), var(--teal-600))' }}>
+            <Zap size={14} className="text-white" />
+          </div>
+          <span className="font-display font-black text-sm tracking-tight text-[var(--text-primary)]">CivicTN</span>
+        </Link>
 
-            <SignedOut>
-              <div className="pt-3 border-t border-slate-100 dark:border-slate-800 mt-2 flex flex-col gap-2">
-                <SignInButton mode="modal">
-                  <button className="btn btn-primary rounded-full w-full py-2.5 text-xs font-bold flex items-center justify-center gap-1">
-                    Join Platform
-                    <ArrowRight size={13} />
-                  </button>
-                </SignInButton>
-              </div>
-            </SignedOut>
+        <div className="flex items-center gap-1">
+          <SignedIn>
+            <Link
+              to="/chat"
+              className={`p-2 rounded-xl transition-colors ${isActive('/chat') ? 'text-[var(--teal-500)] bg-[var(--teal-glow)]' : 'text-[var(--text-muted)] hover:bg-[var(--bg-elevated)]'}`}
+              aria-label="Discussion"
+            >
+              <MessageSquare size={18} strokeWidth={isActive('/chat') ? 2.5 : 1.75} />
+            </Link>
 
-            <SignedIn>
-              <div className="pt-3 border-t border-slate-100 dark:border-slate-800 mt-2">
-                <Link
-                  to="/submit"
-                  className="btn btn-primary rounded-full w-full py-2.5 text-xs font-bold flex items-center justify-center gap-1.5 no-underline"
-                >
-                  Report Issue
-                  <ArrowRight size={13} />
-                </Link>
-              </div>
-            </SignedIn>
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </header>
+            <button className="p-2 rounded-xl transition-colors text-[var(--text-muted)] hover:bg-[var(--bg-elevated)] relative" aria-label="Notifications">
+              <Bell size={18} strokeWidth={1.75} />
+              <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-rose-500 ring-2 ring-[var(--bg-surface)]" />
+            </button>
+
+            <UserButton
+              appearance={{
+                elements: {
+                  userButtonAvatarBox: 'w-7 h-7 ring-2 ring-[var(--border-default)]',
+                }
+              }}
+            />
+          </SignedIn>
+
+          <SignedOut>
+            <SignInButton mode="modal">
+              <button className="text-xs font-bold bg-[var(--teal-500)] hover:bg-[var(--teal-600)] text-white px-3 py-1.5 rounded-lg border-none cursor-pointer transition-colors">
+                Sign In
+              </button>
+            </SignInButton>
+          </SignedOut>
+        </div>
+      </header>
+
+      {/* ─────────────────────────────── MOBILE BOTTOM NAV ─────────────────────────── */}
+      {!hideMobileBottomNav && (
+        <nav
+          className="mobile-bottom-nav flex lg:hidden fixed bottom-0 left-0 right-0 z-40"
+          aria-label="Mobile bottom navigation"
+        >
+          {[
+            { to: '/feed',      icon: Megaphone,    label: 'Feed' },
+            { to: '/map',       icon: Map,          label: 'Map' },
+            { to: '/submit',    icon: Plus,         label: 'Report',   isCreate: true },
+            { to: '/strikes',   icon: Flame,        label: 'Strikes' },
+            { to: '/my-account', icon: User,        label: 'Me' },
+          ].map(({ to, icon: Icon, label, isCreate }) => {
+            const active = isActive(to);
+            return (
+              <Link
+                key={to}
+                to={to}
+                className={`mobile-nav-item flex flex-col items-center justify-center gap-1 flex-1 py-2 transition-all no-underline ${
+                  active ? 'text-[var(--teal-500)]' : 'text-[var(--text-muted)]'
+                }`}
+                aria-label={label}
+              >
+                {isCreate ? (
+                  <div className="w-10 h-8 rounded-xl flex items-center justify-center" style={{ background: 'linear-gradient(135deg, var(--teal-500), var(--teal-600))' }}>
+                    <Plus size={18} className="text-white" strokeWidth={2.5} />
+                  </div>
+                ) : (
+                  <div className="relative">
+                    <Icon size={22} strokeWidth={active ? 2.5 : 1.75} />
+                    {active && (
+                      <motion.div
+                        layoutId="mobile-nav-dot"
+                        className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full bg-[var(--teal-500)]"
+                        transition={{ type: 'spring', stiffness: 380, damping: 30 }}
+                      />
+                    )}
+                  </div>
+                )}
+                <span className={`text-[9px] font-bold ${isCreate ? 'text-[var(--teal-500)]' : ''}`}>{label}</span>
+              </Link>
+            );
+          })}
+        </nav>
+      )}
+    </>
   );
 }

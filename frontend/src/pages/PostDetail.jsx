@@ -1690,7 +1690,7 @@ export default function PostDetail() {
                   return (
                     <div 
                       key={idx} 
-                      className="p-3.5 bg-[var(--bg-elevated)] border border-[var(--border-subtle)] rounded-2xl hover:border-[var(--teal-500)]/30 transition-all space-y-2 cursor-pointer group"
+                      className="py-3 px-1 border-b border-slate-100 dark:border-zinc-800 last:border-0 transition-all space-y-2 cursor-pointer group"
                       onClick={() => toggleActExpand(act)}
                     >
                       <div className="flex items-center justify-between gap-2">
@@ -1787,9 +1787,9 @@ export default function PostDetail() {
                   const waUrl = phoneNum ? `https://wa.me/${phoneNum.replace(/[^0-9]/g, '')}?text=${encodeURIComponent(waMessage)}` : null;
 
                   return (
-                    <div key={c._id} className="p-4 bg-[var(--bg-elevated)] rounded-2xl border border-[var(--border-subtle)] space-y-3 relative overflow-hidden group transition-all hover:border-[var(--border-strong)]">
+                    <div key={c._id} className="py-3 px-1 border-b border-slate-100 dark:border-zinc-800 last:border-0 space-y-2 relative overflow-hidden transition-all">
                       <div className="flex items-center justify-between">
-                        <span className="text-[9px] uppercase font-bold tracking-widest bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 px-2 py-0.5 rounded select-none">
+                        <span className="text-[9px] uppercase font-bold tracking-widest bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 px-2 py-0.5 rounded select-none">
                           {c.department}
                         </span>
                       </div>
@@ -1799,7 +1799,7 @@ export default function PostDetail() {
                         {c.designation && <span className="text-[10px] text-[var(--text-muted)] font-normal">({c.designation})</span>}
                       </div>
 
-                      <div className="space-y-2 pt-1 text-[11px] font-medium border-t border-[var(--border-subtle)] select-text">
+                      <div className="space-y-2 pt-1 text-[11px] font-medium select-text">
                         {c.phone && (
                           <div className="flex items-center justify-between gap-3">
                             <a href={`tel:${phoneNum}`} className="flex items-center space-x-1.5 text-[var(--teal-500)] hover:text-[var(--teal-600)] transition-colors">

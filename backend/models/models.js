@@ -17,6 +17,9 @@ const userSchema = new Schema({
   avatar: { type: String },
   role: { type: String, enum: ['citizen', 'officer', 'department', 'admin'], default: 'citizen' },
   district: { type: String },           // home district (optional, set by user)
+  phoneNumber: { type: String },
+  age: { type: String },
+  aadhaarNumber: { type: String },
   // Personal accountability (visible only to self)
   postTokens: [{ type: String }],         // HMAC tokens of own posts (to claim ownership)
   commentTokens: [{ type: String }],         // HMAC tokens of own comments

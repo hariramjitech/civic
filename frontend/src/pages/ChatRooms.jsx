@@ -1,17 +1,17 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useCivic } from '../context/CivicContext';
 import api from '../lib/api';
+import { Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   MessageSquare, Users, Send, Radio, Plus, Search, 
-  X, Loader2, Sparkles, Shield, Compass
+  X, Loader2, Sparkles, Shield, Compass, ChevronLeft,
+  Hash, Lock, Globe, Mic
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
-// Helper to generate initials & gradient color scheme based on user alias hash
 const getAvatarProps = (alias) => {
-  if (!alias) return { char: 'A', bg: 'from-slate-400 to-slate-500', text: 'text-white' };
-  
+  if (!alias) return { char: 'A', bg: 'from-slate-400 to-slate-500' };
   const cleanAlias = alias.replace('Citizen ', '');
   let char = 'C';
   if (cleanAlias.startsWith('#') && cleanAlias.length > 1) {
@@ -19,47 +19,39 @@ const getAvatarProps = (alias) => {
   } else if (cleanAlias.length > 0) {
     char = cleanAlias[0].toUpperCase();
   }
-  
-  // Simple hash function for alias
   let hash = 0;
   for (let i = 0; i < alias.length; i++) {
     hash = alias.charCodeAt(i) + ((hash << 5) - hash);
   }
-  
   const gradients = [
-    'from-teal-400 to-emerald-600',
+    'from-violet-400 to-purple-600',
     'from-blue-400 to-indigo-600',
-    'from-purple-400 to-pink-600',
+    'from-teal-400 to-emerald-600',
     'from-pink-400 to-rose-600',
     'from-amber-400 to-orange-600',
-    'from-emerald-400 to-cyan-600',
+    'from-cyan-400 to-sky-600',
   ];
-  
-  const gradient = gradients[Math.abs(hash) % gradients.length];
-  return { char, bg: gradient, text: 'text-white' };
+  return { char, bg: gradients[Math.abs(hash) % gradients.length] };
 };
 
+function timeAgo(dateStr) {
+  const seconds = Math.floor((Date.now() - new Date(dateStr)) / 1000);
+  if (seconds < 60) return `${seconds}s`;
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}m`;
+  if (seconds < 86400) return `${Math.floor(seconds / 3600)}h`;
+  return new Date(dateStr).toLocaleDateString([], { month: 'short', day: 'numeric' });
+}
+
 export default function ChatRooms() {
-  const { isSignedIn, loadingProfile, socket } = useCivic();
+  const { isSignedIn, loadingProfile, socket, setHideMobileBottomNav } = useCivic();
   const [rooms, setRooms] = useState([]);
   const [activeRoom, setActiveRoom] = useState(null);
   const [loadingRooms, setLoadingRooms] = useState(true);
-
-  // Filters
   const [districtFilter, setDistrictFilter] = useState('');
   const [roomSearch, setRoomSearch] = useState('');
-
-  // Create Room modal
   const [showCreateModal, setShowCreateModal] = useState(false);
-  const [newRoomForm, setNewRoomForm] = useState({
-    name: '',
-    description: '',
-    district: '',
-    category: 'other'
-  });
+  const [newRoomForm, setNewRoomForm] = useState({ name: '', description: '', district: '', category: 'other' });
   const [creatingRoom, setCreatingRoom] = useState(false);
-
-  // Real-time Chat States
   const [messages, setMessages] = useState([]);
   const [inputText, setInputText] = useState('');
   const [userAlias, setUserAlias] = useState('');
@@ -68,6 +60,7 @@ export default function ChatRooms() {
   const [typingUsers, setTypingUsers] = useState(new Set());
   
   const messagesEndRef = useRef(null);
+  const inputRef = useRef(null);
   const typingTimeoutRef = useRef(null);
 
   const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
@@ -79,7 +72,6 @@ export default function ChatRooms() {
 
   const fetchRooms = async (attempt = 0) => {
     if (!isSignedIn) return false;
-
     try {
       const params = { type: 'discussion' };
       if (districtFilter) params.district = districtFilter;
@@ -87,136 +79,74 @@ export default function ChatRooms() {
       setRooms(res.data.rooms || []);
       return true;
     } catch (err) {
-      console.error(err);
       if (err.response?.status === 401 && attempt < 5) {
         await sleep(400);
         return fetchRooms(attempt + 1);
       }
-      if (err.response?.status !== 401) {
-        toast.error('Failed to load chat channels.');
-      }
+      if (err.response?.status !== 401) toast.error('Failed to load channels.');
       return false;
     }
   };
 
   useEffect(() => {
     let cancelled = false;
-
     const load = async () => {
-      if (!isSignedIn) {
-        setLoadingRooms(false);
-        return;
-      }
-
+      if (!isSignedIn) { setLoadingRooms(false); return; }
       setLoadingRooms(true);
-      const ok = await fetchRooms();
-      if (!cancelled) {
-        setLoadingRooms(false);
-      }
-      return ok;
+      await fetchRooms();
+      if (!cancelled) setLoadingRooms(false);
     };
-
     load();
-
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, [districtFilter, isSignedIn, loadingProfile]);
 
-  // Handle Socket Events for Active Room
   useEffect(() => {
     if (!socket || !activeRoom) return;
-
-    const joinRoom = () => {
-      socket.emit('room:join', { roomId: activeRoom._id });
-    };
-
-    // Load recent messages
+    const joinRoom = () => socket.emit('room:join', { roomId: activeRoom._id });
     const fetchRecentMessages = async () => {
       try {
         const res = await api.get(`/rooms/${activeRoom._id}`);
         setMessages(res.data.messages || []);
         setMemberCount(res.data.room.memberCount || 0);
         setOnlineCount(1);
-      } catch (err) {
-        console.error(err);
-      }
+      } catch {}
     };
     fetchRecentMessages();
 
     const handleRoomJoined = ({ roomId, alias, memberCount: count, onlineCount: activeCount }) => {
       if (roomId && roomId !== activeRoom._id) return;
       setUserAlias(alias);
-      if (typeof count === 'number') {
-        setMemberCount(count);
-      }
-      if (typeof activeCount === 'number') {
-        setOnlineCount(activeCount);
-      }
-      console.log('Joined room. Assigned alias:', alias);
+      if (typeof count === 'number') setMemberCount(count);
+      if (typeof activeCount === 'number') setOnlineCount(activeCount);
     };
-
     const handleUserJoined = ({ roomId, memberCount: count, onlineCount: activeCount }) => {
       if (roomId && roomId !== activeRoom._id) return;
       if (typeof count === 'number') setMemberCount(count);
       if (typeof activeCount === 'number') setOnlineCount(activeCount);
     };
-
     const handleUserLeft = ({ roomId, memberCount: count, onlineCount: activeCount }) => {
       if (roomId && roomId !== activeRoom._id) return;
       if (typeof count === 'number') setMemberCount(count);
       if (typeof activeCount === 'number') setOnlineCount(activeCount);
     };
-
     const handleNewMessage = (msg) => {
       if (msg.roomId && msg.roomId !== activeRoom._id) return;
       setMessages((prev) => [...prev, msg]);
-      scrollToBottom();
     };
-
     const handleTyping = ({ roomId, alias }) => {
       if (roomId && roomId !== activeRoom._id) return;
-      if (alias) {
-        setTypingUsers((prev) => {
-          const next = new Set(prev);
-          next.add(alias);
-          return next;
-        });
-      }
+      if (alias) setTypingUsers(prev => { const next = new Set(prev); next.add(alias); return next; });
     };
-
     const handleStopTyping = ({ roomId, alias }) => {
       if (roomId && roomId !== activeRoom._id) return;
-      if (alias) {
-        setTypingUsers((prev) => {
-          const next = new Set(prev);
-          next.delete(alias);
-          return next;
-        });
-      }
+      if (alias) setTypingUsers(prev => { const next = new Set(prev); next.delete(alias); return next; });
     };
-
-    const handleRejected = ({ reason }) => {
-      toast.error(`Message Blocked: ${reason}`);
-    };
-
+    const handleRejected = ({ reason }) => toast.error(`Blocked: ${reason}`);
     const handleMessageFlagged = ({ messageId }) => {
-      setMessages((prev) =>
-        prev.map((m) =>
-          m._id === messageId
-            ? { ...m, text: '[Message deleted by AI content moderation]' }
-            : m
-        )
-      );
+      setMessages(prev => prev.map(m => m._id === messageId ? { ...m, text: '[Removed by AI moderation]' } : m));
     };
-
-    const handleMessageError = ({ message }) => {
-      toast.error(message || 'Message could not be sent.');
-    };
-
-    const handleRoomError = ({ message }) => {
-      toast.error(message || 'Could not join chat room.');
-    };
+    const handleMessageError = ({ message }) => toast.error(message || 'Send failed.');
+    const handleRoomError = ({ message }) => toast.error(message || 'Could not join.');
 
     socket.on('room:joined', handleRoomJoined);
     socket.on('room:user_joined', handleUserJoined);
@@ -229,15 +159,10 @@ export default function ChatRooms() {
     socket.on('message:error', handleMessageError);
     socket.on('room:error', handleRoomError);
 
-    // Join immediately if possible, otherwise wait for the socket to connect.
-    if (socket.connected) {
-      joinRoom();
-    } else {
-      socket.on('connect', joinRoom);
-    }
+    if (socket.connected) joinRoom();
+    else socket.on('connect', joinRoom);
 
     return () => {
-      // Cleanup on active room change
       socket.off('connect', joinRoom);
       socket.emit('room:leave', { roomId: activeRoom._id });
       socket.off('room:joined', handleRoomJoined);
@@ -255,28 +180,26 @@ export default function ChatRooms() {
     };
   }, [activeRoom, socket]);
 
-  // Scroll to bottom helper
-  const scrollToBottom = () => {
-    setTimeout(() => {
-      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-    }, 100);
-  };
-
   useEffect(() => {
-    scrollToBottom();
+    setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 80);
   }, [messages]);
 
-  // Chat message typing indicators
+  useEffect(() => {
+    if (setHideMobileBottomNav) {
+      setHideMobileBottomNav(!!activeRoom);
+    }
+    return () => {
+      if (setHideMobileBottomNav) {
+        setHideMobileBottomNav(false);
+      }
+    };
+  }, [activeRoom, setHideMobileBottomNav]);
+
   const handleInputChange = (e) => {
     setInputText(e.target.value);
     if (!socket || !activeRoom) return;
-
-    // Send typing notification
     socket.emit('message:typing', { roomId: activeRoom._id });
-
-    // Clear timeout and set new stop typing indicator
     if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
-    
     typingTimeoutRef.current = setTimeout(() => {
       socket.emit('message:stop_typing', { roomId: activeRoom._id });
     }, 2000);
@@ -285,37 +208,20 @@ export default function ChatRooms() {
   const handleSendMessage = (e) => {
     e.preventDefault();
     if (!inputText.trim() || !socket || !activeRoom) return;
-    if (!socket.connected) {
-      toast.error('Chat is reconnecting. Try again in a moment.');
-      return;
-    }
-
-    // Send stop typing
+    if (!socket.connected) { toast.error('Reconnecting...'); return; }
     socket.emit('message:stop_typing', { roomId: activeRoom._id });
     if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
-
-    socket.timeout(8000).emit('message:send', {
-      roomId: activeRoom._id,
-      text: inputText.trim(),
-    }, (err, response) => {
-      if (err) {
-        toast.error('Message send timed out. Please retry.');
-        return;
-      }
-
-      if (!response?.ok) {
-        toast.error(response?.error || 'Message could not be sent.');
-        return;
-      }
-
+    socket.timeout(8000).emit('message:send', { roomId: activeRoom._id, text: inputText.trim() }, (err, response) => {
+      if (err) { toast.error('Send timed out.'); return; }
+      if (!response?.ok) { toast.error(response?.error || 'Send failed.'); return; }
       setInputText('');
+      inputRef.current?.focus();
     });
   };
 
   const handleCreateRoom = async (e) => {
     e.preventDefault();
     if (!newRoomForm.name.trim()) return;
-
     try {
       setCreatingRoom(true);
       const res = await api.post('/rooms', {
@@ -325,381 +231,397 @@ export default function ChatRooms() {
         category: newRoomForm.category,
         type: 'discussion'
       });
-
-      toast.success('Chat channel created successfully!');
+      toast.success('Channel created!');
       setShowCreateModal(false);
       setNewRoomForm({ name: '', description: '', district: '', category: 'other' });
       fetchRooms();
       setActiveRoom(res.data.room);
-    } catch (err) {
-      toast.error('Failed to create channel.');
-    } finally {
-      setCreatingRoom(false);
-    }
+    } catch { toast.error('Failed to create.'); } 
+    finally { setCreatingRoom(false); }
   };
 
   const handleLeaveCurrentRoom = async () => {
     if (!activeRoom) return;
     try {
-      // Call REST api leave route for persistent sync
       await api.post(`/rooms/${activeRoom._id}/leave`);
       setActiveRoom(null);
-      toast.success('Left room. Chat messages deleted from server.');
+      toast.success('Left room.');
       fetchRooms();
-    } catch (err) {
-      setActiveRoom(null);
-    }
+    } catch { setActiveRoom(null); }
   };
 
-  // Filter channels list
-  const filteredRooms = rooms.filter(r => 
+  const filteredRooms = rooms.filter(r =>
     r.name.toLowerCase().includes(roomSearch.toLowerCase()) ||
     (r.description && r.description.toLowerCase().includes(roomSearch.toLowerCase()))
   );
 
+  // Group messages by date + consecutive sender
+  const groupedMessages = messages.reduce((acc, msg, i) => {
+    const prev = messages[i - 1];
+    const sameUser = prev?.senderAlias === msg.senderAlias;
+    const sameMinute = prev && (new Date(msg.createdAt) - new Date(prev.createdAt)) < 60000;
+    acc.push({ ...msg, compact: sameUser && sameMinute });
+    return acc;
+  }, []);
+
   return (
-    <div className="h-[78vh] flex flex-col lg:flex-row gap-4 relative font-sans">
-      {/* Sidebar - Channels list */}
-      <div className="w-full lg:w-80 flex flex-col glass-panel rounded-2xl h-[30vh] lg:h-auto overflow-hidden border border-[var(--border-subtle)] bg-[var(--bg-surface)] shadow-md">
-        <div className="flex flex-col h-full overflow-hidden">
-          {/* Header */}
-          <div className="flex items-center justify-between px-4 py-3.5 border-b border-[var(--border-subtle)] bg-[var(--bg-surface)]">
-            <h2 className="text-sm font-extrabold font-display flex items-center gap-2 text-[var(--text-primary)]">
-              <MessageSquare size={16} className="text-[var(--teal-500)]" />
-              Discussion Channels
+    <div className={`${activeRoom ? 'h-[calc(100vh-3.5rem)]' : 'h-[calc(100vh-7.25rem)]'} lg:h-[calc(100vh-2.5rem)] flex flex-col lg:flex-row overflow-hidden relative font-sans bg-[var(--bg-base)]`}>
+      
+      {/* ── CHANNELS SIDEBAR ── */}
+      <div className={`w-full lg:w-72 flex flex-col h-full overflow-hidden border-r border-[var(--border-subtle)] bg-[var(--bg-surface)] ${activeRoom ? 'hidden lg:flex' : 'flex'}`}>
+        
+        {/* Sidebar Header */}
+        <div className="flex items-center justify-between px-4 py-4 border-b border-[var(--border-subtle)]">
+          <div>
+            <h2 className="text-sm font-black font-display text-[var(--text-primary)] flex items-center gap-1.5">
+              <Link
+                to="/feed"
+                className="lg:hidden p-1.5 rounded-xl hover:bg-[var(--bg-elevated)] text-[var(--text-secondary)] transition-colors cursor-pointer mr-0.5 flex items-center justify-center"
+                aria-label="Back to feed"
+              >
+                <ChevronLeft size={18} />
+              </Link>
+              <Hash size={15} className="text-[var(--teal-500)]" />
+              Channels
             </h2>
-            <motion.button
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-              onClick={() => setShowCreateModal(true)}
-              className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-[var(--bg-elevated)] text-[var(--teal-500)] transition-colors border border-[var(--border-subtle)] shadow-3xs"
-              title="Create new channel"
-            >
-              <Plus size={14} />
-            </motion.button>
+            <p className="text-[10px] text-[var(--text-muted)] mt-0.5">Civic discussion forums</p>
           </div>
+          <motion.button
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+            onClick={() => setShowCreateModal(true)}
+            className="w-8 h-8 flex items-center justify-center rounded-xl text-[var(--teal-500)] bg-[var(--teal-glow)] border border-[var(--teal-500)]/20 cursor-pointer hover:bg-[var(--teal-500)] hover:text-white transition-all"
+          >
+            <Plus size={15} />
+          </motion.button>
+        </div>
 
-          {/* Search/Filter Controls */}
-          <div className="px-3.5 py-3 space-y-2.5 border-b border-[var(--border-subtle)] bg-[var(--bg-elevated)]">
-            <div className="relative">
-              <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" size={13} />
-              <input
-                type="text"
-                placeholder="Search channels..."
-                value={roomSearch}
-                onChange={(e) => setRoomSearch(e.target.value)}
-                className="w-full pl-8.5 pr-3 py-2 text-xs rounded-lg glass-input border border-[var(--border-subtle)] focus:border-[var(--teal-500)] focus:ring-1 focus:ring-[var(--teal-500)] transition-all bg-[var(--bg-surface)]"
-              />
+        {/* Search + Filter */}
+        <div className="px-3 py-3 space-y-2 border-b border-[var(--border-subtle)] bg-[var(--bg-elevated)]">
+          <div className="relative">
+            <Search size={13} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" />
+            <input
+              type="text"
+              placeholder="Search channels..."
+              value={roomSearch}
+              onChange={(e) => setRoomSearch(e.target.value)}
+              className="w-full pl-8 pr-3 py-2 text-xs rounded-xl bg-[var(--bg-surface)] border border-[var(--border-subtle)] focus:border-[var(--teal-500)] focus:ring-1 focus:ring-[var(--teal-500)] outline-none transition-all text-[var(--text-primary)] placeholder:text-[var(--text-muted)]"
+            />
+          </div>
+          <select
+            value={districtFilter}
+            onChange={(e) => setDistrictFilter(e.target.value)}
+            className="w-full text-xs py-2 px-3 rounded-xl bg-[var(--bg-surface)] border border-[var(--border-subtle)] focus:border-[var(--teal-500)] transition-all outline-none text-[var(--text-secondary)] cursor-pointer"
+          >
+            <option value="">All Districts</option>
+            {districts.map(d => <option key={d} value={d}>{d}</option>)}
+          </select>
+        </div>
+
+        {/* Channel List */}
+        <div className="flex-1 overflow-y-auto py-2 px-2 space-y-0.5 scrollbar-thin">
+          {loadingRooms ? (
+            <div className="space-y-1.5 px-1 pt-2">
+              {[1, 2, 3, 4].map(n => <div key={n} className="h-14 skeleton rounded-xl animate-pulse" />)}
             </div>
-            <select
-              value={districtFilter}
-              onChange={(e) => setDistrictFilter(e.target.value)}
-              className="w-full glass-input text-xs py-2 px-3 border border-[var(--border-subtle)] focus:border-[var(--teal-500)] transition-all rounded-lg bg-[var(--bg-surface)] text-[var(--text-secondary)] font-medium cursor-pointer"
-            >
-              <option value="">All Regions / Districts</option>
-              {districts.map(d => <option key={d} value={d}>{d}</option>)}
-            </select>
-          </div>
+          ) : filteredRooms.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-12 px-4 text-center">
+              <Compass size={28} className="text-[var(--text-muted)] mb-3 opacity-40" />
+              <p className="text-xs font-semibold text-[var(--text-muted)]">No channels found</p>
+              <button onClick={() => setShowCreateModal(true)} className="mt-3 text-xs font-bold text-[var(--teal-500)] hover:underline cursor-pointer bg-transparent border-none">
+                Create one
+              </button>
+            </div>
+          ) : (
+            filteredRooms.map((room) => {
+              const isActive = activeRoom?._id === room._id;
+              return (
+                <motion.button
+                  key={room._id}
+                  onClick={() => setActiveRoom(room)}
+                  whileHover={{ x: 2 }}
+                  className={`channel-list-item flex items-center gap-3 p-3 rounded-xl text-left w-full transition-all duration-150 cursor-pointer ${
+                    isActive
+                      ? 'bg-[var(--teal-glow)] border border-[var(--teal-500)]/25'
+                      : 'hover:bg-[var(--bg-elevated)] border border-transparent'
+                  }`}
+                >
+                  {/* Channel avatar */}
+                  <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 text-base ${
+                    isActive ? 'bg-[var(--teal-500)] text-white shadow-teal' : 'bg-[var(--bg-elevated)] border border-[var(--border-subtle)]'
+                  }`}>
+                    <Hash size={14} className={isActive ? 'text-white' : 'text-[var(--text-muted)]'} />
+                  </div>
 
-          {/* Channels List */}
-          <div className="flex-1 overflow-y-auto px-2 py-3.5 space-y-1.5 scrollbar-thin">
-            {loadingRooms ? (
-              <div className="space-y-2 px-1">
-                {[1, 2, 3].map(n => <div key={n} className="h-12 skeleton rounded-lg animate-pulse" />)}
-              </div>
-            ) : filteredRooms.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-10 px-4 text-center">
-                <Compass size={24} className="text-[var(--text-muted)] mb-2" />
-                <p className="text-xs text-[var(--text-muted)] italic">No channels found</p>
-              </div>
-            ) : (
-              filteredRooms.map((room) => {
-                const isActive = activeRoom?._id === room._id;
-                return (
-                  <button
-                    key={room._id}
-                    onClick={() => setActiveRoom(room)}
-                    className={`channel-item flex items-center justify-between p-3 rounded-xl border text-left w-full transition-all duration-200 cursor-pointer ${
-                      isActive 
-                        ? 'border-[rgba(13,148,136,0.35)] bg-[rgba(13,148,136,0.08)] shadow-2xs font-semibold' 
-                        : 'border-[var(--border-subtle)] bg-[var(--bg-surface)] hover:border-[var(--teal-500)] hover:bg-[var(--bg-elevated)]'
-                    }`}
-                  >
-                    <div className="truncate pr-2 space-y-0.5 min-w-0 flex-1">
-                      <span className={`block truncate text-xs ${isActive ? 'text-[var(--teal-600)] font-bold' : 'text-[var(--text-primary)]'}`}>
-                        {room.name}
-                      </span>
-                      {room.district && (
-                        <span className="text-[9px] text-[var(--teal-500)] font-extrabold uppercase tracking-wider block">
-                          {room.district}
-                        </span>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-1.5 flex-shrink-0 text-[10px] text-[var(--text-muted)] bg-[var(--bg-overlay)] px-2 py-1 rounded-md border border-[var(--border-subtle)]">
-                      <Users size={10} className="text-[var(--text-secondary)]" />
-                      <span className="font-semibold text-[var(--text-secondary)]">{room.memberCount || 0}</span>
-                    </div>
-                  </button>
-                );
-              })
-            )}
-          </div>
+                  <div className="min-w-0 flex-1">
+                    <span className={`block text-xs font-bold truncate ${isActive ? 'text-[var(--teal-500)]' : 'text-[var(--text-primary)]'}`}>
+                      {room.name}
+                    </span>
+                    {room.district && (
+                      <span className="text-[9px] text-[var(--text-muted)] font-semibold uppercase tracking-wider">{room.district}</span>
+                    )}
+                  </div>
+
+                  <div className="flex items-center gap-1 flex-shrink-0 text-[9px] text-[var(--text-muted)] font-bold">
+                    <Users size={9} />
+                    <span>{room.memberCount || 0}</span>
+                  </div>
+                </motion.button>
+              );
+            })
+          )}
         </div>
       </div>
 
-      {/* Main Canvas - Chat Panel */}
-      <div className="flex-1 glass-panel rounded-2xl flex flex-col h-[50vh] lg:h-auto overflow-hidden border border-[var(--border-subtle)] bg-[var(--bg-surface)] shadow-md">
+      {/* ── CHAT PANEL ── */}
+      <div className={`flex-1 flex flex-col h-full overflow-hidden ${activeRoom ? 'flex' : 'hidden lg:flex'}`}>
         {activeRoom ? (
           <>
-            {/* Chat Room Top Bar Header */}
-            <div className="px-4 py-3.5 border-b border-[var(--border-subtle)] flex items-center justify-between bg-[var(--bg-elevated)] shadow-3xs">
-              <div className="space-y-0.5 min-w-0 flex-1">
+            {/* Chat Header */}
+            <div className="flex items-center gap-3 px-4 py-3.5 border-b border-[var(--border-subtle)] bg-[var(--bg-surface)] shadow-sm flex-shrink-0">
+              <button
+                onClick={() => setActiveRoom(null)}
+                className="lg:hidden p-2 rounded-xl hover:bg-[var(--bg-elevated)] text-[var(--text-secondary)] transition-colors cursor-pointer"
+              >
+                <ChevronLeft size={18} />
+              </button>
+
+              {/* Room icon */}
+              <div className="w-9 h-9 rounded-xl bg-[var(--teal-glow)] border border-[var(--teal-500)]/20 flex items-center justify-center flex-shrink-0">
+                <Hash size={16} className="text-[var(--teal-500)]" />
+              </div>
+
+              <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
-                  <h3 className="font-display font-extrabold text-[var(--text-primary)] text-sm md:text-base truncate">
-                    {activeRoom.name}
-                  </h3>
+                  <h3 className="font-display font-black text-sm text-[var(--text-primary)] truncate">{activeRoom.name}</h3>
                   {activeRoom.district && (
-                    <span className="text-[9px] font-bold uppercase px-2 py-0.5 rounded-full bg-[var(--bg-overlay)] text-[var(--text-secondary)] border border-[var(--border-subtle)] shrink-0 select-none">
+                    <span className="text-[9px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full bg-[var(--bg-elevated)] border border-[var(--border-subtle)] text-[var(--text-muted)]">
                       {activeRoom.district}
                     </span>
                   )}
-                  
-                  {/* Pulse indicator for online counts */}
-                  <div className="flex items-center gap-1.5 ml-auto bg-emerald-50 border border-emerald-100 dark:bg-emerald-500/5 dark:border-emerald-500/10 px-2.5 py-1 rounded-full shrink-0 select-none">
-                    <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-[0_0_8px_#10b981] animate-pulse" />
-                    <span className="text-[9px] text-emerald-600 font-extrabold uppercase tracking-wider">
-                      {onlineCount} online
-                    </span>
-                  </div>
                 </div>
                 {activeRoom.description && (
-                  <p className="text-[10px] text-[var(--text-secondary)] truncate max-w-lg">
-                    {activeRoom.description}
-                  </p>
+                  <p className="text-[10px] text-[var(--text-muted)] truncate max-w-xs">{activeRoom.description}</p>
                 )}
               </div>
+
+              {/* Online indicator */}
+              <div className="flex items-center gap-1.5 bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/20 px-2.5 py-1.5 rounded-full">
+                <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-[0_0_6px_#10b981] animate-pulse" />
+                <span className="text-[9px] font-extrabold text-emerald-600 uppercase tracking-wider">{onlineCount} live</span>
+              </div>
+
               <motion.button
                 whileHover={{ scale: 1.03 }}
                 whileTap={{ scale: 0.97 }}
                 onClick={handleLeaveCurrentRoom}
-                className="ml-3 px-3 py-1.5 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-600 text-[10px] uppercase font-extrabold border border-rose-100 transition-all shrink-0 cursor-pointer shadow-3xs"
+                className="px-3 py-1.5 rounded-xl bg-rose-50 dark:bg-rose-500/10 hover:bg-rose-100 dark:hover:bg-rose-500/20 text-rose-500 text-[10px] font-black border border-rose-200 dark:border-rose-500/20 cursor-pointer transition-all"
               >
-                Leave Chat
+                Leave
               </motion.button>
             </div>
 
-            {/* Message Feed Area */}
-            <div className="flex-1 px-4 py-4 overflow-y-auto space-y-4 bg-[var(--bg-base)]">
-              {/* Ephemeral Warning */}
-              <div className="p-3.5 bg-teal-50/75 dark:bg-[var(--teal-glow)] border border-teal-500/20 rounded-2xl text-center space-y-1.5 max-w-lg mx-auto shadow-4xs">
-                <span className="text-[10px] text-[var(--teal-600)] uppercase font-extrabold tracking-widest flex items-center justify-center gap-1.5">
-                  <Shield size={11} className="text-[var(--teal-500)]" />
-                  🔒 Ephemeral Privacy Filter Active
-                </span>
-                <p className="text-[9px] text-[var(--text-secondary)] leading-relaxed font-medium">
-                  All messages you write in this channel are linked to your session alias. Leaving the room or closing the browser window permanently deletes your posts from the server database.
+            {/* Messages */}
+            <div className="flex-1 overflow-y-auto py-4 px-4 space-y-0.5 bg-[var(--bg-base)]">
+              {/* Privacy Notice */}
+              <div className="flex items-center gap-3 mb-5 px-3 py-2.5 bg-[var(--bg-elevated)] border border-[var(--border-subtle)] rounded-2xl max-w-md mx-auto">
+                <Lock size={14} className="text-[var(--teal-500)] flex-shrink-0" />
+                <p className="text-[10px] text-[var(--text-muted)] leading-relaxed font-medium">
+                  Ephemeral & anonymous — messages delete permanently when you leave.
                 </p>
               </div>
 
-              {/* Message loop */}
-              <div className="space-y-3.5">
-                <AnimatePresence initial={false}>
-                  {messages.map((msg) => {
-                    const isMe = msg.senderAlias === userAlias;
-                    const avatar = getAvatarProps(msg.senderAlias);
-                    return (
-                      <motion.div
-                        key={msg._id}
-                        initial={{ opacity: 0, y: 12 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ duration: 0.22, ease: 'easeOut' }}
-                        className={`flex gap-2.5 items-end ${isMe ? 'justify-end' : 'justify-start'}`}
-                      >
-                        {!isMe && (
-                          <div className={`w-8 h-8 rounded-full flex items-center justify-center font-extrabold text-[10px] bg-gradient-to-br ${avatar.bg} ${avatar.text} shadow-sm shrink-0 select-none`}>
-                            {avatar.char}
-                          </div>
-                        )}
-                        <div className={`flex flex-col gap-1 max-w-[72%] ${isMe ? 'items-end' : 'items-start'}`}>
-                          <span className="text-[9px] font-bold text-[var(--text-muted)] tracking-wider px-1">
-                            {isMe ? 'You' : msg.senderAlias || 'Anonymous citizen'}
+              <AnimatePresence initial={false}>
+                {groupedMessages.map((msg) => {
+                  const isMe = msg.senderAlias === userAlias;
+                  const avatar = getAvatarProps(msg.senderAlias);
+                  return (
+                    <motion.div
+                      key={msg._id}
+                      initial={{ opacity: 0, y: 10, scale: 0.97 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      transition={{ duration: 0.18, ease: 'easeOut' }}
+                      className={`flex gap-2.5 items-end ${isMe ? 'justify-end' : 'justify-start'} ${msg.compact ? 'mt-0.5' : 'mt-3'}`}
+                    >
+                      {/* Other user avatar */}
+                      {!isMe && (
+                        <div className={`w-7 h-7 rounded-full bg-gradient-to-br ${avatar.bg} flex items-center justify-center font-bold text-[10px] text-white flex-shrink-0 select-none ${msg.compact ? 'opacity-0' : ''}`}>
+                          {avatar.char}
+                        </div>
+                      )}
+
+                      <div className={`flex flex-col gap-1 max-w-[72%] ${isMe ? 'items-end' : 'items-start'}`}>
+                        {/* Sender name (only first in group) */}
+                        {!msg.compact && !isMe && (
+                          <span className="text-[9px] font-bold text-[var(--text-muted)] px-1 select-none">
+                            {msg.senderAlias || 'Anonymous'}
                           </span>
-                          <div className={`px-4 py-2.5 text-xs shadow-3xs leading-relaxed break-words font-medium ${
-                            isMe 
-                              ? 'bg-gradient-to-br from-[var(--teal-500)] to-[var(--teal-600)] text-white rounded-2xl rounded-br-none' 
-                              : 'bg-[var(--bg-surface)] text-[var(--text-primary)] border border-[var(--border-default)] rounded-2xl rounded-bl-none'
-                          }`}>
-                            {msg.text}
-                          </div>
-                          <span className="text-[8px] text-[var(--text-muted)] px-1 font-semibold select-none">
+                        )}
+                        
+                        {/* Message bubble */}
+                        <div className={`chat-bubble ${isMe ? 'chat-bubble-me' : 'chat-bubble-other'}`}>
+                          {msg.text}
+                        </div>
+
+                        {/* Timestamp */}
+                        {!msg.compact && (
+                          <span className="text-[8px] text-[var(--text-muted)] px-1 select-none font-medium">
                             {new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                           </span>
-                        </div>
-                        {isMe && (
-                          <div className={`w-8 h-8 rounded-full flex items-center justify-center font-extrabold text-[10px] bg-gradient-to-br ${avatar.bg} ${avatar.text} shadow-sm shrink-0 select-none`}>
-                            {avatar.char}
-                          </div>
                         )}
-                      </motion.div>
-                    );
-                  })}
-                </AnimatePresence>
-              </div>
+                      </div>
 
-              {/* Typing indicators */}
+                      {/* My avatar placeholder */}
+                      {isMe && <div className="w-7 flex-shrink-0" />}
+                    </motion.div>
+                  );
+                })}
+              </AnimatePresence>
+
+              {/* Typing indicator */}
               <AnimatePresence>
                 {typingUsers.size > 0 && (
                   <motion.div
                     initial={{ opacity: 0, y: 6 }}
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: 6 }}
-                    className="flex items-center gap-2.5 text-[10px] text-[var(--teal-600)] font-semibold bg-[var(--teal-glow)] border border-teal-500/10 px-3 py-1.5 rounded-full w-fit shadow-4xs"
+                    className="flex items-center gap-2 mt-2 ml-9"
                   >
-                    <div className="flex gap-1 items-center select-none">
-                      <span className="w-1.5 h-1.5 rounded-full bg-[var(--teal-500)] animate-bounce" style={{ animationDelay: '0ms' }} />
-                      <span className="w-1.5 h-1.5 rounded-full bg-[var(--teal-500)] animate-bounce" style={{ animationDelay: '150ms' }} />
-                      <span className="w-1.5 h-1.5 rounded-full bg-[var(--teal-500)] animate-bounce" style={{ animationDelay: '300ms' }} />
+                    <div className="flex gap-1 px-3.5 py-2.5 bg-[var(--bg-surface)] border border-[var(--border-subtle)] rounded-2xl rounded-bl-sm shadow-sm">
+                      <span className="w-1.5 h-1.5 rounded-full bg-[var(--text-muted)] animate-bounce" style={{ animationDelay: '0ms' }} />
+                      <span className="w-1.5 h-1.5 rounded-full bg-[var(--text-muted)] animate-bounce" style={{ animationDelay: '150ms' }} />
+                      <span className="w-1.5 h-1.5 rounded-full bg-[var(--text-muted)] animate-bounce" style={{ animationDelay: '300ms' }} />
                     </div>
-                    <span>
-                      {Array.from(typingUsers).join(', ')} {typingUsers.size === 1 ? 'is' : 'are'} typing
+                    <span className="text-[9px] text-[var(--text-muted)] font-semibold">
+                      {Array.from(typingUsers).slice(0, 2).join(', ')} typing…
                     </span>
                   </motion.div>
                 )}
               </AnimatePresence>
 
-              <div ref={messagesEndRef} />
+              <div ref={messagesEndRef} className="h-2" />
             </div>
 
-            {/* Input send bar footer */}
-            <form onSubmit={handleSendMessage} className="px-4 py-3 border-t border-[var(--border-subtle)] bg-[var(--bg-elevated)] flex items-center gap-2">
-              <input
-                type="text"
-                placeholder="Write message anonymously..."
-                value={inputText}
-                onChange={handleInputChange}
-                className="flex-1 glass-input text-xs py-2.5 px-4 rounded-xl border border-[var(--border-subtle)] focus:border-[var(--teal-500)] bg-[var(--bg-surface)] focus:ring-1 focus:ring-[var(--teal-500)] transition-all outline-none"
-              />
+            {/* Input Bar */}
+            <form onSubmit={handleSendMessage} className="flex items-center gap-2.5 px-4 py-3 border-t border-[var(--border-subtle)] bg-[var(--bg-surface)]">
+              <div className="flex-1 flex items-center bg-[var(--bg-elevated)] border border-[var(--border-default)] rounded-2xl px-4 py-2 gap-2 focus-within:border-[var(--teal-500)] focus-within:ring-2 focus-within:ring-[var(--teal-glow)] transition-all">
+                <input
+                  ref={inputRef}
+                  type="text"
+                  placeholder="Message anonymously…"
+                  value={inputText}
+                  onChange={handleInputChange}
+                  className="flex-1 bg-transparent text-sm outline-none border-none focus:ring-0 py-0.5 text-[var(--text-primary)] placeholder:text-[var(--text-muted)]"
+                />
+              </div>
               <motion.button
                 whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
+                whileTap={{ scale: 0.92 }}
                 type="submit"
-                className="w-10 h-10 flex items-center justify-center bg-[var(--teal-500)] text-white rounded-xl hover:bg-[var(--teal-400)] transition-colors shrink-0 shadow-sm cursor-pointer"
+                disabled={!inputText.trim()}
+                className="w-10 h-10 flex items-center justify-center rounded-2xl text-white cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed shadow-teal transition-all"
+                style={{ background: inputText.trim() ? 'linear-gradient(135deg, var(--teal-500), var(--teal-600))' : 'var(--bg-elevated)' }}
               >
-                <Send size={15} />
+                <Send size={15} className={inputText.trim() ? 'text-white' : 'text-[var(--text-muted)]'} />
               </motion.button>
             </form>
           </>
         ) : (
-          <div className="flex-1 flex flex-col items-center justify-center gap-5 p-8 text-center bg-radial-gradient">
+          /* Empty state */
+          <div className="flex-1 flex flex-col items-center justify-center gap-6 p-8 text-center">
             <motion.div
-              animate={{ 
-                y: [0, -10, 0],
-              }}
-              transition={{
-                duration: 4,
-                repeat: Infinity,
-                ease: "easeInOut"
-              }}
-              className="w-16 h-16 rounded-2xl bg-[var(--teal-glow)] border border-teal-500/20 flex items-center justify-center shadow-sm"
+              animate={{ y: [0, -8, 0] }}
+              transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
+              className="w-20 h-20 rounded-3xl bg-[var(--teal-glow)] border border-[var(--teal-500)]/20 flex items-center justify-center shadow-teal"
             >
-              <Radio className="w-8 h-8 text-[var(--teal-500)]" />
+              <MessageSquare className="w-9 h-9 text-[var(--teal-500)]" />
             </motion.div>
+
             <div className="space-y-2 max-w-sm">
-              <h4 className="font-bold text-[var(--text-primary)] font-display text-base">
-                CivicTN Discussion Canvas
-              </h4>
-              <p className="text-xs text-[var(--text-muted)] leading-relaxed">
-                Select a public ward channel from the list on the left to share updates and discuss civic issues anonymously with your community.
+              <h4 className="font-display font-black text-lg text-[var(--text-primary)]">CivicTN Channels</h4>
+              <p className="text-sm text-[var(--text-muted)] leading-relaxed">
+                Pick a channel from the sidebar to join anonymous civic discussions in your district.
               </p>
             </div>
-            
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5 max-w-lg mt-4 text-left">
-              <div className="bg-[var(--bg-elevated)] border border-[var(--border-subtle)] p-3 rounded-xl">
-                <span className="text-[11px] font-bold text-[var(--teal-600)] block mb-1">🔒 100% Anonymous</span>
-                <span className="text-[9px] text-[var(--text-secondary)] block leading-normal">
-                  No personal identity is associated with your chat. Profiles are randomized.
-                </span>
-              </div>
-              <div className="bg-[var(--bg-elevated)] border border-[var(--border-subtle)] p-3 rounded-xl">
-                <span className="text-[11px] font-bold text-[var(--teal-600)] block mb-1">⚡ Ephemeral Chat</span>
-                <span className="text-[9px] text-[var(--text-secondary)] block leading-normal">
-                  All messages are deleted permanently from database tables when you leave.
-                </span>
-              </div>
-              <div className="bg-[var(--bg-elevated)] border border-[var(--border-subtle)] p-3 rounded-xl">
-                <span className="text-[11px] font-bold text-[var(--teal-600)] block mb-1">📍 Ward Channels</span>
-                <span className="text-[9px] text-[var(--text-secondary)] block leading-normal">
-                  Discussion categories are filtered by local municipal districts.
-                </span>
-              </div>
+
+            <div className="grid grid-cols-3 gap-3 max-w-sm w-full mt-2">
+              {[
+                { icon: '🔒', title: 'Anonymous', desc: 'No identity attached' },
+                { icon: '⚡', title: 'Ephemeral', desc: 'Deletes on exit' },
+                { icon: '📍', title: 'Local', desc: 'District-filtered' },
+              ].map(card => (
+                <div key={card.title} className="bg-[var(--bg-elevated)] border border-[var(--border-subtle)] p-3 rounded-2xl text-center">
+                  <div className="text-xl mb-1">{card.icon}</div>
+                  <div className="text-[10px] font-black text-[var(--text-primary)]">{card.title}</div>
+                  <div className="text-[9px] text-[var(--text-muted)] mt-0.5">{card.desc}</div>
+                </div>
+              ))}
             </div>
           </div>
         )}
       </div>
 
-      {/* Create Room Modal Popup */}
+      {/* ── CREATE ROOM MODAL ── */}
       <AnimatePresence>
         {showCreateModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 backdrop-blur-xs p-4">
-            <motion.div 
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              className="glass-panel p-6 rounded-2xl max-w-md w-full space-y-4 animate-scaleIn shadow-xl bg-[var(--bg-surface)] border border-[var(--border-default)]"
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.92, y: 16 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.92, y: 16 }}
+              transition={{ type: 'spring', stiffness: 300, damping: 25 }}
+              className="bg-[var(--bg-surface)] border border-[var(--border-default)] rounded-2xl max-w-md w-full overflow-hidden shadow-2xl"
             >
-              <div className="flex items-center justify-between border-b border-[var(--border-subtle)] pb-3">
-                <h3 className="font-display font-extrabold text-[var(--teal-500)] text-base flex items-center gap-2">
-                  <Sparkles size={16} />
-                  <span>Create New Channel</span>
-                </h3>
-                <button onClick={() => setShowCreateModal(false)} className="text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors cursor-pointer">
-                  <X size={18} />
+              {/* Modal Header */}
+              <div className="flex items-center justify-between px-5 py-4 border-b border-[var(--border-subtle)]">
+                <div className="flex items-center gap-2">
+                  <div className="w-7 h-7 rounded-lg bg-[var(--teal-glow)] border border-[var(--teal-500)]/20 flex items-center justify-center">
+                    <Hash size={13} className="text-[var(--teal-500)]" />
+                  </div>
+                  <h3 className="font-display font-black text-sm text-[var(--text-primary)]">Create Channel</h3>
+                </div>
+                <button onClick={() => setShowCreateModal(false)} className="p-1.5 rounded-lg text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-elevated)] cursor-pointer transition-colors">
+                  <X size={16} />
                 </button>
               </div>
 
-              <form onSubmit={handleCreateRoom} className="space-y-4">
+              <form onSubmit={handleCreateRoom} className="p-5 space-y-4">
                 <div>
-                  <label className="block text-[10px] text-[var(--text-muted)] font-bold uppercase tracking-wider mb-1.5">Channel Name</label>
+                  <label className="block text-[10px] text-[var(--text-muted)] font-black uppercase tracking-wider mb-1.5">Channel Name *</label>
                   <input
                     type="text"
                     placeholder="e.g. Chennai Sanitation Debate"
                     value={newRoomForm.name}
                     onChange={(e) => setNewRoomForm(prev => ({ ...prev, name: e.target.value }))}
-                    className="w-full glass-input text-xs py-2 px-3 border border-[var(--border-subtle)] rounded-lg outline-none focus:border-[var(--teal-500)] transition-all bg-[var(--bg-elevated)]"
+                    className="w-full glass-input text-sm py-2.5 px-3.5 rounded-xl outline-none"
                     required
                   />
                 </div>
 
                 <div>
-                  <label className="block text-[10px] text-[var(--text-muted)] font-bold uppercase tracking-wider mb-1.5">Description</label>
+                  <label className="block text-[10px] text-[var(--text-muted)] font-black uppercase tracking-wider mb-1.5">Description</label>
                   <textarea
-                    placeholder="Explain what local topics are discussed in this channel..."
+                    placeholder="What topics are discussed here?"
                     value={newRoomForm.description}
                     onChange={(e) => setNewRoomForm(prev => ({ ...prev, description: e.target.value }))}
                     rows={2}
-                    className="w-full glass-input text-xs py-2 px-3 border border-[var(--border-subtle)] rounded-lg outline-none focus:border-[var(--teal-500)] transition-all bg-[var(--bg-elevated)]"
+                    className="w-full glass-input text-sm py-2.5 px-3.5 rounded-xl outline-none resize-none"
                   />
                 </div>
 
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-[10px] text-[var(--text-muted)] font-bold uppercase tracking-wider mb-1.5">Region / District</label>
-                    <select
-                      value={newRoomForm.district}
-                      onChange={(e) => setNewRoomForm(prev => ({ ...prev, district: e.target.value }))}
-                      className="w-full glass-input text-xs py-2 px-3 border border-[var(--border-subtle)] rounded-lg outline-none focus:border-[var(--teal-500)] transition-all bg-[var(--bg-elevated)] text-[var(--text-secondary)] cursor-pointer"
-                    >
+                    <label className="block text-[10px] text-[var(--text-muted)] font-black uppercase tracking-wider mb-1.5">District</label>
+                    <select value={newRoomForm.district} onChange={(e) => setNewRoomForm(prev => ({ ...prev, district: e.target.value }))}
+                      className="w-full glass-input text-xs py-2.5 px-3 rounded-xl outline-none cursor-pointer">
                       <option value="">All Regions</option>
                       {districts.map(d => <option key={d} value={d}>{d}</option>)}
                     </select>
                   </div>
                   <div>
-                    <label className="block text-[10px] text-[var(--text-muted)] font-bold uppercase tracking-wider mb-1.5">Issue Category</label>
-                    <select
-                      value={newRoomForm.category}
-                      onChange={(e) => setNewRoomForm(prev => ({ ...prev, category: e.target.value }))}
-                      className="w-full glass-input text-xs py-2 px-3 border border-[var(--border-subtle)] rounded-lg outline-none focus:border-[var(--teal-500)] transition-all bg-[var(--bg-elevated)] text-[var(--text-secondary)] cursor-pointer"
-                    >
+                    <label className="block text-[10px] text-[var(--text-muted)] font-black uppercase tracking-wider mb-1.5">Category</label>
+                    <select value={newRoomForm.category} onChange={(e) => setNewRoomForm(prev => ({ ...prev, category: e.target.value }))}
+                      className="w-full glass-input text-xs py-2.5 px-3 rounded-xl outline-none cursor-pointer">
                       <option value="roads">Roads</option>
                       <option value="sanitation">Sanitation</option>
                       <option value="water">Water Supply</option>
@@ -711,20 +633,20 @@ export default function ChatRooms() {
                 </div>
 
                 <motion.button
-                  whileHover={{ scale: 1.02 }}
+                  whileHover={{ scale: 1.01 }}
                   whileTap={{ scale: 0.98 }}
                   type="submit"
-                  disabled={creatingRoom}
-                  className="btn btn-primary w-full bg-[var(--teal-500)] text-white py-2.5 rounded-xl font-bold hover:bg-[var(--teal-600)] transition-all shadow-md text-xs cursor-pointer disabled:opacity-50"
+                  disabled={creatingRoom || !newRoomForm.name.trim()}
+                  className="w-full py-3 rounded-xl text-sm font-black text-white shadow-teal cursor-pointer disabled:opacity-50 transition-all"
+                  style={{ background: 'linear-gradient(135deg, var(--teal-500), var(--teal-600))' }}
                 >
-                  {creatingRoom ? 'Creating Channel...' : 'Publish Channel'}
+                  {creatingRoom ? 'Creating…' : 'Create Channel'}
                 </motion.button>
               </form>
             </motion.div>
           </div>
         )}
       </AnimatePresence>
-
     </div>
   );
 }

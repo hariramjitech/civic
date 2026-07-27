@@ -8,6 +8,7 @@ export const AccessibilityProvider = ({ children }) => {
   const [textSize, setTextSize] = useState(() => localStorage.getItem('civic-text-size') || 'normal');
   const [highlightFocus, setHighlightFocus] = useState(() => localStorage.getItem('civic-highlight-focus') === 'true');
   const [narrate, setNarrate] = useState(() => localStorage.getItem('civic-narrate') === 'true');
+  const [isWidgetOpen, setIsWidgetOpen] = useState(false);
 
   useEffect(() => {
     // Apply theme
@@ -133,6 +134,8 @@ export const AccessibilityProvider = ({ children }) => {
         setHighlightFocus,
         narrate,
         setNarrate,
+        isWidgetOpen,
+        setIsWidgetOpen,
       }}
     >
       {children}

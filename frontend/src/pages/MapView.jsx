@@ -4,7 +4,7 @@ import api from '../lib/api';
 import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import {
-  MapPin, ExternalLink, RefreshCw, Calendar, ChevronDown,
+  MapPin, ExternalLink, RefreshCw, Calendar, ChevronDown, ChevronRight,
   Navigation, Flame, AlertTriangle, ShieldCheck, Layers, Eye
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
@@ -23,7 +23,7 @@ const SEV_COLORS = { critical: '#e11d48', high: '#ea580c', medium: '#ca8a04', lo
 
 const createIcon = (severity) => L.divIcon({
   className: '',
-  html: `<div style="width:16px;height:16px;border-radius:50%;background:${SEV_COLORS[severity] || '#0d9488'};border:3px solid #ffffff;box-shadow:0 2px 10px ${SEV_COLORS[severity] || '#0d9488'}80;"></div>`,
+  html: `<div style="width:16px;height:16px;border-radius:50%;background:${SEV_COLORS[severity] || '#6366f1'};border:3px solid #ffffff;box-shadow:0 2px 10px ${SEV_COLORS[severity] || '#6366f1'}80;"></div>`,
   iconSize: [16, 16],
   iconAnchor: [8, 8],
 });
@@ -100,7 +100,7 @@ export default function MapView() {
       className="max-w-7xl mx-auto space-y-6 pb-12"
     >
       {/* ── UNIFIED CARD CONTAINER (Matching Image 1 Reference UI) ── */}
-      <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-3xl p-6 sm:p-8 shadow-xl space-y-6">
+      <div className="bg-transparent sm:bg-white sm:dark:bg-slate-900 border-0 sm:border border-slate-200/80 dark:border-slate-800 rounded-none sm:rounded-3xl p-0 sm:p-8 shadow-none sm:shadow-xl space-y-4 sm:space-y-6">
 
         {/* Top Header & Filter Controls Row */}
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
@@ -239,8 +239,8 @@ export default function MapView() {
           </div>
 
           {/* Table Header & Rows */}
-          <div className="overflow-x-auto border border-slate-200/80 dark:border-slate-800 rounded-2xl">
-            <table className="w-full text-left text-xs">
+          <div className="overflow-x-auto border-0 sm:border border-slate-200/80 dark:border-slate-800 rounded-2xl">
+            <table className="hidden sm:table w-full text-left text-xs">
               <thead className="bg-slate-50/80 dark:bg-slate-800/50 text-slate-500 dark:text-slate-400 font-semibold border-b border-slate-200/80 dark:border-slate-800">
                 <tr>
                   <th className="py-3 px-4">Station / Incident Name</th>
@@ -348,6 +348,102 @@ export default function MapView() {
                 )}
               </tbody>
             </table>
+
+            {/* Mobile Card List (Hidden on Desktop) */}
+            <div className="block sm:hidden space-y-3 p-1">
+              {loading ? (
+                [1, 2, 3].map(n => (
+                  <div key={n} className="animate-pulse p-3 bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2xl flex items-center gap-3 relative overflow-hidden">
+                    <div className="absolute left-0 top-0 bottom-0 w-1 bg-slate-200 dark:bg-slate-800" />
+                    <div className="w-14 h-14 bg-slate-100 dark:bg-slate-800 rounded-xl flex-shrink-0" />
+                    <div className="space-y-2 flex-1 min-w-0">
+                      <div className="h-3 bg-slate-100 dark:bg-slate-800 rounded w-1/3" />
+                      <div className="h-4 bg-slate-100 dark:bg-slate-800 rounded w-2/3" />
+                      <div className="h-3 bg-slate-100 dark:bg-slate-800 rounded w-1/2" />
+                    </div>
+                    <div className="w-8 h-8 rounded-xl bg-slate-100 dark:bg-slate-800 flex-shrink-0" />
+                  </div>
+                ))
+              ) : filtered.length === 0 ? (
+                <div className="p-8 text-center text-slate-400 font-medium bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2xl">
+                  No matching infrastructure incidents found.
+                </div>
+              ) : (
+                filtered.map(p => {
+                  const isSelected = selectedPoint === p._id;
+                  const imageUrl = p.images?.[0];
+                  const color = SEV_COLORS[p.severity] || 'var(--teal-500)';
+                  return (
+                    <div
+                      key={p._id}
+                      onClick={() => handleFocus(p)}
+                      className={`p-3 rounded-2xl border transition-all duration-200 cursor-pointer flex items-center gap-3 relative overflow-hidden ${
+                        isSelected
+                          ? 'bg-[var(--teal-glow)] border-[var(--teal-500)]/40 shadow-xs'
+                          : 'bg-white dark:bg-slate-900 border-slate-200/85 dark:border-slate-800/80 hover:border-slate-300 dark:hover:border-slate-700 shadow-xs'
+                      }`}
+                    >
+                      {/* Left glowing border based on severity */}
+                      <div 
+                        className="absolute left-0 top-0 bottom-0 w-1" 
+                        style={{ background: color }}
+                      />
+
+                      {/* Image Thumbnail */}
+                      {imageUrl ? (
+                        <img
+                          src={imageUrl}
+                          alt={p.title}
+                          className="w-14 h-14 rounded-xl object-cover border border-slate-200/60 dark:border-slate-700/60 shadow-xs flex-shrink-0"
+                        />
+                      ) : (
+                        <div className="w-14 h-14 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200/60 dark:border-slate-700/60 flex items-center justify-center text-teal-600 dark:text-teal-400 flex-shrink-0 font-bold text-sm">
+                          {p.category ? p.category.charAt(0).toUpperCase() : 'C'}
+                        </div>
+                      )}
+
+                      {/* Content */}
+                      <div className="min-w-0 flex-1 pl-1">
+                        {/* Meta Category & Severity Badge */}
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="text-[9px] uppercase tracking-wider font-extrabold text-teal-600 dark:text-teal-400">
+                            {p.category || 'General'}
+                          </span>
+                          <span className="text-slate-300 dark:text-slate-700 text-[8px]">•</span>
+                          <span className="text-[9px] font-black uppercase" style={{ color }}>
+                            {p.severity}
+                          </span>
+                          <span className="text-slate-300 dark:text-slate-700 text-[8px]">•</span>
+                          <span className="uppercase text-[9px] font-extrabold text-slate-500 dark:text-slate-400">
+                            {p.status ? p.status.replace('_', ' ') : 'Reported'}
+                          </span>
+                        </div>
+
+                        {/* Title */}
+                        <h3 className="font-bold text-sm text-slate-900 dark:text-white truncate mt-0.5">
+                          {p.title}
+                        </h3>
+
+                        {/* Location */}
+                        <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate mt-0.5 flex items-center gap-1">
+                          <span className="text-xs">📍</span>
+                          <span className="truncate">{p.district ? `${p.district}, Tamil Nadu` : 'Location coords logged'}</span>
+                        </p>
+                      </div>
+
+                      {/* Details Link Button */}
+                      <Link
+                        to={`/posts/${p._id}`}
+                        onClick={e => e.stopPropagation()}
+                        className="w-8 h-8 rounded-xl bg-slate-50 hover:bg-teal-50 dark:bg-slate-800 dark:hover:bg-slate-700 border border-slate-200/80 dark:border-slate-700/80 flex items-center justify-center flex-shrink-0 transition-all text-slate-600 dark:text-slate-300 shadow-xs"
+                      >
+                        <ChevronRight size={15} strokeWidth={2.5} />
+                      </Link>
+                    </div>
+                  );
+                })
+              )}
+            </div>
           </div>
         </div>
 

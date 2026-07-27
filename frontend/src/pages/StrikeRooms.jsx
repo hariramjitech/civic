@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useCivic } from '../context/CivicContext';
 import api from '../lib/api';
-import { useLocation } from 'react-router-dom';
+import { useLocation, Link } from 'react-router-dom';
 import { MapContainer, TileLayer, Marker } from 'react-leaflet';
 import { motion } from 'framer-motion';
 import { 
@@ -86,7 +86,7 @@ function renderMarkdownText(text = '') {
 }
 
 export default function StrikeRooms() {
-  const { isSignedIn, loadingProfile, socket, userProfile, fetchProfile } = useCivic();
+  const { isSignedIn, loadingProfile, socket, userProfile, fetchProfile, setHideMobileBottomNav } = useCivic();
   const location = useLocation();
   const [rooms, setRooms] = useState([]);
   const [activeRoom, setActiveRoom] = useState(null);
@@ -129,6 +129,7 @@ export default function StrikeRooms() {
   const [activeLangTab, setActiveLangTab] = useState('en');
   const [docType, setDocType] = useState('collector');
   const [docStep, setDocStep] = useState(1);
+  const [mobileTab, setMobileTab] = useState('chat'); // 'chat' | 'details'
 
   const messagesEndRef = useRef(null);
 
@@ -170,6 +171,17 @@ export default function StrikeRooms() {
   useEffect(() => {
     fetchStrikeRooms();
   }, [isSignedIn, loadingProfile]);
+
+  useEffect(() => {
+    if (setHideMobileBottomNav) {
+      setHideMobileBottomNav(!!activeRoom);
+    }
+    return () => {
+      if (setHideMobileBottomNav) {
+        setHideMobileBottomNav(false);
+      }
+    };
+  }, [activeRoom, setHideMobileBottomNav]);
 
   useEffect(() => {
     const params = new URLSearchParams(location.search);
@@ -231,6 +243,8 @@ export default function StrikeRooms() {
       setDocStep(1);
       return;
     }
+
+    setMobileTab('chat');
 
     const loadRoomDetails = async () => {
       setHierarchy([]);
@@ -780,18 +794,25 @@ export default function StrikeRooms() {
   const isJoined = userProfile?.joinedRooms?.includes(activeRoom?._id);
   const canDeleteRoom = activeRoom && (
     activeRoom.createdBy === userProfile?.clerkId ||
-    (activeRoom.postId && ownedPostIds.has(activeRoom.postId)) ||
+(activeRoom.postId && ownedPostIds.has(activeRoom.postId)) ||
     userProfile?.role === 'admin'
   );
 
   return (
-    <div className="h-[78vh] flex flex-col lg:flex-row gap-4">
+    <div className={`${activeRoom ? 'h-[calc(100vh-3.5rem)]' : 'h-[calc(100vh-7.25rem)]'} lg:h-[calc(100vh-2.5rem)] flex flex-col lg:flex-row gap-0 overflow-hidden relative`}>
 
-      {/* Ã¢â€â‚¬Ã¢â€â‚¬ SIDEBAR Ã¢â€â‚¬Ã¢â€â‚¬ */}
-      <div className="w-full lg:w-72 flex flex-col glass-panel rounded-2xl h-[28vh] lg:h-auto overflow-hidden">
+      {/* ———— SIDEBAR ———— */}
+      <div className={`w-full lg:w-80 flex flex-col h-full overflow-hidden border-r border-[var(--border-subtle)] bg-[var(--bg-surface)] ${activeRoom ? 'hidden lg:flex' : 'flex'}`}>
         {/* Header */}
         <div className="px-4 py-3 border-b border-[var(--border-subtle)] flex-shrink-0">
-          <h2 className="text-sm font-bold font-display flex items-center gap-2 text-rose-600">
+          <h2 className="text-sm font-bold font-display flex items-center gap-1.5 text-rose-600">
+            <Link
+              to="/feed"
+              className="lg:hidden p-1.5 rounded-xl hover:bg-[var(--bg-elevated)] text-[var(--text-secondary)] transition-colors cursor-pointer mr-0.5 flex items-center justify-center"
+              aria-label="Back to feed"
+            >
+              <ChevronLeft size={18} />
+            </Link>
             <Flame size={16} className="text-rose-500 animate-pulse" />
             Strike Protest Rooms
           </h2>
@@ -811,10 +832,10 @@ export default function StrikeRooms() {
               <button
                 key={room._id}
                 onClick={() => setActiveRoom(room)}
-                className={`w-full text-left px-3 py-2.5 rounded-xl border transition-all text-xs flex items-center justify-between ${
+                className={`w-full text-left px-3 py-2.5 rounded-xl border transition-all text-xs flex items-center justify-between cursor-pointer ${
                   activeRoom?._id === room._id
-                    ? 'bg-rose-50 border-rose-300 shadow-sm'
-                    : 'bg-[var(--bg-elevated)] border-[var(--border-subtle)] hover:border-rose-200 hover:bg-rose-50/50'
+                    ? 'bg-rose-500/5 border-rose-500/30 shadow-xs font-semibold'
+                    : 'bg-[var(--bg-surface)] border-[var(--border-subtle)] hover:border-rose-500/20 hover:bg-rose-500/5'
                 }`}
               >
                 <div className="truncate pr-2 space-y-0.5 min-w-0">
@@ -835,15 +856,23 @@ export default function StrikeRooms() {
         </div>
       </div>
 
-      {/* Ã¢â€â‚¬Ã¢â€â‚¬ MAIN CANVAS Ã¢â€â‚¬Ã¢â€â‚¬ */}
-      <div className="flex-1 glass-panel rounded-2xl flex flex-col h-[50vh] lg:h-auto overflow-hidden">
+      {/* ———— MAIN CANVAS ———— */}
+      <div className={`flex-1 flex flex-col h-full overflow-hidden bg-[var(--bg-surface)] ${activeRoom ? 'flex' : 'hidden lg:flex'}`}>
         {activeRoom ? (
           <div className="flex-1 flex flex-col overflow-hidden">
 
             {/* Top Bar */}
             <div className="px-4 py-3 border-b border-[var(--border-subtle)] bg-[var(--bg-elevated)] flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 flex-shrink-0">
               <div className="flex items-center gap-2 min-w-0">
-                <div className="w-8 h-8 rounded-lg bg-rose-100 border border-rose-200 flex items-center justify-center flex-shrink-0">
+                <button
+                  onClick={() => setActiveRoom(null)}
+                  className="lg:hidden p-1.5 rounded-xl hover:bg-slate-200/50 dark:hover:bg-zinc-800 text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors cursor-pointer mr-1"
+                  aria-label="Back to channels"
+                >
+                  <ChevronLeft size={18} />
+                </button>
+
+                <div className="w-8 h-8 rounded-lg bg-rose-100 dark:bg-rose-500/10 border border-rose-200 dark:border-rose-500/20 flex items-center justify-center flex-shrink-0">
                   <Flame size={15} className="text-rose-500" />
                 </div>
                 <div className="min-w-0">
@@ -881,11 +910,39 @@ export default function StrikeRooms() {
               </div>
             </div>
 
+            {/* Mobile Tab Toggle */}
+            <div className="flex lg:hidden border-b border-[var(--border-subtle)] bg-[var(--bg-surface)] flex-shrink-0">
+              <button
+                type="button"
+                onClick={() => setMobileTab('chat')}
+                className={`flex-1 py-3 text-center text-xs font-bold transition-all border-b-2 flex items-center justify-center gap-1.5 cursor-pointer ${
+                  mobileTab === 'chat'
+                    ? 'border-rose-500 text-rose-500 bg-rose-500/5'
+                    : 'border-transparent text-[var(--text-secondary)] hover:bg-slate-50 dark:hover:bg-zinc-900/50'
+                }`}
+              >
+                <MessageSquare size={14} />
+                <span>Coordinator Chat</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setMobileTab('details')}
+                className={`flex-1 py-3 text-center text-xs font-bold transition-all border-b-2 flex items-center justify-center gap-1.5 cursor-pointer ${
+                  mobileTab === 'details'
+                    ? 'border-rose-500 text-rose-500 bg-rose-500/5'
+                    : 'border-transparent text-[var(--text-secondary)] hover:bg-slate-50 dark:hover:bg-zinc-900/50'
+                }`}
+              >
+                <Shield size={14} />
+                <span>Action & Legal</span>
+              </button>
+            </div>
+
             {/* Content Grid: Info + Chat */}
-            <div className="flex-1 grid grid-cols-1 md:grid-cols-2 overflow-hidden bg-[var(--bg-base)]">
+            <div className="flex-1 flex lg:grid lg:grid-cols-12 overflow-hidden bg-[var(--bg-base)]">
 
               {/* LEFT: Escalation + Legal + Map */}
-              <div className="p-4 border-b md:border-b-0 md:border-r border-[var(--border-subtle)] overflow-y-auto space-y-3">
+              <div className={`w-full lg:col-span-5 h-full overflow-y-auto p-4 border-b lg:border-b-0 lg:border-r border-[var(--border-subtle)] space-y-4 ${mobileTab === 'details' ? 'block' : 'hidden lg:block'}`}>
 
                 {/* Escalation Card */}
                 <div className="p-4 rounded-xl border border-rose-200 bg-rose-50 space-y-3">
@@ -1179,7 +1236,7 @@ export default function StrikeRooms() {
               </div>
 
               {/* RIGHT: Coordinator Chat */}
-              <div className="flex flex-col overflow-hidden">
+              <div className={`flex-1 lg:col-span-7 flex flex-col h-full overflow-hidden ${mobileTab === 'chat' ? 'flex' : 'hidden lg:flex'}`}>
                 {/* Chat Header */}
                 <div className="px-4 py-2 border-b border-[var(--border-subtle)] bg-[var(--bg-elevated)] flex items-center gap-2 flex-shrink-0">
                   <MessageSquare size={13} className="text-rose-500" />
@@ -1211,11 +1268,11 @@ export default function StrikeRooms() {
                           key={msg._id}
                           className={`flex flex-col gap-0.5 ${isMe ? 'items-end' : 'items-start'}`}
                         >
-                          <span className="text-[8px] text-[var(--text-muted)] font-semibold px-1 uppercase">{msg.senderAlias || 'Anonymous'}</span>
-                          <div className={`px-3 py-2 rounded-xl text-xs leading-relaxed max-w-[80%] ${
+                          <span className="text-[8px] text-[var(--text-muted)] font-semibold px-1 uppercase">{isMe ? 'You' : msg.senderAlias || 'Anonymous'}</span>
+                          <div className={`px-4 py-2 rounded-2xl text-xs leading-relaxed max-w-[80%] shadow-3xs ${
                             isMe
-                              ? 'bg-gradient-to-r from-rose-500 to-orange-500 text-white rounded-tr-sm'
-                              : 'bg-[var(--bg-elevated)] text-[var(--text-primary)] border border-[var(--border-default)] rounded-tl-sm'
+                              ? 'bg-gradient-to-r from-rose-500 to-orange-500 text-white rounded-tr-xs'
+                              : 'bg-[var(--bg-surface)] text-[var(--text-primary)] border border-[var(--border-default)] rounded-tl-xs'
                           }`}>
                             {msg.text}
                           </div>
@@ -1227,18 +1284,20 @@ export default function StrikeRooms() {
                 </div>
 
                 {/* Send Input */}
-                <form onSubmit={handleSendMessage} className="px-3 py-2.5 border-t border-[var(--border-subtle)] bg-[var(--bg-elevated)] flex items-center gap-2">
-                  <input
-                    type="text"
-                    placeholder="Coordinate strike plans anonymously..."
-                    value={inputText}
-                    onChange={(e) => setInputText(e.target.value)}
-                    className="flex-1 glass-input text-xs py-2"
-                  />
+                <form onSubmit={handleSendMessage} className="px-4 py-3 border-t border-[var(--border-subtle)] bg-[var(--bg-elevated)] flex items-center gap-2.5 flex-shrink-0">
+                  <div className="relative flex-1 flex items-center bg-[var(--bg-surface)] border border-[var(--border-default)] rounded-full px-4 py-1.5 focus-within:ring-1 focus-within:ring-rose-500 focus-within:border-rose-500 transition-all">
+                    <input
+                      type="text"
+                      placeholder="Coordinate strike plans anonymously..."
+                      value={inputText}
+                      onChange={(e) => setInputText(e.target.value)}
+                      className="flex-1 bg-transparent text-xs outline-none py-1 border-none focus:ring-0 focus:border-none shadow-none"
+                    />
+                  </div>
                   <button
                     type="submit"
                     disabled={roomDetailsLoading}
-                    className="w-9 h-9 flex items-center justify-center bg-rose-500 text-white rounded-lg hover:bg-rose-400 transition-colors disabled:opacity-50 flex-shrink-0"
+                    className="w-9 h-9 flex items-center justify-center rounded-full bg-rose-500 hover:bg-rose-600 text-white transition-colors disabled:opacity-50 shrink-0 shadow-sm cursor-pointer"
                   >
                     <Send size={13} />
                   </button>

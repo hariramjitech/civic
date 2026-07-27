@@ -1,19 +1,20 @@
 import React, { useState, useEffect } from 'react';
 import { useCivic } from '../context/CivicContext';
+import { useAccessibility } from '../context/AccessibilityContext';
 import api from '../lib/api';
 import { Link } from 'react-router-dom';
 import {
   User, MapPin, Heart, MessageSquare, FileText,
   Settings, Loader2, Calendar, ShieldAlert, CheckCircle,
-  Flame, Award
+  Flame, Award, Edit3, ChevronRight, TrendingUp, Zap, Star,
+  Accessibility, Eye, EyeOff, Type, Keyboard, Volume2, VolumeX,
+  Lock, Unlock, ShieldCheck, Mail, Phone, CalendarRange
 } from 'lucide-react';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import toast from 'react-hot-toast';
 import SeverityBadge from '../components/SeverityBadge';
 import StatusTimeline from '../components/StatusTimeline';
-import AnimatedCard from '../components/AnimatedCard';
 import StaggerContainer, { StaggerItem } from '../components/StaggerContainer';
-
 
 const DISTRICTS = [
   'Chennai', 'Coimbatore', 'Madurai', 'Tiruchirappalli', 'Salem',
@@ -23,21 +24,47 @@ const DISTRICTS = [
   'Nilgiris', 'Cuddalore', 'Villupuram', 'Krishnagiri', 'Dharmapuri',
 ];
 
-const ROLE_COLORS = {
-  admin: '#a855f7',
-  department: '#3b82f6',
-  officer: '#f97316',
-  citizen: 'var(--teal-400)',
+const ROLE_META = {
+  admin:      { color: '#8b5cf6', bg: 'rgba(139,92,246,0.1)', label: 'Admin', icon: '⚡' },
+  department: { color: '#3b82f6', bg: 'rgba(59,130,246,0.1)', label: 'Department', icon: '🏛️' },
+  officer:    { color: '#ea580c', bg: 'rgba(234,88,12,0.1)',  label: 'Officer', icon: '🛡️' },
+  citizen:    { color: 'var(--teal-500)', bg: 'var(--teal-glow)', label: 'Citizen', icon: '👤' },
 };
 
+function timeAgo(dateStr) {
+  const seconds = Math.floor((Date.now() - new Date(dateStr)) / 1000);
+  if (seconds < 60) return `${seconds}s ago`;
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
+  if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
+  return new Date(dateStr).toLocaleDateString([], { month: 'short', day: 'numeric' });
+}
+
 export default function MyAccount() {
-  const { userProfile, role, updateDistrict, isSignedIn } = useCivic();
+  const { userProfile, role, fetchProfile, isSignedIn } = useCivic();
+  const {
+    theme, setTheme,
+    contrast, setContrast,
+    textSize, setTextSize,
+    highlightFocus, setHighlightFocus,
+    narrate, setNarrate
+  } = useAccessibility();
+
   const [activeTab, setActiveTab] = useState('posts');
   const [loading, setLoading] = useState(true);
   const [myPosts, setMyPosts] = useState([]);
   const [myComments, setMyComments] = useState([]);
   const [myLikes, setMyLikes] = useState([]);
+  
+  // Edit Profile States
+  const [editingProfile, setEditingProfile] = useState(false);
+  const [displayName, setDisplayName] = useState('');
+  const [email, setEmail] = useState('');
+  const [phoneNumber, setPhoneNumber] = useState('');
+  const [age, setAge] = useState('');
+  const [aadhaarNumber, setAadhaarNumber] = useState('');
   const [selectedDistrict, setSelectedDistrict] = useState('');
+  const [savingProfile, setSavingProfile] = useState(false);
+  const [showAadhaar, setShowAadhaar] = useState(false);
 
   useEffect(() => {
     if (!isSignedIn) return;
@@ -56,262 +83,715 @@ export default function MyAccount() {
       finally { setLoading(false); }
     };
     load();
-    if (userProfile?.district) setSelectedDistrict(userProfile.district);
-  }, [isSignedIn, userProfile]);
+  }, [isSignedIn]);
 
-  const handleDistrictUpdate = async (e) => {
+  useEffect(() => {
+    if (userProfile) {
+      setDisplayName(userProfile.displayName || '');
+      setEmail(userProfile.email || '');
+      setPhoneNumber(userProfile.phoneNumber || '');
+      setAge(userProfile.age || '');
+      setAadhaarNumber(userProfile.aadhaarNumber || '');
+      setSelectedDistrict(userProfile.district || '');
+    }
+  }, [userProfile]);
+
+  const handleProfileUpdate = async (e) => {
     e.preventDefault();
-    if (!selectedDistrict) return;
-    await updateDistrict(selectedDistrict);
+    setSavingProfile(true);
+    try {
+      const res = await api.patch('/auth/profile', {
+        district: selectedDistrict,
+        displayName,
+        email,
+        phoneNumber,
+        age,
+        aadhaarNumber,
+      });
+      if (res.data.success) {
+        toast.success('Citizen verification profile updated.');
+        await fetchProfile();
+        setEditingProfile(false);
+      }
+    } catch (err) {
+      console.error(err);
+      toast.error(err.response?.data?.error || 'Failed to update profile verification details.');
+    } finally {
+      setSavingProfile(false);
+    }
   };
 
-  // Compute civic score
   const civicScore = myPosts.length * 10 + myComments.length * 2 + myLikes.length;
   const totalIntensity = myPosts.reduce((sum, p) => sum + (p.intensityScore || 0), 0);
+  const roleMeta = ROLE_META[role] || ROLE_META.citizen;
+
+  // Civic score level
+  const level = civicScore >= 200 ? 'Champion' : civicScore >= 100 ? 'Activist' : civicScore >= 50 ? 'Reporter' : 'Observer';
+  const levelProgress = Math.min((civicScore % 100) / 100, 1);
 
   if (loading) return (
-    <div style={{ height: '60vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12 }}>
-      <Loader2 size={32} style={{ color: 'var(--teal-400)', animation: 'spin 0.8s linear infinite' }} />
-      <p style={{ color: 'var(--text-muted)', fontSize: 13 }}>Loading your profile...</p>
+    <div className="h-[60vh] flex flex-col items-center justify-center gap-3">
+      <div className="w-10 h-10 border-2 border-[var(--teal-500)] border-t-transparent rounded-full animate-spin" />
+      <p className="text-[var(--text-muted)] text-sm font-semibold animate-pulse">Loading your profile…</p>
     </div>
   );
 
+  const tabs = [
+    { key: 'posts',    label: 'Reports',  count: myPosts.length,    icon: FileText },
+    { key: 'comments', label: 'Comments', count: myComments.length, icon: MessageSquare },
+    { key: 'likes',    label: 'Liked',    count: myLikes.length,    icon: Heart },
+  ];
+
   return (
     <motion.div
-      initial={{ opacity: 0, y: 14 }}
+      initial={{ opacity: 0, y: 12 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.4, ease: [0.4, 0, 0.2, 1] }}
-      className="max-w-6xl mx-auto w-full flex flex-col gap-5"
+      transition={{ duration: 0.35, ease: [0.4, 0, 0.2, 1] }}
+      className="max-w-4xl mx-auto w-full flex flex-col gap-5 text-left"
     >
+      {/* ── PROFILE HERO CARD ── */}
+      <div className="relative overflow-hidden rounded-3xl border border-[var(--border-default)] bg-[var(--bg-surface)]">
+        {/* Cover gradient */}
+        <div className="h-24 w-full" style={{ background: `linear-gradient(135deg, ${roleMeta.color}20 0%, var(--teal-glow) 50%, transparent 100%)` }} />
 
-      {/* ── PROFILE HEADER ── */}
-      <div className="card" style={{ padding: 24 }}>
-        <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 20 }}>
+        {/* Profile info */}
+        <div className="px-6 pb-6">
+          {/* Avatar overlapping cover */}
+          <div className="flex items-end justify-between -mt-8">
+            <div
+              className="w-16 h-16 rounded-2xl flex items-center justify-center text-2xl border-4 border-[var(--bg-surface)] shadow-lg"
+              style={{ background: `linear-gradient(135deg, ${roleMeta.color}30, ${roleMeta.color}60)` }}
+            >
+              <span>{roleMeta.icon}</span>
+            </div>
 
-          {/* Avatar + Info */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-            <div style={{
-              width: 56, height: 56, borderRadius: '50%',
-              background: 'var(--bg-elevated)', border: `2px solid ${ROLE_COLORS[role] || 'var(--border-default)'}`,
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              color: ROLE_COLORS[role] || 'var(--teal-400)',
-              flexShrink: 0,
-            }}>
-              <User size={24} />
-            </div>
-            <div>
-              <h2 style={{ fontFamily: 'var(--font-display)', fontSize: 20, fontWeight: 800, color: 'var(--text-primary)', marginBottom: 6 }}>
-                {userProfile?.displayName || 'Citizen Member'}
-              </h2>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                <span style={{
-                  fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em',
-                  color: ROLE_COLORS[role], background: `${ROLE_COLORS[role]}15`,
-                  border: `1px solid ${ROLE_COLORS[role]}30`, padding: '2px 8px', borderRadius: 4,
-                }}>
-                  {role}
-                </span>
-                {userProfile?.district && (
-                  <span style={{
-                    display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11,
-                    color: 'var(--text-muted)', background: 'var(--bg-elevated)',
-                    border: '1px solid var(--border-subtle)', padding: '2px 8px', borderRadius: 4,
-                  }}>
-                    <MapPin size={10} /> {userProfile.district}
-                  </span>
-                )}
-              </div>
-            </div>
+            {/* Edit Profile button */}
+            <button
+              onClick={() => setEditingProfile(!editingProfile)}
+              className="flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-xl border border-[var(--border-default)] text-[var(--text-secondary)] hover:border-[var(--teal-500)] hover:text-[var(--teal-500)] transition-all cursor-pointer bg-transparent"
+            >
+              <Edit3 size={12} />
+              Edit Profile
+            </button>
           </div>
 
-          {/* Civic Score */}
-          <div style={{
-            textAlign: 'center', padding: '12px 20px',
-            background: 'rgba(20,184,166,0.05)', border: '1px solid rgba(20,184,166,0.15)',
-            borderRadius: 10,
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 5, justifyContent: 'center', marginBottom: 4 }}>
-              <Award size={14} style={{ color: 'var(--teal-400)' }} />
-              <span style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--teal-400)' }}>
-                Civic Score
+          <div className="mt-3 space-y-2">
+            <div className="flex items-center gap-2 flex-wrap">
+              <h2 className="font-display font-black text-xl text-[var(--text-primary)] leading-none">
+                {userProfile?.displayName || 'Civic Member'}
+              </h2>
+              <span
+                className="text-[9px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full border"
+                style={{ color: roleMeta.color, backgroundColor: roleMeta.bg, borderColor: `${roleMeta.color}30` }}
+              >
+                {roleMeta.label}
               </span>
             </div>
-            <div style={{ fontFamily: 'var(--font-display)', fontSize: 32, fontWeight: 900, color: 'var(--teal-400)' }}>
-              {civicScore}
+
+            <div className="flex items-center gap-3 flex-wrap">
+              {userProfile?.district && (
+                <span className="flex items-center gap-1 text-xs font-semibold text-[var(--text-muted)]">
+                  <MapPin size={12} className="text-[var(--teal-500)]" />
+                  {userProfile.district}
+                </span>
+              )}
+              <span className="flex items-center gap-1 text-xs font-semibold text-[var(--text-muted)]">
+                <Star size={12} className="text-amber-500" />
+                {level} · {civicScore} pts
+              </span>
             </div>
+
+            {/* Level progress bar */}
+            <div className="space-y-1 pt-1">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-wider">{level}</span>
+                <span className="text-[10px] font-bold text-[var(--teal-500)]">{Math.round(levelProgress * 100)}%</span>
+              </div>
+              <div className="h-1.5 bg-[var(--bg-elevated)] rounded-full overflow-hidden">
+                <motion.div
+                  initial={{ width: 0 }}
+                  animate={{ width: `${levelProgress * 100}%` }}
+                  transition={{ duration: 1.2, ease: [0.34, 1.56, 0.64, 1] }}
+                  className="h-full rounded-full"
+                  style={{ background: `linear-gradient(90deg, var(--teal-500), ${roleMeta.color})` }}
+                />
+              </div>
+            </div>
+
+            {/* Credentials Section */}
+            <div className="mt-5 pt-4 border-t border-[var(--border-subtle)]">
+              <h3 className="text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] flex items-center gap-1.5 mb-3">
+                <ShieldCheck size={14} className="text-[var(--teal-500)]" />
+                Verified Citizen Credentials
+              </h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 bg-[var(--bg-elevated)] p-4 rounded-2xl border border-[var(--border-subtle)]">
+                {/* Email */}
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-xl bg-blue-500/10 flex items-center justify-center text-blue-500 shrink-0">
+                    <Mail size={14} />
+                  </div>
+                  <div className="flex flex-col min-w-0">
+                    <span className="text-[9px] font-bold text-[var(--text-muted)] uppercase tracking-wide">Email Address</span>
+                    <span className="text-xs font-semibold text-[var(--text-primary)] truncate">{userProfile?.email || 'Not verified'}</span>
+                  </div>
+                </div>
+
+                {/* Phone Number */}
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-xl bg-emerald-500/10 flex items-center justify-center text-emerald-500 shrink-0">
+                    <Phone size={14} />
+                  </div>
+                  <div className="flex flex-col min-w-0">
+                    <span className="text-[9px] font-bold text-[var(--text-muted)] uppercase tracking-wide">Phone Number</span>
+                    <span className="text-xs font-semibold text-[var(--text-primary)] truncate">{userProfile?.phoneNumber || 'Not Linked'}</span>
+                  </div>
+                </div>
+
+                {/* Age */}
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-xl bg-amber-500/10 flex items-center justify-center text-amber-500 shrink-0">
+                    <CalendarRange size={14} />
+                  </div>
+                  <div className="flex flex-col min-w-0">
+                    <span className="text-[9px] font-bold text-[var(--text-muted)] uppercase tracking-wide">Citizen Age</span>
+                    <span className="text-xs font-semibold text-[var(--text-primary)] truncate">{userProfile?.age || 'Not Verified'}</span>
+                  </div>
+                </div>
+
+                {/* Aadhaar Number */}
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-xl bg-rose-500/10 flex items-center justify-center text-rose-500 shrink-0">
+                    <Accessibility size={14} />
+                  </div>
+                  <div className="flex flex-col min-w-0 flex-1">
+                    <span className="text-[9px] font-bold text-[var(--text-muted)] uppercase tracking-wide">Aadhaar Number (Securely Encrypted)</span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-semibold text-[var(--text-primary)] font-mono">
+                        {userProfile?.aadhaarNumber 
+                          ? (showAadhaar 
+                              ? userProfile.aadhaarNumber 
+                              : `•••• •••• ${userProfile.aadhaarNumber.slice(-4)}`)
+                          : 'Not Linked'
+                        }
+                      </span>
+                      {userProfile?.aadhaarNumber && (
+                        <button
+                          type="button"
+                          onClick={() => setShowAadhaar(!showAadhaar)}
+                          className="p-1 rounded hover:bg-[var(--bg-overlay)] text-[var(--text-muted)] hover:text-[var(--text-secondary)] border-none bg-transparent cursor-pointer"
+                        >
+                          {showAadhaar ? <EyeOff size={12} /> : <Eye size={12} />}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
           </div>
         </div>
 
-        {/* District update form */}
-        <div style={{ marginTop: 20, paddingTop: 20, borderTop: '1px solid var(--border-subtle)' }}>
-          <form onSubmit={handleDistrictUpdate} style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-            <Settings size={14} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
-            <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
-              Home District:
-            </label>
-            <select
-              value={selectedDistrict}
-              onChange={e => setSelectedDistrict(e.target.value)}
-              className="glass-input"
-              style={{ flex: 1, minWidth: 160, maxWidth: 240 }}
+        {/* Edit Profile Panel */}
+        <AnimatePresence>
+          {editingProfile && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: 'auto', opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              transition={{ duration: 0.2 }}
+              className="overflow-hidden border-t border-[var(--border-subtle)] bg-[var(--bg-elevated)]"
             >
-              <option value="">Select district...</option>
-              {DISTRICTS.map(d => <option key={d} value={d}>{d}</option>)}
-            </select>
-            <button type="submit" className="btn btn-primary btn-sm" style={{ flexShrink: 0 }}>
-              Update
-            </button>
-          </form>
-        </div>
+              <form onSubmit={handleProfileUpdate} className="px-6 py-5 space-y-4">
+                <div className="flex items-center gap-2 pb-2 border-b border-[var(--border-subtle)]">
+                  <Settings size={15} className="text-[var(--teal-500)]" />
+                  <span className="text-xs font-bold uppercase tracking-wider text-[var(--text-primary)]">
+                    Citizen Verification Settings
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {/* Display Name */}
+                  <div className="space-y-1.5">
+                    <label className="block text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-wider">Display Name</label>
+                    <input
+                      type="text"
+                      value={displayName}
+                      onChange={e => setDisplayName(e.target.value)}
+                      placeholder="e.g. Citizen John"
+                      className="w-full glass-input text-xs py-2 px-3 rounded-xl"
+                      required
+                    />
+                  </div>
+
+                  {/* Email */}
+                  <div className="space-y-1.5">
+                    <label className="block text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-wider">Email Address</label>
+                    <input
+                      type="email"
+                      value={email}
+                      onChange={e => setEmail(e.target.value)}
+                      placeholder="email@example.com"
+                      className="w-full glass-input text-xs py-2 px-3 rounded-xl"
+                      required
+                    />
+                  </div>
+
+                  {/* Phone Number */}
+                  <div className="space-y-1.5">
+                    <label className="block text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-wider">Phone Number</label>
+                    <input
+                      type="tel"
+                      value={phoneNumber}
+                      onChange={e => setPhoneNumber(e.target.value)}
+                      placeholder="+91 XXXXX XXXXX"
+                      className="w-full glass-input text-xs py-2 px-3 rounded-xl"
+                    />
+                  </div>
+
+                  {/* Age */}
+                  <div className="space-y-1.5">
+                    <label className="block text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-wider">Age</label>
+                    <input
+                      type="number"
+                      value={age}
+                      onChange={e => setAge(e.target.value)}
+                      placeholder="e.g. 28"
+                      className="w-full glass-input text-xs py-2 px-3 rounded-xl"
+                      min="1"
+                      max="120"
+                    />
+                  </div>
+
+                  {/* District Selection */}
+                  <div className="space-y-1.5">
+                    <label className="block text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-wider">Home District</label>
+                    <select
+                      value={selectedDistrict}
+                      onChange={e => setSelectedDistrict(e.target.value)}
+                      className="w-full glass-input text-xs py-2 px-3 rounded-xl"
+                      required
+                    >
+                      <option value="">Select district…</option>
+                      {DISTRICTS.map(d => <option key={d} value={d}>{d}</option>)}
+                    </select>
+                  </div>
+
+                  {/* Aadhaar Number */}
+                  <div className="space-y-1.5">
+                    <label className="block text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-wider">Aadhaar Number (12 Digits)</label>
+                    <input
+                      type="text"
+                      value={aadhaarNumber}
+                      onChange={e => {
+                        const val = e.target.value.replace(/\D/g, '').slice(0, 12);
+                        setAadhaarNumber(val);
+                      }}
+                      placeholder="12-digit Aadhaar Number"
+                      className="w-full glass-input text-xs py-2 px-3 rounded-xl font-mono"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex justify-end gap-2 pt-2 border-t border-[var(--border-subtle)]">
+                  <button
+                    type="button"
+                    onClick={() => setEditingProfile(false)}
+                    className="px-4 py-2 rounded-xl text-xs font-bold text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-all cursor-pointer border border-[var(--border-default)] bg-transparent"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={savingProfile}
+                    className="btn btn-primary px-5 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5"
+                  >
+                    {savingProfile && <Loader2 size={12} className="animate-spin" />}
+                    Save Verification Info
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
 
       {/* ── STATS ── */}
-      <StaggerContainer className="stats-grid">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         {[
-          { label: 'Reports Filed', value: myPosts.length, color: 'var(--teal-400)', icon: FileText },
-          { label: 'Comments', value: myComments.length, color: '#a78bfa', icon: MessageSquare },
-          { label: 'Liked', value: myLikes.length, color: '#f87171', icon: Heart },
-          { label: 'Total Intensity', value: totalIntensity, color: '#f97316', icon: Flame },
+          { label: 'Reports Filed', value: myPosts.length,    color: 'var(--teal-500)', icon: FileText,     bg: 'var(--teal-glow)' },
+          { label: 'Comments',      value: myComments.length, color: '#8b5cf6',          icon: MessageSquare, bg: 'rgba(139,92,246,0.08)' },
+          { label: 'Liked',         value: myLikes.length,    color: '#f43f5e',          icon: Heart,         bg: 'rgba(244,63,94,0.08)' },
+          { label: 'Intensity',     value: totalIntensity,    color: '#ea580c',          icon: Flame,         bg: 'rgba(234,88,12,0.08)' },
         ].map((s, i) => {
           const Icon = s.icon;
           return (
-            <StaggerItem key={i}>
-              <div className="card" style={{ padding: '14px 16px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
-                <Icon size={13} style={{ color: s.color }} />
-                <span className="section-label">{s.label}</span>
+            <motion.div
+              key={i}
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: i * 0.07, duration: 0.3 }}
+              className="bg-[var(--bg-surface)] border border-[var(--border-default)] rounded-2xl p-4 space-y-2"
+            >
+              <div className="w-8 h-8 rounded-xl flex items-center justify-center" style={{ background: s.bg }}>
+                <Icon size={15} style={{ color: s.color }} />
               </div>
-              <div style={{ fontFamily: 'var(--font-display)', fontSize: 26, fontWeight: 800, color: s.color }}>
-                {s.value}
-              </div>
-            </div>
-            </StaggerItem>
+              <div className="font-display text-2xl font-black" style={{ color: s.color }}>{s.value}</div>
+              <div className="text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-wide">{s.label}</div>
+            </motion.div>
           );
         })}
-      </StaggerContainer>
+      </div>
+
+      {/* ── ACCESSIBILITY SETTINGS PANEL ── */}
+      <div className="bg-[var(--bg-surface)] border border-[var(--border-default)] rounded-3xl p-6 flex flex-col gap-5">
+        <div className="flex items-center gap-2 border-b border-[var(--border-subtle)] pb-3">
+          <Accessibility className="text-[var(--teal-500)]" size={20} />
+          <h3 className="font-display font-black text-sm text-[var(--text-primary)]">
+            Accessibility Preferences
+          </h3>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+          {/* Theme Selection */}
+          <div className="flex flex-col gap-2">
+            <span className="text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-wider">
+              Interface Theme
+            </span>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setTheme('light')}
+                className={`py-2 px-3 rounded-xl border text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-2 ${
+                  theme === 'light'
+                    ? 'border-[var(--teal-500)] bg-[var(--teal-glow)] text-[var(--teal-500)]'
+                    : 'border-[var(--border-default)] bg-[var(--bg-surface)] text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)]'
+                }`}
+              >
+                <Zap size={13} /> Light Theme
+              </button>
+              <button
+                type="button"
+                onClick={() => setTheme('dark')}
+                className={`py-2 px-3 rounded-xl border text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-2 ${
+                  theme === 'dark'
+                    ? 'border-[var(--teal-500)] bg-[var(--teal-glow)] text-[var(--teal-500)]'
+                    : 'border-[var(--border-default)] bg-[var(--bg-surface)] text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)]'
+                }`}
+              >
+                <Zap size={13} /> Dark Theme
+              </button>
+            </div>
+          </div>
+
+          {/* Text Resizing */}
+          <div className="flex flex-col gap-2">
+            <span className="text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-wider">
+              Text Resizing
+            </span>
+            <div className="grid grid-cols-3 gap-2">
+              {[
+                { key: 'normal', label: 'Default (A)', title: 'Normal size' },
+                { key: 'large', label: 'Medium (A+)', title: 'Large size' },
+                { key: 'xlarge', label: 'Large (A++)', title: 'Extra Large' },
+              ].map(item => (
+                <button
+                  key={item.key}
+                  type="button"
+                  onClick={() => setTextSize(item.key)}
+                  title={item.title}
+                  className={`py-2 px-1.5 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
+                    textSize === item.key
+                      ? 'border-[var(--teal-500)] bg-[var(--teal-glow)] text-[var(--teal-500)]'
+                      : 'border-[var(--border-default)] bg-[var(--bg-surface)] text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)]'
+                  }`}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* High Contrast Mode */}
+          <div className="flex items-center justify-between bg-[var(--bg-elevated)] p-4 rounded-2xl border border-[var(--border-subtle)]">
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 rounded-xl bg-purple-500/10 flex items-center justify-center text-purple-500">
+                <Eye size={16} />
+              </div>
+              <div className="flex flex-col">
+                <span className="text-xs font-bold text-[var(--text-primary)]">High Contrast</span>
+                <span className="text-[9px] font-semibold text-[var(--text-muted)]">WCAG AAA compliance</span>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setContrast(contrast === 'high' ? 'normal' : 'high')}
+              style={{
+                width: 44,
+                height: 24,
+                borderRadius: 12,
+                border: 'none',
+                position: 'relative',
+                cursor: 'pointer',
+                outline: 'none',
+                backgroundColor: contrast === 'high' ? 'var(--teal-500)' : 'var(--border-default)',
+                transition: 'background-color 0.2s',
+              }}
+            >
+              <div
+                style={{
+                  width: 18,
+                  height: 18,
+                  borderRadius: '50%',
+                  backgroundColor: '#ffffff',
+                  position: 'absolute',
+                  top: 3,
+                  left: contrast === 'high' ? 23 : 3,
+                  transition: 'left 0.2s',
+                }}
+              />
+            </button>
+          </div>
+
+          {/* Focus Outline */}
+          <div className="flex items-center justify-between bg-[var(--bg-elevated)] p-4 rounded-2xl border border-[var(--border-subtle)]">
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 rounded-xl bg-blue-500/10 flex items-center justify-center text-blue-500">
+                <Keyboard size={16} />
+              </div>
+              <div className="flex flex-col">
+                <span className="text-xs font-bold text-[var(--text-primary)]">Focus Outline</span>
+                <span className="text-[9px] font-semibold text-[var(--text-muted)]">Highlight active elements</span>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setHighlightFocus(!highlightFocus)}
+              style={{
+                width: 44,
+                height: 24,
+                borderRadius: 12,
+                border: 'none',
+                position: 'relative',
+                cursor: 'pointer',
+                outline: 'none',
+                backgroundColor: highlightFocus ? 'var(--teal-500)' : 'var(--border-default)',
+                transition: 'background-color 0.2s',
+              }}
+            >
+              <div
+                style={{
+                  width: 18,
+                  height: 18,
+                  borderRadius: '50%',
+                  backgroundColor: '#ffffff',
+                  position: 'absolute',
+                  top: 3,
+                  left: highlightFocus ? 23 : 3,
+                  transition: 'left 0.2s',
+                }}
+              />
+            </button>
+          </div>
+
+          {/* Narrate on Hover */}
+          <div className="flex items-center justify-between bg-[var(--bg-elevated)] p-4 rounded-2xl border border-[var(--border-subtle)] md:col-span-2">
+            <div className="flex items-center gap-3">
+              <div className={`w-8 h-8 rounded-xl flex items-center justify-center ${
+                narrate ? 'bg-amber-500/10 text-amber-500' : 'bg-slate-500/10 text-[var(--text-muted)]'
+              }`}>
+                {narrate ? <Volume2 size={16} /> : <VolumeX size={16} />}
+              </div>
+              <div className="flex flex-col">
+                <span className="text-xs font-bold text-[var(--text-primary)]">Narrate on Hover</span>
+                <span className="text-[9px] font-semibold text-[var(--text-muted)]">Voice helper reads targeted UI text elements</span>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setNarrate(!narrate)}
+              style={{
+                width: 44,
+                height: 24,
+                borderRadius: 12,
+                border: 'none',
+                position: 'relative',
+                cursor: 'pointer',
+                outline: 'none',
+                backgroundColor: narrate ? 'var(--teal-500)' : 'var(--border-default)',
+                transition: 'background-color 0.2s',
+              }}
+            >
+              <div
+                style={{
+                  width: 18,
+                  height: 18,
+                  borderRadius: '50%',
+                  backgroundColor: '#ffffff',
+                  position: 'absolute',
+                  top: 3,
+                  left: narrate ? 23 : 3,
+                  transition: 'left 0.2s',
+                }}
+              />
+            </button>
+          </div>
+        </div>
+      </div>
 
       {/* ── PRIVACY NOTICE ── */}
-      <div style={{
-        display: 'flex', alignItems: 'flex-start', gap: 10, padding: '12px 16px',
-        background: 'rgba(244,63,94,0.04)', border: '1px solid rgba(244,63,94,0.12)',
-        borderRadius: 8, fontSize: 12, color: 'var(--text-secondary)',
-      }}>
-        <ShieldAlert size={15} style={{ color: '#f43f5e', flexShrink: 0, marginTop: 1 }} />
-        <p style={{ lineHeight: 1.65 }}>
-          <strong style={{ color: 'var(--text-primary)' }}>Privacy:</strong> Your identity remains completely masked in all public records, maps, and feeds — even from administrators.
+      <div className="flex items-start gap-3 px-4 py-3 bg-rose-500/5 border border-rose-500/15 rounded-2xl">
+        <ShieldAlert size={15} className="text-rose-500 flex-shrink-0 mt-0.5" />
+        <p className="text-xs text-[var(--text-secondary)] leading-relaxed">
+          <strong className="text-[var(--text-primary)]">Privacy Active:</strong> Your identity is protected with temporary cryptographic handles — your real name is never visible on public listings, maps, or comment streams.
         </p>
       </div>
 
-      {/* ── HISTORY TABS ── */}
-      <div className="tab-bar" style={{ marginBottom: -8 }}>
-        {[
-          { key: 'posts', label: `My Reports (${myPosts.length})` },
-          { key: 'comments', label: `Comments (${myComments.length})` },
-          { key: 'likes', label: `Liked (${myLikes.length})` },
-        ].map(t => (
-          <button key={t.key} className={`tab-item ${activeTab === t.key ? 'active' : ''}`} onClick={() => setActiveTab(t.key)}>
-            {t.label}
-          </button>
-        ))}
+      {/* ── TABS ── */}
+      <div className="space-y-4">
+        <div className="flex border-b border-[var(--border-subtle)]">
+          {tabs.map(t => {
+            const Icon = t.icon;
+            return (
+              <button
+                key={t.key}
+                onClick={() => setActiveTab(t.key)}
+                className={`flex items-center gap-2 px-4 py-3 text-xs font-bold transition-all relative border-none bg-transparent cursor-pointer ${
+                  activeTab === t.key
+                    ? 'text-[var(--teal-500)]'
+                    : 'text-[var(--text-muted)] hover:text-[var(--text-primary)]'
+                }`}
+              >
+                <Icon size={13} />
+                <span>{t.label}</span>
+                <span className={`text-[9px] font-black px-1.5 py-0.5 rounded-full ${activeTab === t.key ? 'bg-[var(--teal-glow)] text-[var(--teal-500)]' : 'bg-[var(--bg-elevated)] text-[var(--text-muted)]'}`}>
+                  {t.count}
+                </span>
+                {activeTab === t.key && (
+                  <motion.div
+                    layoutId="profileTabLine"
+                    className="absolute bottom-0 left-0 right-0 h-0.5 rounded-full bg-[var(--teal-500)]"
+                    transition={{ type: 'spring', stiffness: 350, damping: 30 }}
+                  />
+                )}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Tab Content */}
+        <AnimatePresence mode="wait">
+          <motion.div
+            key={activeTab}
+            initial={{ opacity: 0, y: 6 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -4 }}
+            transition={{ duration: 0.18 }}
+          >
+            {/* Posts Tab */}
+            {activeTab === 'posts' && (
+              myPosts.length === 0 ? (
+                <EmptyState message="You haven't filed any reports yet." />
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {myPosts.map(post => (
+                    <PostCard key={post._id} post={post} showTimeline />
+                  ))}
+                </div>
+              )
+            )}
+
+            {/* Comments Tab */}
+            {activeTab === 'comments' && (
+              myComments.length === 0 ? (
+                <EmptyState message="No comments or replies logged yet." />
+              ) : (
+                <div className="space-y-3">
+                  {myComments.map(comment => (
+                    <div key={comment._id} className="bg-[var(--bg-surface)] border border-[var(--border-default)] rounded-2xl p-4 space-y-2 hover:border-[var(--teal-500)]/30 transition-colors">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-semibold text-[var(--text-muted)] flex items-center gap-1">
+                          On:{' '}
+                          {comment.postId ? (
+                            <Link to={`/posts/${comment.postId._id}`} className="text-[var(--teal-500)] hover:underline font-bold">
+                              {comment.postId.title}
+                            </Link>
+                          ) : <span className="italic">deleted report</span>}
+                        </span>
+                        <span className="text-[9px] text-[var(--text-muted)]">{timeAgo(comment.createdAt)}</span>
+                      </div>
+                      <p className="text-sm text-[var(--text-secondary)] leading-relaxed">"{comment.text}"</p>
+                    </div>
+                  ))}
+                </div>
+              )
+            )}
+
+            {/* Likes Tab */}
+            {activeTab === 'likes' && (
+              myLikes.length === 0 ? (
+                <EmptyState message="You haven't upvoted any reports." />
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {myLikes.map(post => (
+                    <PostCard key={post._id} post={post} />
+                  ))}
+                </div>
+              )
+            )}
+          </motion.div>
+        </AnimatePresence>
+      </div>
+    </motion.div>
+  );
+}
+
+function PostCard({ post, showTimeline }) {
+  return (
+    <div className="bg-[var(--bg-surface)] border border-[var(--border-default)] rounded-2xl p-4 flex flex-col gap-3 hover:border-[var(--teal-500)]/40 hover:shadow-md transition-all duration-200">
+      <div className="flex items-center justify-between">
+        <SeverityBadge severity={post.severity} />
+        <span className={`status-pill status-${(post.status || 'reported').replace('_', '-').replace('under-review', 'review')}`}>
+          {post.status?.replace('_', ' ') || 'reported'}
+        </span>
+      </div>
+      <div>
+        <Link
+          to={`/posts/${post._id}`}
+          className="font-display font-black text-sm text-[var(--text-primary)] hover:text-[var(--teal-500)] no-underline leading-tight block"
+        >
+          {post.title}
+        </Link>
+        <p className="text-xs text-[var(--text-muted)] line-clamp-2 mt-1 leading-relaxed">
+          {post.description}
+        </p>
       </div>
 
-      {/* ── MY POSTS ── */}
-      {activeTab === 'posts' && (
-        myPosts.length === 0
-          ? <div style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)', fontSize: 13 }}>
-            You haven't filed any civic reports yet.
-          </div>
-          : <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 12 }}>
-            {myPosts.map(post => (
-              <div key={post._id} className="card animate-slideInUp" style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <SeverityBadge severity={post.severity} />
-                  <span className={`status-pill status-${(post.status || 'reported').replace('_', '-').replace('under-review', 'review')}`}>
-                    {post.status?.replace('_', ' ') || 'reported'}
-                  </span>
-                </div>
-                <Link to={`/posts/${post._id}`} style={{ fontFamily: 'var(--font-display)', fontSize: 15, fontWeight: 700, color: 'var(--text-primary)', textDecoration: 'none', lineHeight: 1.3 }}
-                  onMouseEnter={e => e.target.style.color = 'var(--teal-400)'}
-                  onMouseLeave={e => e.target.style.color = 'var(--text-primary)'}
-                >
-                  {post.title}
-                </Link>
-                <p style={{ fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.55 }} className="truncate-2">{post.description}</p>
-
-                {/* Mini timeline */}
-                <StatusTimeline status={post.status || 'reported'} compact />
-
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: 8, borderTop: '1px solid var(--border-subtle)', fontSize: 11, color: 'var(--text-muted)' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                    <Calendar size={10} />
-                    {new Date(post.createdAt).toLocaleDateString()}
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 3, color: '#f97316' }}>
-                    <Flame size={10} />
-                    {post.intensityScore || 0}
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
+      {showTimeline && (
+        <div className="pt-2 border-t border-[var(--border-subtle)]">
+          <StatusTimeline status={post.status || 'reported'} compact />
+        </div>
       )}
 
-      {/* ── COMMENTS ── */}
-      {activeTab === 'comments' && (
-        myComments.length === 0
-          ? <div style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)', fontSize: 13 }}>
-            No comments written yet.
-          </div>
-          : <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {myComments.map(comment => (
-              <div key={comment._id} className="card" style={{ padding: 16 }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8, fontSize: 11, color: 'var(--text-muted)' }}>
-                  <span>
-                    On:{' '}
-                    {comment.postId ? (
-                      <Link to={`/posts/${comment.postId._id}`} style={{ color: 'var(--teal-400)' }}>
-                        {comment.postId.title}
-                      </Link>
-                    ) : (
-                      <span style={{ fontStyle: 'italic' }}>Deleted</span>
-                    )}
-                  </span>
-                  <span>{new Date(comment.createdAt).toLocaleDateString()}</span>
-                </div>
-                <p style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.6 }}>
-                  "{comment.text}"
-                </p>
-              </div>
-            ))}
-          </div>
-      )}
+      <div className="flex items-center justify-between text-[10px] text-[var(--text-muted)] mt-auto pt-1">
+        <div className="flex items-center gap-1">
+          <Calendar size={10} />
+          <span>{new Date(post.createdAt).toLocaleDateString()}</span>
+        </div>
+        <div className="flex items-center gap-1 text-amber-500 font-bold">
+          <Flame size={10} />
+          <span>{post.intensityScore || 0}</span>
+        </div>
+      </div>
+    </div>
+  );
+}
 
-      {/* ── LIKES ── */}
-      {activeTab === 'likes' && (
-        myLikes.length === 0
-          ? <div style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)', fontSize: 13 }}>
-            No liked posts yet.
-          </div>
-          : <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 12 }}>
-            {myLikes.map(post => (
-              <div key={post._id} className="card" style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 10 }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <SeverityBadge severity={post.severity} />
-                  <span style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700 }}>
-                    {post.status?.replace('_', ' ') || 'reported'}
-                  </span>
-                </div>
-                <Link to={`/posts/${post._id}`} style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)', textDecoration: 'none' }}
-                  onMouseEnter={e => e.target.style.color = 'var(--teal-400)'}
-                  onMouseLeave={e => e.target.style.color = 'var(--text-primary)'}
-                >
-                  {post.title}
-                </Link>
-                <p style={{ fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.55 }} className="truncate-2">{post.description}</p>
-              </div>
-            ))}
-          </div>
-      )}
-    </motion.div>
+function EmptyState({ message }) {
+  return (
+    <div className="bg-[var(--bg-elevated)] border border-[var(--border-subtle)] p-12 rounded-3xl text-center">
+      <div className="text-3xl mb-3 opacity-40">📭</div>
+      <p className="text-sm text-[var(--text-muted)] font-semibold">{message}</p>
+    </div>
   );
 }

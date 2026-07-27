@@ -50,6 +50,73 @@ const uploadToCloudinary = (buffer, folder = 'civic/posts') =>
 const generateAnonToken = (userId) =>
   crypto.createHmac('sha256', process.env.ANON_HMAC_SECRET).update(userId).digest('hex');
 
+// ─────────────────────────────────────────────
+// ENCRYPTION & DECRYPTION (AES-256-CBC)
+// ─────────────────────────────────────────────
+const SECRET = process.env.ANON_HMAC_SECRET || 'civic_anon_secret_k3y_2026_do_not_change';
+const ENCRYPTION_KEY = crypto.createHash('sha256').update(SECRET).digest();
+
+const encryptField = (text) => {
+  if (!text) return '';
+  try {
+    const iv = crypto.randomBytes(16);
+    const cipher = crypto.createCipheriv('aes-256-cbc', ENCRYPTION_KEY, iv);
+    let encrypted = cipher.update(String(text), 'utf8', 'hex');
+    encrypted += cipher.final('hex');
+    return iv.toString('hex') + ':' + encrypted;
+  } catch (err) {
+    console.error('Encryption failed:', err.message);
+    return text;
+  }
+};
+
+const decryptField = (ciphertext) => {
+  if (!ciphertext) return '';
+  try {
+    const parts = ciphertext.split(':');
+    if (parts.length !== 2) return ciphertext; // Return as-is if not in IV:encrypted format
+    const iv = Buffer.from(parts[0], 'hex');
+    const encryptedText = parts[1];
+    const decipher = crypto.createDecipheriv('aes-256-cbc', ENCRYPTION_KEY, iv);
+    let decrypted = decipher.update(encryptedText, 'hex', 'utf8');
+    decrypted += decipher.final('utf8');
+    return decrypted;
+  } catch (err) {
+    console.error('Decryption failed:', err.message);
+    return ciphertext;
+  }
+};
+
+const encryptTokenDeterministic = (token) => {
+  if (!token) return '';
+  try {
+    // For tokens that need to be queried ($addToSet, $pull, includes), use a static IV (16 zero bytes).
+    // This is secure because postAnonToken has very high entropy (32 random bytes).
+    const iv = Buffer.alloc(16, 0);
+    const cipher = crypto.createCipheriv('aes-256-cbc', ENCRYPTION_KEY, iv);
+    let encrypted = cipher.update(token, 'utf8', 'hex');
+    encrypted += cipher.final('hex');
+    return encrypted;
+  } catch (err) {
+    console.error('Deterministic token encryption failed:', err.message);
+    return token;
+  }
+};
+
+const decryptToken = (encryptedToken) => {
+  if (!encryptedToken) return '';
+  try {
+    const iv = Buffer.alloc(16, 0);
+    const decipher = crypto.createDecipheriv('aes-256-cbc', ENCRYPTION_KEY, iv);
+    let decrypted = decipher.update(encryptedToken, 'hex', 'utf8');
+    decrypted += decipher.final('utf8');
+    return decrypted;
+  } catch (err) {
+    console.error('Token decryption failed:', err.message);
+    return encryptedToken;
+  }
+};
+
 // Stable per-user per-room alias, e.g. "Citizen #7F3A"
 const generateChatAlias = (userId, roomId) => {
   const hash = crypto.randomBytes(2).toString('hex').toUpperCase();
@@ -85,11 +152,29 @@ const attachUser = async (req, res, next) => {
       const email = clerkUser.emailAddresses?.[0]?.emailAddress || '';
       user = await User.create({
         clerkId,
-        email,
+        email: encryptField(email),
         displayName: `${clerkUser.firstName || ''} ${clerkUser.lastName || ''}`.trim() || 'Anonymous Citizen',
         avatar: clerkUser.imageUrl,
       });
     }
+
+    // Decrypt verification tokens in memory so existing checks work out-of-the-box
+    const decryptedPostTokens = (user.postTokens || []).map(decryptToken);
+    const decryptedCommentTokens = (user.commentTokens || []).map(decryptToken);
+    
+    // Convert Mongoose array to plain JS array and override to bypass change tracking
+    Object.defineProperty(user, 'postTokens', {
+      value: decryptedPostTokens,
+      writable: true,
+      configurable: true,
+      enumerable: true
+    });
+    Object.defineProperty(user, 'commentTokens', {
+      value: decryptedCommentTokens,
+      writable: true,
+      configurable: true,
+      enumerable: true
+    });
 
     req.user = user;
     req.anonToken = generateAnonToken(clerkId);
@@ -201,4 +286,8 @@ module.exports = {
   sanitizeInput,
   errorHandler,
   asyncHandler,
+  encryptField,
+  decryptField,
+  encryptTokenDeterministic,
+  decryptToken,
 };

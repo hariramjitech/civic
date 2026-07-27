@@ -10,7 +10,6 @@ import MapView from './pages/MapView';
 import ChatRooms from './pages/ChatRooms';
 import StrikeRooms from './pages/StrikeRooms';
 import MyAccount from './pages/MyAccount';
-import AdminDashboard from './pages/AdminDashboard';
 import { RedirectToSignIn, SignedIn, SignedOut } from '@clerk/clerk-react';
 
 function ProtectedRoute({ children }) {

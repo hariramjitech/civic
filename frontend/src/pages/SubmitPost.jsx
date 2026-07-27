@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useCivic } from '../context/CivicContext';
 import api from '../lib/api';
+import toast from 'react-hot-toast';
 import { MapContainer, TileLayer, Marker, useMapEvents, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import {
@@ -181,9 +182,11 @@ export default function SubmitPost() {
   const compressImage = (file) => {
     return new Promise((resolve) => {
       const reader = new FileReader();
+      reader.onerror = () => resolve(file);
       reader.readAsDataURL(file);
       reader.onload = (event) => {
         const img = new Image();
+        img.onerror = () => resolve(file);
         img.src = event.target.result;
         img.onload = () => {
           const canvas = document.createElement('canvas');
@@ -329,7 +332,7 @@ export default function SubmitPost() {
     if (step === 3) {
       if (selectedFiles.length === 0) return false;
       if (aiLoading) return false;
-      if (!aiResult) return false;
+      if (!aiResult) return true; // Allow proceeding if AI backend check is unavailable/failed
       if (isSuspiciousImage(aiResult)) return false;
       if (aiResult.allImagesRelevant === false) return false;
       return true;
@@ -339,11 +342,9 @@ export default function SubmitPost() {
 
   const isSubmitDisabled = () => {
     if (selectedFiles.length === 0) return true;
-    if (isSuspiciousImage(aiResult)) {
-      return true;
-    }
-    if (aiResult?.allImagesRelevant === false) {
-      return true;
+    if (aiResult) {
+      if (isSuspiciousImage(aiResult)) return true;
+      if (aiResult.allImagesRelevant === false) return true;
     }
     return false;
   };
@@ -353,14 +354,16 @@ export default function SubmitPost() {
     if (!title.trim() || !description.trim()) { toast.error('Title and description required.'); return; }
     if (!position) { toast.error('Please pin the issue location.'); return; }
     
-    if (aiResult?.allImagesRelevant === false) {
-      toast.error(`Submission blocked: ${aiResult.relevanceExplanation || 'Uploaded images do not match the reported issue.'}`);
-      return;
-    }
+    if (aiResult) {
+      if (aiResult.allImagesRelevant === false) {
+        toast.error(`Submission blocked: ${aiResult.relevanceExplanation || 'Uploaded images do not match the reported issue.'}`);
+        return;
+      }
 
-    if (isSubmitDisabled()) {
-      toast.error('Submission blocked: Non-authentic media detected.');
-      return;
+      if (isSubmitDisabled()) {
+        toast.error('Submission blocked: Non-authentic media detected.');
+        return;
+      }
     }
 
     try {
@@ -1047,15 +1050,15 @@ export default function SubmitPost() {
           <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
             PNG, JPG, JPEG — up to 5 images, 10MB each
           </div>
-          <input
-            ref={fileInputRef}
-            type="file"
-            multiple
-            accept="image/*"
-            onChange={handleFileChange}
-            style={{ display: 'none' }}
-          />
         </div>
+        <input
+          ref={fileInputRef}
+          type="file"
+          multiple
+          accept="image/*"
+          onChange={handleFileChange}
+          style={{ display: 'none' }}
+        />
 
         {/* Camera capture trigger */}
         <div style={{ marginTop: -4 }}>

@@ -12,6 +12,7 @@ export const CivicProvider = ({ children }) => {
   const [userProfile, setUserProfile] = useState(null);
   const [loadingProfile, setLoadingProfile] = useState(true);
   const [socket, setSocket] = useState(null);
+  const [hideMobileBottomNav, setHideMobileBottomNav] = useState(false);
 
   const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -128,6 +129,8 @@ export const CivicProvider = ({ children }) => {
         updateDistrict,
         isSignedIn,
         clerkUser: user,
+        hideMobileBottomNav,
+        setHideMobileBottomNav,
       }}
     >
       {children}

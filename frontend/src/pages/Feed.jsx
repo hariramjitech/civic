@@ -1,29 +1,28 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useCivic } from '../context/CivicContext';
+import { SignedIn } from '@clerk/clerk-react';
 import api from '../lib/api';
 import { Link, useNavigate } from 'react-router-dom';
 import {
   Heart, MessageCircle, Flame, MapPin, Search,
-  CheckCircle, Clock, Share2, ChevronDown, ChevronUp,
-  Sparkles, Navigation, Phone, Mail, PlusCircle, SlidersHorizontal,
-  LayoutGrid, List, Volume2, VolumeX
+  Share2, Sparkles, Navigation, Plus, Globe, HelpCircle, Image,
+  Bookmark, MoreHorizontal, CheckCircle2, Clock, Zap,
+  Trash2, Droplets, Building2, Route, AlertCircle
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import toast from 'react-hot-toast';
 import SeverityBadge from '../components/SeverityBadge';
 import EscalationBar from '../components/EscalationBar';
-import StatusTimeline from '../components/StatusTimeline';
 import StaggerContainer, { StaggerItem } from '../components/StaggerContainer';
 
-
 const CATEGORIES = [
-  { value: '', label: 'All Issues' },
-  { value: 'roads', label: 'Roads' },
-  { value: 'sanitation', label: 'Sanitation' },
-  { value: 'water', label: 'Water' },
-  { value: 'electricity', label: 'Electricity' },
-  { value: 'municipal', label: 'Municipal' },
-  { value: 'other', label: 'Other' },
+  { value: '', label: 'All Issues', emoji: '🌐' },
+  { value: 'roads', label: 'Roads', emoji: '🛣️' },
+  { value: 'sanitation', label: 'Sanitation', emoji: '🧹' },
+  { value: 'water', label: 'Water', emoji: '💧' },
+  { value: 'electricity', label: 'Electricity', emoji: '⚡' },
+  { value: 'municipal', label: 'Municipal', emoji: '🏛️' },
+  { value: 'other', label: 'Other', emoji: '📌' },
 ];
 
 const DISTRICTS = [
@@ -36,20 +35,20 @@ const DISTRICTS = [
 
 function getCatAvatarStyle(cat) {
   const styles = {
-    roads: { background: 'linear-gradient(135deg,#f43f5e,#f97316)' },
-    sanitation: { background: 'linear-gradient(135deg,#22c55e,#14b8a6)' },
-    water: { background: 'linear-gradient(135deg,#06b6d4,#3b82f6)' },
-    electricity: { background: 'linear-gradient(135deg,#eab308,#f97316)' },
-    municipal: { background: 'linear-gradient(135deg,#a855f7,#6366f1)' },
+    roads:       { bg: 'linear-gradient(135deg, #ff6b6b, #ff4757)', icon: Route },
+    sanitation:  { bg: 'linear-gradient(135deg, #2ed573, #1e9e52)', icon: Trash2 },
+    water:       { bg: 'linear-gradient(135deg, #1e90ff, #0070d4)', icon: Droplets },
+    electricity: { bg: 'linear-gradient(135deg, #ffd32a, #e8ac00)', icon: Zap },
+    municipal:   { bg: 'linear-gradient(135deg, #a55eea, #7c3aed)', icon: Building2 },
   };
-  return styles[cat] || { background: 'linear-gradient(135deg,#52525b,#3f3f46)' };
+  return styles[cat] || { bg: 'linear-gradient(135deg, #747d8c, #57606f)', icon: HelpCircle };
 }
 
-const SEV_BORDER = {
-  critical: 'var(--sev-critical)',
-  high: 'var(--sev-high)',
-  medium: 'var(--sev-medium)',
-  low: 'var(--sev-low)',
+const SEV_COLORS = {
+  critical: '#e11d48',
+  high: '#ea580c',
+  medium: '#ca8a04',
+  low: '#16a34a',
 };
 
 function renderMarkdownText(text = '') {
@@ -60,28 +59,29 @@ function renderMarkdownText(text = '') {
     const parts = [];
     let lastIndex = 0;
     let match;
-
     while ((match = boldPattern.exec(line)) !== null) {
-      if (match.index > lastIndex) {
-        parts.push(line.slice(lastIndex, match.index));
-      }
-      parts.push(<strong key={`b-${lineIndex}-${match.index}`}>{match[1]}</strong>);
+      if (match.index > lastIndex) parts.push(line.slice(lastIndex, match.index));
+      parts.push(<strong key={`b-${lineIndex}-${match.index}`} className="font-bold text-[var(--text-primary)]">{match[1]}</strong>);
       lastIndex = match.index + match[0].length;
     }
-
-    if (lastIndex < line.length) {
-      parts.push(line.slice(lastIndex));
-    }
-
+    if (lastIndex < line.length) parts.push(line.slice(lastIndex));
     return (
       <span key={`line-${lineIndex}`}>
-        {parts.map((part, partIndex) =>
-          typeof part === 'string' ? <React.Fragment key={`t-${lineIndex}-${partIndex}`}>{part}</React.Fragment> : part
+        {parts.map((part, i) =>
+          typeof part === 'string' ? <React.Fragment key={i}>{part}</React.Fragment> : part
         )}
         {lineIndex < lines.length - 1 && <br />}
       </span>
     );
   });
+}
+
+function timeAgo(dateStr) {
+  const seconds = Math.floor((Date.now() - new Date(dateStr)) / 1000);
+  if (seconds < 60) return `${seconds}s`;
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}m`;
+  if (seconds < 86400) return `${Math.floor(seconds / 3600)}h`;
+  return `${Math.floor(seconds / 86400)}d`;
 }
 
 export default function Feed() {
@@ -91,6 +91,7 @@ export default function Feed() {
   const [loading, setLoading] = useState(true);
   const [myPostIds, setMyPostIds] = useState(new Set());
   const [likeAnim, setLikeAnim] = useState({});
+  const [openMenuId, setOpenMenuId] = useState(null);
 
   // Filters
   const [district, setDistrict] = useState('');
@@ -101,37 +102,7 @@ export default function Feed() {
   const [searchQuery, setSearchQuery] = useState('');
   const [useGeo, setUseGeo] = useState(false);
   const [coords, setCoords] = useState(null);
-
-  // Accessibility: Speak post details
-  const [speakingId, setSpeakingId] = useState(null);
   const [strikeRoomLoading, setStrikeRoomLoading] = useState({});
-
-  const speakPost = (post) => {
-    if (!window.speechSynthesis) {
-      toast.error('Text-to-speech not supported in this browser.');
-      return;
-    }
-    
-    if (speakingId === post._id) {
-      window.speechSynthesis.cancel();
-      setSpeakingId(null);
-      return;
-    }
-
-    window.speechSynthesis.cancel();
-    const narrationText = `Reported civic issue: ${post.title}. Location: ${post.district} district. Category is ${post.category || 'general'}. Severity level is ${post.severity || 'medium'}. Current status: ${post.status?.replace('_', ' ') || 'reported'}. Details: ${post.description}.`;
-    const utterance = new SpeechSynthesisUtterance(narrationText);
-    utterance.onend = () => setSpeakingId(null);
-    utterance.onerror = () => setSpeakingId(null);
-    setSpeakingId(post._id);
-    window.speechSynthesis.speak(utterance);
-  };
-
-  useEffect(() => {
-    return () => {
-      if (window.speechSynthesis) window.speechSynthesis.cancel();
-    };
-  }, []);
 
   const fetchPosts = useCallback(async () => {
     try {
@@ -156,27 +127,15 @@ export default function Feed() {
   useEffect(() => {
     if (!socket) return;
     socket.emit('feed:subscribe');
-
-    const handlePostUpdated = (updatedPost) => {
-      setPosts(prev => prev.map(p => p._id === updatedPost._id ? { ...p, ...updatedPost } : p));
+    const handlePostUpdated = (p) => setPosts(prev => prev.map(x => x._id === p._id ? { ...x, ...p } : x));
+    const handlePostCreated = (p) => {
+      setPosts(prev => prev.some(x => x._id === p._id) ? prev : [p, ...prev]);
+      toast.success(`New report: "${p.title}"`, { duration: 4000 });
     };
-
-    const handlePostCreated = (newPost) => {
-      setPosts(prev => {
-        if (prev.some(p => p._id === newPost._id)) return prev;
-        return [newPost, ...prev];
-      });
-      toast.success(`New report filed: "${newPost.title}"`, { duration: 4000 });
-    };
-
-    const handlePostDeleted = ({ postId }) => {
-      setPosts(prev => prev.filter(p => p._id !== postId));
-    };
-
+    const handlePostDeleted = ({ postId }) => setPosts(prev => prev.filter(p => p._id !== postId));
     socket.on('feed:post_updated', handlePostUpdated);
     socket.on('feed:post_created', handlePostCreated);
     socket.on('feed:post_deleted', handlePostDeleted);
-
     return () => {
       socket.off('feed:post_updated', handlePostUpdated);
       socket.off('feed:post_created', handlePostCreated);
@@ -186,30 +145,26 @@ export default function Feed() {
 
   useEffect(() => {
     if (!isSignedIn) return;
-    api.get('/auth/my-posts')
-      .then(res => setMyPostIds(new Set(res.data.posts.map(p => p._id))))
-      .catch(() => { });
+    api.get('/auth/my-posts').then(res => setMyPostIds(new Set(res.data.posts.map(p => p._id)))).catch(() => {});
   }, [isSignedIn]);
 
   const handleGeoToggle = () => {
     if (!useGeo) {
       navigator.geolocation?.getCurrentPosition(
         pos => { setCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude }); setUseGeo(true); toast.success('Filtering within 5km.'); },
-        () => { toast.error('Location denied.'); }
+        () => toast.error('Location denied.')
       );
-    } else {
-      setUseGeo(false); setCoords(null);
-    }
+    } else { setUseGeo(false); setCoords(null); }
   };
 
   const handleLike = async (postId) => {
+    if (!isSignedIn) { toast.error('Sign in to like.'); return; }
     try {
       const res = await api.post(`/posts/${postId}/like`);
       setPosts(prev => prev.map(p => p._id === postId
         ? { ...p, likeCount: res.data.likeCount, likedByUser: res.data.liked, intensityScore: res.data.intensityScore }
         : p
       ));
-      // Heart animation
       setLikeAnim(prev => ({ ...prev, [postId]: true }));
       setTimeout(() => setLikeAnim(prev => ({ ...prev, [postId]: false })), 700);
     } catch { toast.error('Could not update.'); }
@@ -229,34 +184,21 @@ export default function Feed() {
           );
         });
         const freshCoords = await getPosition();
-        if (freshCoords) {
-          payload = freshCoords;
-        }
+        if (freshCoords) payload = freshCoords;
       }
-
       const res = await api.post(`/posts/${postId}/support`, payload);
       setPosts(prev => prev.map(p => p._id === postId
         ? { ...p, supportCount: res.data.supportCount, intensityScore: res.data.intensityScore }
         : p
       ));
-      
-      if (res.data.isLocal) {
-        toast.success(`Local support verified! Added ${Math.round(res.data.distance || 0)}m away. 🔥`);
-      } else {
-        toast.success('Support added!');
-      }
+      toast.success(res.data.isLocal ? `Local support +${Math.round(res.data.distance || 0)}m 🔥` : 'Support added!');
     } catch (err) {
-      const errorMsg = err.response?.data?.error || 'Could not amplify.';
-      toast.error(errorMsg);
+      toast.error(err.response?.data?.error || 'Could not amplify.');
     }
   };
 
   const handleCreateStrikeRoom = async (post) => {
-    if (!isSignedIn) {
-      toast.error('Please sign in to create a strike room.');
-      return;
-    }
-
+    if (!isSignedIn) { toast.error('Please sign in.'); return; }
     try {
       setStrikeRoomLoading(prev => ({ ...prev, [post._id]: true }));
       const res = await api.post('/rooms', {
@@ -267,13 +209,10 @@ export default function Feed() {
         district: post.district,
         category: post.category,
       });
-
-      const room = res.data.room;
-      toast.success(res.data.alreadyExists ? 'Opening existing strike room.' : 'Strike room created.');
-      navigate(`/strikes?roomId=${room._id}`);
+      toast.success(res.data.alreadyExists ? 'Opening strike room.' : 'Strike room created.');
+      navigate(`/strikes?roomId=${res.data.room._id}`);
     } catch (err) {
-      const msg = err.response?.data?.error || 'Could not create strike room.';
-      toast.error(msg);
+      toast.error(err.response?.data?.error || 'Could not create strike room.');
     } finally {
       setStrikeRoomLoading(prev => ({ ...prev, [post._id]: false }));
     }
@@ -292,441 +231,475 @@ export default function Feed() {
   );
 
   return (
-    <div className="max-w-6xl mx-auto">
+    <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 max-w-5xl mx-auto">
+      
+      {/* ── MAIN FEED COLUMN ── */}
+      <div className="lg:col-span-8 space-y-5">
 
-      {/* ── PAGE HEADER ── */}
-      <div style={{
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        marginBottom: 20, paddingBottom: 16,
-        borderBottom: '1px solid var(--border-subtle)',
-      }}>
-        <div>
-          <h1 style={{
-            fontFamily: 'var(--font-display)', fontSize: 22, fontWeight: 800,
-            background: 'linear-gradient(135deg, var(--teal-400), #6ee7b7)',
-            WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
-            backgroundClip: 'text', marginBottom: 2,
-          }}>
-            Civic Stream
-          </h1>
-          <p className="section-label">Tamil Nadu Live Reports</p>
+        {/* Composer Trigger */}
+        <SignedIn>
+          <motion.div
+            whileHover={{ y: -1 }}
+            onClick={() => navigate('/submit')}
+            className="bg-[var(--bg-surface)] border border-[var(--border-default)] rounded-2xl p-4 flex items-center gap-3 cursor-pointer hover:border-[var(--teal-500)]/40 hover:shadow-md transition-all duration-200"
+          >
+            <div className="w-10 h-10 rounded-full flex items-center justify-center font-black text-white text-sm flex-shrink-0"
+              style={{ background: 'linear-gradient(135deg, var(--teal-500), var(--teal-600))' }}>
+              {userProfile?.username?.substring(0, 1).toUpperCase() || 'U'}
+            </div>
+            <div className="flex-1 text-[var(--text-muted)] text-sm py-2.5 px-4 bg-[var(--bg-elevated)] rounded-full border border-[var(--border-subtle)] text-left hover:border-[var(--border-default)] transition-colors">
+              What civic issue needs attention in your area?
+            </div>
+            <div className="flex items-center gap-2 pr-1">
+              <div className="p-1.5 rounded-lg text-[var(--teal-500)] hover:bg-[var(--teal-glow)] transition-colors">
+                <Image size={18} />
+              </div>
+              <div className="p-1.5 rounded-lg text-[var(--teal-500)] hover:bg-[var(--teal-glow)] transition-colors">
+                <MapPin size={18} />
+              </div>
+            </div>
+          </motion.div>
+        </SignedIn>
+
+        {/* Stream Header & Category Tabs */}
+        <div className="space-y-3">
+          {/* Title row */}
+          <div className="flex items-center justify-between gap-3">
+            <h1 className="font-display font-black text-xl text-[var(--text-primary)] flex items-center gap-2 whitespace-nowrap">
+              <Zap size={18} className="text-[var(--teal-500)]" />
+              Civic Stream
+            </h1>
+
+            <div className="flex items-center gap-1.5 flex-shrink-0">
+              {/* Sort segment control */}
+              <div className="flex bg-[var(--bg-elevated)] border border-[var(--border-default)] rounded-xl p-0.5">
+                {[
+                  { val: 'feed',      label: 'For You' },
+                  { val: 'latest',    label: 'Latest'  },
+                  { val: 'intensity', label: 'Hot'     },
+                ].map(s => (
+                  <button
+                    key={s.val}
+                    onClick={() => setSort(s.val)}
+                    className={`px-3 py-1.5 text-[11px] font-bold rounded-lg transition-all cursor-pointer ${
+                      sort === s.val
+                        ? 'bg-[var(--bg-surface)] text-[var(--text-primary)] shadow-sm border border-[var(--border-subtle)]'
+                        : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'
+                    }`}
+                  >
+                    {s.label}
+                  </button>
+                ))}
+              </div>
+
+              {/* Post count pill */}
+              <span className="inline-flex items-center justify-center min-w-[2rem] h-7 px-2 text-[11px] font-black text-[var(--text-muted)] bg-[var(--bg-elevated)] border border-[var(--border-default)] rounded-lg">
+                {filteredPosts.length}
+              </span>
+            </div>
+          </div>
+
+          {/* Category scroll chips */}
+          <div className="flex gap-2 overflow-x-auto scrollbar-none -mx-1 px-1 py-0.5">
+            {CATEGORIES.map(c => (
+              <button
+                key={c.value}
+                onClick={() => setCategory(c.value)}
+                className={`flex-shrink-0 px-3.5 py-1.5 rounded-full text-xs font-semibold transition-all cursor-pointer border ${
+                  category === c.value
+                    ? 'bg-[var(--teal-500)] text-white border-transparent shadow-sm'
+                    : 'bg-[var(--bg-surface)] border-[var(--border-default)] text-[var(--text-secondary)] hover:border-[var(--teal-500)] hover:text-[var(--teal-500)]'
+                }`}
+              >
+                {c.label}
+              </button>
+            ))}
+          </div>
         </div>
-        <Link to="/submit" className="btn btn-primary btn-sm">
-          <PlusCircle size={14} />
-          Report Issue
-        </Link>
-      </div>
 
-      {/* ── SEARCH BAR ── */}
-      <div style={{ position: 'relative', marginBottom: 14 }}>
-        <Search size={14} style={{
-          position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)',
-          color: 'var(--text-muted)', pointerEvents: 'none',
-        }} />
-        <input
-          type="text"
-          placeholder="Search by title, area, description..."
-          value={searchQuery}
-          onChange={e => setSearchQuery(e.target.value)}
-          className="glass-input"
-          style={{ paddingLeft: 36 }}
-        />
-      </div>
+        {/* Post Cards */}
+        {loading ? (
+          <div className="space-y-4">
+            {[1, 2, 3].map(n => (
+              <div key={n} className="feed-card p-4 space-y-4">
+                <div className="flex items-center gap-3">
+                  <div className="skeleton w-10 h-10 rounded-full" />
+                  <div className="space-y-2 flex-1">
+                    <div className="skeleton h-3 w-1/3" />
+                    <div className="skeleton h-2.5 w-1/4" />
+                  </div>
+                </div>
+                <div className="skeleton h-52 w-full rounded-xl" />
+                <div className="space-y-2">
+                  <div className="skeleton h-3 w-3/4" />
+                  <div className="skeleton h-3 w-1/2" />
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : filteredPosts.length === 0 ? (
+          <div className="feed-card p-12 text-center">
+            <Globe className="mx-auto text-[var(--text-muted)] mb-4 opacity-50" size={40} />
+            <h3 className="font-display text-base font-bold text-[var(--text-primary)] mb-1">No Issues Found</h3>
+            <p className="text-xs text-[var(--text-secondary)] max-w-xs mx-auto mb-6">
+              Try adjusting the filters or file the first report in this area.
+            </p>
+            <Link to="/submit" className="btn btn-primary px-6 py-2.5 rounded-full text-xs font-bold">
+              Report Issue
+            </Link>
+          </div>
+        ) : (
+          <StaggerContainer className="space-y-4" inView={false}>
+            {filteredPosts.map((post) => {
+              const isOwner = myPostIds.has(post._id);
+              const isLiked = post.likedByUser;
+              const username = `anon_${post.district?.toLowerCase().slice(0, 3)}_${post._id?.slice(-4)}`;
+              const catStyle = getCatAvatarStyle(post.category);
+              const sevColor = SEV_COLORS[post.severity] || '#64748b';
 
-      {/* ── FILTER PILLS ── */}
-      <div
-        className="scrollbar-none"
-        style={{
-          display: 'flex',
-          gap: 8,
-          overflowX: 'auto',
-          flexWrap: 'nowrap',
-          paddingBottom: 6,
-          marginBottom: 16,
-          width: '100%',
-          WebkitOverflowScrolling: 'touch',
-        }}
-      >
-        {CATEGORIES.map(c => (
-          <button
-            key={c.value}
-            onClick={() => setCategory(c.value)}
-            className={`filter-pill ${category === c.value ? 'active' : ''}`}
-          >
-            {c.label}
-          </button>
-        ))}
-        <div style={{ width: 1, background: 'var(--border-subtle)', flexShrink: 0 }} />
-        {['critical', 'high', 'medium', 'low'].map(s => (
-          <button
-            key={s}
-            onClick={() => setSeverity(severity === s ? '' : s)}
-            className={`filter-pill ${severity === s ? 'active' : ''}`}
-            style={{ color: severity === s ? SEV_BORDER[s] : undefined }}
-          >
-            {s.charAt(0).toUpperCase() + s.slice(1)}
-          </button>
-        ))}
-        <div style={{ width: 1, background: 'var(--border-subtle)', flexShrink: 0 }} />
-        <select
-          value={sort}
-          onChange={e => setSort(e.target.value)}
-          className="filter-pill"
-          style={{ background: sort === 'feed' ? 'var(--teal-glow)' : undefined, borderColor: sort === 'feed' ? 'rgba(20,184,166,0.35)' : undefined }}
-          aria-label="Sort stream by"
-        >
-          <option value="feed">✨ Recommended Feed</option>
-          <option value="latest">🕒 Latest Reports</option>
-          <option value="intensity">🔥 Popular (Intensity)</option>
-        </select>
-        <button
-          onClick={handleGeoToggle}
-          className={`filter-pill ${useGeo ? 'active' : ''}`}
-        >
-          <MapPin size={12} className={useGeo ? 'animate-bounce' : ''} />
-          {useGeo ? 'Near Me ✓' : 'Near Me'}
-        </button>
+              return (
+                <StaggerItem key={post._id}>
+                  <article className="feed-card overflow-hidden group">
+                    {/* Severity accent bar */}
+                    <div className="h-0.5 w-full" style={{ background: `linear-gradient(90deg, ${sevColor}60, transparent)` }} />
 
-        {/* District selector */}
-        <select
-          value={district}
-          onChange={e => setDistrict(e.target.value)}
-          className="filter-pill"
-          style={{ background: district ? 'var(--teal-glow)' : undefined, borderColor: district ? 'rgba(20,184,166,0.35)' : undefined }}
-        >
-          <option value="">All Districts</option>
-          {DISTRICTS.map(d => <option key={d} value={d}>{d}</option>)}
-        </select>
+                    {/* Post Header */}
+                    <div className="px-4 pt-4 pb-3 flex items-start justify-between">
+                      <div className="flex items-center gap-3">
+                        <div
+                          className="w-10 h-10 rounded-full flex items-center justify-center text-white flex-shrink-0 ring-2 ring-white dark:ring-zinc-900 shadow-sm"
+                          style={{ background: catStyle.bg }}
+                        >
+                          {React.createElement(catStyle.icon, { size: 18, className: "text-white", strokeWidth: 2.2 })}
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-bold text-[var(--text-primary)]">@{username}</span>
+                            {isOwner && (
+                              <span className="text-[9px] font-black uppercase tracking-widest bg-[var(--teal-glow)] text-[var(--teal-500)] border border-[var(--teal-500)]/20 px-1.5 py-0.5 rounded-full">
+                                Mine
+                              </span>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-1.5 mt-0.5">
+                            <span className="text-[11px] font-bold text-[var(--teal-500)]">{post.district}</span>
+                            <span className="text-[var(--text-muted)] text-[11px]">·</span>
+                            <span className="text-[11px] text-[var(--text-muted)]">{timeAgo(post.createdAt)}</span>
+                          </div>
+                          {/* Badges on mobile */}
+                          <div className="flex sm:hidden items-center gap-1.5 mt-1.5">
+                            <SeverityBadge severity={post.severity} />
+                            <span className={`status-pill status-${(post.status || 'reported').replace('_', '-').replace('under-review', 'review')}`} style={{ fontSize: '9px', padding: '1px 6px' }}>
+                              {post.status?.replace('_', ' ') || 'reported'}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
 
-        {activeFilters > 0 && (
-          <button
-            onClick={() => { setDistrict(''); setCategory(''); setSeverity(''); setStatus(''); setUseGeo(false); setCoords(null); }}
-            className="filter-pill"
-            style={{ color: 'var(--sev-critical)', borderColor: 'rgba(244,63,94,0.2)' }}
-          >
-            ✕ Clear ({activeFilters})
-          </button>
+                      <div className="flex items-center gap-2">
+                        {/* Badges on desktop */}
+                        <div className="hidden sm:flex items-center gap-2">
+                          <SeverityBadge severity={post.severity} />
+                          <span className={`status-pill status-${(post.status || 'reported').replace('_', '-').replace('under-review', 'review')}`}>
+                            {post.status?.replace('_', ' ') || 'reported'}
+                          </span>
+                        </div>
+                        <div className="relative">
+                          <button
+                            onClick={() => setOpenMenuId(openMenuId === post._id ? null : post._id)}
+                            className="p-1.5 rounded-lg text-[var(--text-muted)] hover:bg-[var(--bg-elevated)] transition-colors cursor-pointer"
+                          >
+                            <MoreHorizontal size={16} />
+                          </button>
+                          <AnimatePresence>
+                            {openMenuId === post._id && (
+                              <motion.div
+                                initial={{ opacity: 0, scale: 0.9, y: -4 }}
+                                animate={{ opacity: 1, scale: 1, y: 0 }}
+                                exit={{ opacity: 0, scale: 0.9, y: -4 }}
+                                className="absolute right-0 top-8 z-20 bg-[var(--bg-surface)] border border-[var(--border-default)] rounded-xl shadow-xl overflow-hidden min-w-[140px]"
+                              >
+                                <button onClick={() => { copyLink(post._id); setOpenMenuId(null); }} className="w-full text-left px-4 py-2.5 text-xs font-semibold text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] flex items-center gap-2 cursor-pointer transition-colors">
+                                  <Share2 size={13} /> Copy link
+                                </button>
+                                <button onClick={() => { navigate(`/posts/${post._id}`); setOpenMenuId(null); }} className="w-full text-left px-4 py-2.5 text-xs font-semibold text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] flex items-center gap-2 cursor-pointer transition-colors">
+                                  <CheckCircle2 size={13} /> View detail
+                                </button>
+                              </motion.div>
+                            )}
+                          </AnimatePresence>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Post Image */}
+                    <Link to={`/posts/${post._id}`} className="block relative bg-[var(--bg-elevated)] overflow-hidden" style={{ aspectRatio: '16/9' }}>
+                      {post.images?.length > 0 ? (
+                        <img
+                          src={post.images[0]}
+                          alt={post.title}
+                          className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-[1.02]"
+                        />
+                      ) : (
+                        <div className="w-full h-full flex flex-col items-center justify-center gap-2 opacity-40">
+                          <MapPin size={32} className="text-[var(--text-muted)]" />
+                          <span className="text-[9px] font-black uppercase tracking-widest text-[var(--text-muted)]">GPS Coordinates Attached</span>
+                        </div>
+                      )}
+
+                      {/* Trust overlay */}
+                      <div className="absolute top-3 left-3 flex items-center gap-1.5 bg-black/60 backdrop-blur-md rounded-full px-2.5 py-1">
+                        <Sparkles size={10} className="text-amber-400" />
+                        <span className="text-[9px] font-black text-white uppercase tracking-wider">{post.legitimacyScore || 70}% trust</span>
+                      </div>
+
+                      {/* Image count badge */}
+                      {post.images?.length > 1 && (
+                        <div className="absolute top-3 right-3 bg-black/60 backdrop-blur-md rounded-full px-2 py-0.5">
+                          <span className="text-[9px] font-bold text-white">+{post.images.length - 1}</span>
+                        </div>
+                      )}
+                    </Link>
+
+                    {/* Post Body */}
+                    <div className="px-4 pt-3.5 pb-3 space-y-2.5">
+                      {/* Title — full display, no clamp */}
+                      <h2 className="font-display text-[15px] font-black text-[var(--text-primary)] leading-snug">
+                        <Link
+                          to={`/posts/${post._id}`}
+                          className="no-underline hover:text-[var(--teal-500)] transition-colors"
+                        >
+                          {post.title}
+                        </Link>
+                      </h2>
+
+                      {/* Description — 2-line clamp */}
+                      {post.description && (
+                        <p className="text-[13px] text-[var(--text-secondary)] leading-relaxed" style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                          {post.description}
+                        </p>
+                      )}
+
+                      {/* AI Tags */}
+                      {post.aiTags?.length > 0 && (
+                        <div className="flex flex-wrap gap-1.5">
+                          {post.aiTags.slice(0, 3).map((tag, i) => (
+                            <span key={i} className="text-[10px] font-bold text-[var(--teal-500)] bg-[var(--teal-glow)] px-2 py-0.5 rounded-full border border-[var(--teal-500)]/10">
+                              #{tag}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Address */}
+                      {post.address && (
+                        <div className="flex items-center gap-1.5 text-[11px] text-[var(--text-muted)]">
+                          <MapPin size={11} className="flex-shrink-0" />
+                          <span className="truncate">{post.address}</span>
+                        </div>
+                      )}
+
+                      {/* Escalation bar */}
+                      <div className="pt-0.5">
+                        <EscalationBar supportCount={post.supportCount || 0} />
+                      </div>
+                    </div>
+
+                    {/* Action Bar */}
+                    <div className="px-4 py-3 border-t border-[var(--border-subtle)] flex items-center justify-between">
+                      <div className="flex items-center gap-4">
+                        {/* Like */}
+                        <motion.button
+                          onClick={() => handleLike(post._id)}
+                          whileTap={{ scale: 0.85 }}
+                          className={`flex items-center gap-1.5 text-sm font-semibold transition-all bg-transparent border-none cursor-pointer ${
+                            isLiked ? 'text-rose-500' : 'text-[var(--text-muted)] hover:text-rose-400'
+                          }`}
+                        >
+                          <AnimatePresence mode="wait">
+                            <motion.div
+                              key={isLiked ? 'liked' : 'not-liked'}
+                              initial={{ scale: 0.7 }}
+                              animate={{ scale: 1 }}
+                              transition={{ type: 'spring', stiffness: 400, damping: 15 }}
+                            >
+                              <Heart size={18} fill={isLiked ? 'currentColor' : 'none'} strokeWidth={1.75} />
+                            </motion.div>
+                          </AnimatePresence>
+                          <span className="text-xs">{post.likeCount || 0}</span>
+                        </motion.button>
+
+                        {/* Comment */}
+                        <Link
+                          to={`/posts/${post._id}#comments`}
+                          className="flex items-center gap-1.5 text-[var(--text-muted)] hover:text-[var(--teal-500)] no-underline transition-colors"
+                        >
+                          <MessageCircle size={18} strokeWidth={1.75} />
+                          <span className="text-xs font-semibold">{post.commentCount || 0}</span>
+                        </Link>
+
+                        {/* Amplify */}
+                        <motion.button
+                          onClick={() => handleSupport(post._id)}
+                          whileTap={{ scale: 0.85 }}
+                          className="flex items-center gap-1.5 text-[var(--text-muted)] hover:text-amber-500 transition-colors bg-transparent border-none cursor-pointer"
+                        >
+                          <Flame size={18} strokeWidth={1.75} />
+                          <span className="text-xs font-semibold">{post.intensityScore || 0}</span>
+                        </motion.button>
+
+                        {/* Strike Room */}
+                        <motion.button
+                          onClick={() => handleCreateStrikeRoom(post)}
+                          disabled={!!strikeRoomLoading[post._id]}
+                          whileTap={{ scale: 0.85 }}
+                          className="flex items-center gap-1.5 text-[var(--text-muted)] hover:text-rose-500 transition-colors bg-transparent border-none cursor-pointer disabled:opacity-40"
+                        >
+                          <Zap size={16} strokeWidth={1.75} />
+                          <span className="text-xs font-semibold">{strikeRoomLoading[post._id] ? '...' : 'Strike'}</span>
+                        </motion.button>
+                      </div>
+
+                      {/* Share */}
+                      <button
+                        onClick={() => copyLink(post._id)}
+                        className="p-1.5 rounded-lg text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-elevated)] bg-transparent border-none cursor-pointer transition-colors"
+                      >
+                        <Share2 size={16} strokeWidth={1.75} />
+                      </button>
+                    </div>
+
+                    {/* Active Strike Banner */}
+                    {(post.supportCount || 0) >= 100 && (
+                      <Link
+                        to={`/strikes?roomId=${post._id}`}
+                        className="flex items-center justify-between px-4 py-2.5 bg-rose-500/5 border-t border-rose-500/15 no-underline text-rose-500 hover:bg-rose-500/10 transition-colors"
+                      >
+                        <div className="flex items-center gap-2">
+                          <Flame size={14} className="animate-pulse" />
+                          <span className="text-xs font-bold">Strike Room Active — Join coordination</span>
+                        </div>
+                        <span className="text-xs font-bold">→</span>
+                      </Link>
+                    )}
+                  </article>
+                </StaggerItem>
+              );
+            })}
+          </StaggerContainer>
         )}
       </div>
 
-      {/* ── FEED LIST ── */}
-      {loading ? (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-          {[1, 2, 3].map(n => (
-            <div key={n} className="card" style={{ height: 380 }}>
-              <div className="skeleton" style={{ height: 220, borderRadius: '10px 10px 0 0' }} />
-              <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 10 }}>
-                <div className="skeleton" style={{ height: 16, width: '60%' }} />
-                <div className="skeleton" style={{ height: 12, width: '90%' }} />
-                <div className="skeleton" style={{ height: 12, width: '75%' }} />
+      {/* ── SIDEBAR FILTERS ── */}
+      <aside className="lg:col-span-4 space-y-3 hidden lg:block">
+
+        {/* Search */}
+        <div className="sidebar-card">
+          <div className="relative">
+            <Search size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[var(--text-muted)] pointer-events-none" />
+            <input
+              type="text"
+              placeholder="Search issues…"
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              className="glass-input text-sm pl-9 py-2.5 rounded-xl w-full"
+            />
+          </div>
+        </div>
+
+        {/* Filters card */}
+        <div className="sidebar-card space-y-4">
+          {/* Card header */}
+          <div className="flex items-center justify-between pb-3 border-b border-[var(--border-subtle)]">
+            <span className="text-xs font-black uppercase tracking-widest text-[var(--text-muted)]">Filters</span>
+            {activeFilters > 0 && (
+              <button
+                onClick={() => { setDistrict(''); setCategory(''); setSeverity(''); setStatus(''); setUseGeo(false); setCoords(null); }}
+                className="text-[10px] font-bold text-rose-500 hover:underline cursor-pointer bg-transparent border-none flex items-center gap-1"
+              >
+                ✕ Clear {activeFilters}
+              </button>
+            )}
+          </div>
+
+          {/* Geo Toggle */}
+          <div className="flex items-center justify-between p-3 rounded-xl" style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-subtle)' }}>
+            <div className="flex items-center gap-2.5">
+              <Navigation size={14} className={useGeo ? 'text-[var(--teal-500)]' : 'text-[var(--text-muted)]'} />
+              <div>
+                <span className="text-xs font-bold text-[var(--text-primary)] block">Nearby (5km)</span>
+                <span className="text-[9px] text-[var(--text-muted)]">Location filter</span>
               </div>
             </div>
-          ))}
-        </div>
-      ) : filteredPosts.length === 0 ? (
-        <div className="card" style={{ padding: '48px 24px', textAlign: 'center' }}>
-          <div style={{ fontSize: 36, marginBottom: 12 }}>🏙️</div>
-          <h2 style={{ fontFamily: 'var(--font-display)', fontSize: 18, fontWeight: 700, marginBottom: 8 }}>
-            No Reports Found
-          </h2>
-          <p style={{ color: 'var(--text-muted)', fontSize: 13, marginBottom: 20 }}>
-            Try adjusting filters or be the first to report an issue in your area.
-          </p>
-          <Link to="/submit" className="btn btn-primary">Report First Issue</Link>
-        </div>
-      ) : (
-        <StaggerContainer className="grid grid-cols-1 md:grid-cols-2 gap-6" inView={false}>
-          {filteredPosts.map((post, idx) => {
-            const isOwner = myPostIds.has(post._id);
-            const isLiked = post.likedByUser;
-            const username = `anon_${post.district?.toLowerCase().slice(0, 3)}_${post._id?.slice(-4)}`;
+            <button
+              onClick={handleGeoToggle}
+              className="relative cursor-pointer border-0 outline-none flex-shrink-0"
+              style={{
+                width: '40px', height: '22px',
+                borderRadius: '99px',
+                background: useGeo ? 'var(--teal-500)' : 'var(--border-default)',
+                transition: 'background 0.2s',
+              }}
+            >
+              <div style={{
+                position: 'absolute',
+                width: '16px', height: '16px',
+                background: '#fff',
+                borderRadius: '50%',
+                top: '3px',
+                left: useGeo ? '21px' : '3px',
+                transition: 'left 0.2s',
+                boxShadow: '0 1px 3px rgba(0,0,0,0.15)',
+              }} />
+            </button>
+          </div>
 
-            return (
-              <StaggerItem key={post._id}>
-              <div
-                className="card"
-                style={{
-                  overflow: 'hidden',
-                  borderLeft: `3px solid ${SEV_BORDER[post.severity] || 'var(--border-subtle)'}`,
-                }}
-              >
-                {/* ── CARD HEADER ── */}
-                <div className="card-header">
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <div style={{
-                      width: 36, height: 36, borderRadius: '50%',
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      fontSize: 11, fontWeight: 800, color: '#fff', flexShrink: 0,
-                      ...getCatAvatarStyle(post.category),
-                    }}>
-                      {post.category?.substring(0, 2).toUpperCase()}
-                    </div>
-                    <div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-primary)' }}>
-                          @{username}
-                        </span>
-                        {isOwner && (
-                          <span style={{
-                            fontSize: 9, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em',
-                            background: 'rgba(20,184,166,0.1)', color: 'var(--teal-400)',
-                            border: '1px solid rgba(20,184,166,0.2)', padding: '1px 5px', borderRadius: 4,
-                          }}>
-                            Mine
-                          </span>
-                        )}
-                      </div>
-                      <div style={{ fontSize: 11, color: 'var(--text-muted)', display: 'flex', gap: 4 }}>
-                        <span style={{ fontWeight: 600, color: 'var(--text-secondary)' }}>{post.district}</span>
-                        <span>·</span>
-                        <span>{new Date(post.createdAt).toLocaleDateString([], { month: 'short', day: 'numeric' })}</span>
-                      </div>
-                    </div>
-                  </div>
+          {/* District dropdown */}
+          <div className="space-y-1.5">
+            <label className="text-[10px] font-black uppercase tracking-widest text-[var(--text-muted)] block">District</label>
+            <select value={district} onChange={e => setDistrict(e.target.value)} className="glass-input text-xs rounded-xl py-2.5 w-full">
+              <option value="">All Regions</option>
+              {DISTRICTS.map(d => <option key={d} value={d}>{d}</option>)}
+            </select>
+          </div>
 
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-                    <SeverityBadge severity={post.severity} />
-                    <span className={`status-pill status-${(post.status || 'reported').replace('_', '-').replace('under-review', 'review')}`}>
-                      {post.status?.replace('_', ' ') || 'reported'}
-                    </span>
-                    <span 
-                      style={{
-                        fontSize: 9, 
-                        fontWeight: 800, 
-                        textTransform: 'uppercase', 
-                        letterSpacing: '0.05em',
-                        padding: '2px 6px', 
-                        borderRadius: 6,
-                        border: '1px solid',
-                        background: (post.legitimacyScore || 70) >= 80 ? 'rgba(74,222,128,0.1)' : (post.legitimacyScore || 70) >= 50 ? 'rgba(234,179,8,0.1)' : 'rgba(244,63,94,0.1)',
-                        color: (post.legitimacyScore || 70) >= 80 ? '#4ade80' : (post.legitimacyScore || 70) >= 50 ? '#eab308' : '#f43f5e',
-                        borderColor: (post.legitimacyScore || 70) >= 80 ? 'rgba(74,222,128,0.2)' : (post.legitimacyScore || 70) >= 50 ? 'rgba(234,179,8,0.2)' : 'rgba(244,63,94,0.2)',
-                      }}
-                      title="AI Legitimacy Score"
-                    >
-                      🛡️ {post.legitimacyScore || 70}% Trust
-                    </span>
-                  </div>
-                </div>
-
-                {/* ── IMAGE ── */}
-                <Link
-                  to={`/posts/${post._id}`}
-                  style={{
-                    display: 'block',
-                    position: 'relative',
-                    aspectRatio: '4/3',
-                    background: 'var(--bg-elevated)',
-                    overflow: 'hidden',
-                    cursor: 'pointer',
-                  }}
-                >
-                  {post.images?.length > 0 ? (
-                    <img
-                      src={post.images[0]}
-                      alt={post.title}
-                      className="transition-transform duration-300 hover:scale-105"
-                      style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
-                    />
-                  ) : (
-                    <div style={{
-                      width: '100%', height: '100%', display: 'flex', flexDirection: 'column',
-                      alignItems: 'center', justifyContent: 'center', gap: 8, color: 'var(--text-muted)',
-                    }}>
-                      <span style={{ fontSize: 32 }}>📍</span>
-                      <span style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                        No Image
-                      </span>
-                    </div>
-                  )}
-
-                  {/* AI Confidence chip */}
-                  {post.aiConfidence != null && (
-                    <div style={{
-                      position: 'absolute', top: 10, right: 10,
-                      display: 'flex', alignItems: 'center', gap: 4,
-                      background: 'var(--bg-translucent)', backdropFilter: 'blur(6px)',
-                      border: '1px solid var(--border-subtle)', borderRadius: 6,
-                      padding: '3px 8px', fontSize: 10, fontWeight: 600, color: 'var(--text-secondary)',
-                    }}>
-                      <Sparkles size={10} style={{ color: 'var(--teal-400)' }} />
-                      AI {Math.round(post.aiConfidence * 100)}%
-                    </div>
-                  )}
-                </Link>
-
-                {/* ── ACTION BAR ── */}
-                <div style={{
-                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                  padding: '10px 14px',
-                }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-                    <button
-                      onClick={() => handleLike(post._id)}
-                      aria-label="Toggle affected vote"
-                      style={{
-                        background: 'none', border: 'none', cursor: 'pointer', padding: '2px',
-                        display: 'flex', alignItems: 'center', gap: 5,
-                        color: isLiked ? '#f43f5e' : 'var(--text-muted)',
-                        transition: 'transform 0.1s ease, color 0.1s ease',
-                        fontSize: 12, fontWeight: 600,
-                      }}
-                      onMouseEnter={e => e.currentTarget.style.transform = 'scale(1.1)'}
-                      onMouseLeave={e => e.currentTarget.style.transform = 'scale(1)'}
-                    >
-                      <Heart size={19} fill={isLiked ? '#f43f5e' : 'none'} strokeWidth={isLiked ? 0 : 1.5} />
-                      <span>{post.likeCount || 0}</span>
-                    </button>
- 
-                    <Link
-                      to={`/posts/${post._id}#comments`}
-                      aria-label="View comments"
-                      style={{
-                        display: 'flex', alignItems: 'center', gap: 5, color: 'var(--text-muted)',
-                        fontSize: 12, fontWeight: 600, textDecoration: 'none',
-                        transition: 'color 0.15s',
-                      }}
-                      onMouseEnter={e => e.currentTarget.style.color = 'var(--text-primary)'}
-                      onMouseLeave={e => e.currentTarget.style.color = 'var(--text-muted)'}
-                    >
-                      <MessageCircle size={19} strokeWidth={1.5} />
-                      <span>{post.commentCount || 0}</span>
-                    </Link>
- 
-                    <button
-                      onClick={() => handleSupport(post._id)}
-                      aria-label="Amplify support priority score"
-                      style={{
-                        background: 'none', border: 'none', cursor: 'pointer', padding: '2px',
-                        display: 'flex', alignItems: 'center', gap: 5,
-                        color: 'var(--text-muted)', fontSize: 12, fontWeight: 600,
-                        transition: 'color 0.15s',
-                      }}
-                      onMouseEnter={e => e.currentTarget.style.color = '#f97316'}
-                      onMouseLeave={e => e.currentTarget.style.color = 'var(--text-muted)'}
-                      title="I'm affected too — amplify this issue"
-                    >
-                      <Flame size={19} strokeWidth={1.5} />
-                      <span>{post.intensityScore || 0}</span>
-                    </button>
-
-                    <button
-                      onClick={() => handleCreateStrikeRoom(post)}
-                      disabled={!!strikeRoomLoading[post._id]}
-                      aria-label="Create strike room"
-                      style={{
-                        background: 'none', border: 'none', cursor: 'pointer', padding: '2px',
-                        display: 'flex', alignItems: 'center', gap: 5,
-                        color: 'var(--text-muted)', fontSize: 12, fontWeight: 700,
-                        transition: 'color 0.15s', whiteSpace: 'nowrap',
-                        opacity: strikeRoomLoading[post._id] ? 0.7 : 1,
-                      }}
-                      onMouseEnter={e => e.currentTarget.style.color = '#fb7185'}
-                      onMouseLeave={e => e.currentTarget.style.color = 'var(--text-muted)'}
-                      title="Create or open strike room"
-                    >
-                      <PlusCircle size={18} strokeWidth={1.5} />
-                      <span>{strikeRoomLoading[post._id] ? 'Opening...' : 'Strike'}</span>
-                    </button>
-                  </div>
- 
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                    <button
-                      onClick={() => copyLink(post._id)}
-                      aria-label="Copy share link"
-                      style={{
-                        background: 'none', border: 'none', cursor: 'pointer', padding: '2px',
-                        color: 'var(--text-muted)', transition: 'color 0.15s',
-                        display: 'flex', alignItems: 'center',
-                      }}
-                      onMouseEnter={e => e.currentTarget.style.color = 'var(--text-primary)'}
-                      onMouseLeave={e => e.currentTarget.style.color = 'var(--text-muted)'}
-                    >
-                      <Share2 size={17} strokeWidth={1.5} />
-                    </button>
-                  </div>
-                </div>
-
-                {/* ── CONTENT ── */}
-                <div style={{ padding: '0 14px 12px' }}>
-                  <p style={{ fontSize: 13, lineHeight: 1.55, color: 'var(--text-secondary)' }}>
-                    <Link
-                      to={`/posts/${post._id}`}
-                      style={{ fontWeight: 700, color: 'var(--text-primary)', marginRight: 6, textDecoration: 'none' }}
-                    >
-                      {post.title}
-                    </Link>
-                    {post.description && post.description.length > 140 ? (
-                      <>
-                        {renderMarkdownText(post.description.substring(0, 140))}
-                        <Link 
-                          to={`/posts/${post._id}`} 
-                          style={{ color: 'var(--teal-500)', fontWeight: 600, marginLeft: 6, textDecoration: 'none' }}
-                          className="hover:underline"
-                        >
-                          ... show details
-                        </Link>
-                      </>
-                    ) : (
-                      renderMarkdownText(post.description)
-                    )}
-                  </p>
-
-                  {/* Tags */}
-                  {post.aiTags?.length > 0 && (
-                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8 }}>
-                      {post.aiTags.slice(0, 4).map((tag, i) => (
-                        <span key={i} style={{ fontSize: 11, color: 'var(--teal-400)', fontWeight: 500 }}>
-                          #{tag}
-                        </span>
-                      ))}
-                    </div>
-                  )}
-
-                  {/* Address */}
-                  {post.address && (
-                    <div style={{
-                      display: 'flex', alignItems: 'center', gap: 5,
-                      marginTop: 8, color: 'var(--text-muted)', fontSize: 11,
-                    }}>
-                      <MapPin size={10} />
-                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {post.address}
-                      </span>
-                    </div>
-                  )}
-                </div>
-
-                {/* ── ESCALATION BAR ── */}
-                <div style={{ padding: '0 14px 12px' }}>
-                  <EscalationBar supportCount={post.supportCount || 0} />
-                </div>
-
-                {/* ── STRIKE BANNER ── */}
-                {(post.supportCount || 0) >= 100 && (
-                  <Link
-                    to="/strikes"
+          {/* Severity grid */}
+          <div className="space-y-2">
+            <span className="text-[10px] font-black uppercase tracking-widest text-[var(--text-muted)] block">Severity</span>
+            <div className="grid grid-cols-2 gap-1.5">
+              {['critical', 'high', 'medium', 'low'].map(s => {
+                const isSelected = severity === s;
+                const color = SEV_COLORS[s];
+                return (
+                  <button
+                    key={s}
+                    onClick={() => setSeverity(isSelected ? '' : s)}
+                    className="py-2 rounded-xl text-[10px] font-black uppercase tracking-wide transition-all cursor-pointer"
                     style={{
-                      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                      padding: '10px 14px',
-                      background: 'rgba(244,63,94,0.05)',
-                      borderTop: '1px solid rgba(244,63,94,0.1)',
-                      textDecoration: 'none',
+                      background: isSelected ? color : 'var(--bg-elevated)',
+                      color: isSelected ? '#fff' : color,
+                      border: `1px solid ${isSelected ? color : color + '40'}`,
                     }}
                   >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#f43f5e', fontSize: 11, fontWeight: 700 }}>
-                      <Flame size={12} style={{ animation: 'pulse-glow 1.5s ease infinite' }} />
-                      Strike Room Active — Join the Campaign
-                    </div>
-                    <ChevronDown size={12} style={{ color: '#f43f5e', transform: 'rotate(-90deg)' }} />
-                  </Link>
-                )}
-              </div>
-              </StaggerItem>
-            );
-          })}
-        </StaggerContainer>
-      )}
+                    {s}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+
+        {/* AI Info card — using inline style for border */}
+        <div className="sidebar-card space-y-2" style={{ background: 'linear-gradient(135deg, var(--teal-glow), transparent)', border: '1px solid rgba(99,102,241,0.2)' }}>
+          <div className="flex items-center gap-2">
+            <Sparkles size={14} className="text-[var(--teal-500)]" />
+            <span className="text-xs font-bold text-[var(--text-primary)]">AI Verification</span>
+          </div>
+          <p className="text-[11px] text-[var(--text-secondary)] leading-relaxed">
+            Gemini AI checks every report for authenticity — stock photos, GPS validity, and duplicates are all screened.
+          </p>
+        </div>
+      </aside>
     </div>
   );
 }

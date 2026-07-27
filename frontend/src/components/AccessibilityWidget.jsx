@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { useAccessibility } from '../context/AccessibilityContext';
 import { 
   Accessibility, Sun, Moon, Type, Volume2, 
@@ -6,90 +6,65 @@ import {
 } from 'lucide-react';
 
 export default function AccessibilityWidget() {
-  const [isOpen, setIsOpen] = useState(false);
   const {
     theme, setTheme,
     contrast, setContrast,
     textSize, setTextSize,
     highlightFocus, setHighlightFocus,
-    narrate, setNarrate
+    narrate, setNarrate,
+    isWidgetOpen, setIsWidgetOpen
   } = useAccessibility();
 
-  const toggleOpen = () => setIsOpen(!isOpen);
+  if (!isWidgetOpen) return null;
 
   return (
-    <div style={{ position: 'fixed', bottom: 24, right: 24, zIndex: 9999 }}>
-      {/* Floating Toggle Button */}
-      <button
-        onClick={toggleOpen}
-        aria-label="Accessibility Options"
-        aria-expanded={isOpen}
-        style={{
-          width: 52,
-          height: 52,
-          borderRadius: '50%',
-          background: 'var(--teal-500)',
-          color: '#ffffff',
-          border: 'none',
-          boxShadow: '0 4px 20px rgba(20, 184, 166, 0.4)',
-          cursor: 'pointer',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          transition: 'transform 0.2s ease, background-color 0.2s ease',
-          outline: 'none',
-        }}
-        onMouseEnter={e => e.currentTarget.style.transform = 'scale(1.08)'}
-        onMouseLeave={e => e.currentTarget.style.transform = 'scale(1)'}
-      >
-        <Accessibility size={26} />
-      </button>
-
+    <div 
+      className="fixed inset-0 z-[9999] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4"
+      onClick={() => setIsWidgetOpen(false)}
+    >
       {/* Settings Panel */}
-      {isOpen && (
-        <div
-          className="animate-scaleIn"
-          style={{
-            position: 'absolute',
-            bottom: 64,
-            right: 0,
-            width: 320,
-            background: 'var(--bg-elevated)',
-            border: '1px solid var(--border-strong)',
-            borderRadius: 16,
-            boxShadow: 'var(--shadow-lg)',
-            padding: 20,
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 16,
-          }}
-          role="dialog"
-          aria-label="Accessibility Settings"
-        >
-          {/* Header */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid var(--border-subtle)', paddingBottom: 10 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <Accessibility size={18} style={{ color: 'var(--teal-400)' }} />
-              <span style={{ fontWeight: 800, fontSize: 14, fontFamily: 'var(--font-display)', color: 'var(--text-primary)' }}>
-                Accessibility Panel
-              </span>
-            </div>
-            <button
-              onClick={toggleOpen}
-              aria-label="Close panel"
-              style={{
-                background: 'none',
-                border: 'none',
-                color: 'var(--text-secondary)',
-                cursor: 'pointer',
-                padding: 4,
-                display: 'flex',
-                alignItems: 'center',
-              }}
-            >
-              <X size={16} />
-            </button>
+      <div
+        className="animate-scaleIn"
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          width: '100%',
+          maxWidth: 360,
+          background: 'var(--bg-elevated)',
+          border: '1px solid var(--border-default)',
+          borderRadius: 20,
+          boxShadow: 'var(--shadow-xl)',
+          padding: 24,
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 20,
+        }}
+        role="dialog"
+        aria-label="Accessibility Settings"
+      >
+        {/* Header */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid var(--border-subtle)', paddingBottom: 12 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Accessibility size={20} style={{ color: 'var(--teal-500)' }} />
+            <span style={{ fontWeight: 800, fontSize: 16, fontFamily: 'var(--font-display)', color: 'var(--text-primary)' }}>
+              Accessibility Panel
+            </span>
           </div>
+          <button
+            onClick={() => setIsWidgetOpen(false)}
+            aria-label="Close panel"
+            style={{
+              background: 'none',
+              border: 'none',
+              color: 'var(--text-secondary)',
+              cursor: 'pointer',
+              padding: 4,
+              display: 'flex',
+              alignItems: 'center',
+            }}
+          >
+            <X size={18} />
+          </button>
+        </div>
 
           {/* 1. Theme Selection */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -291,7 +266,6 @@ export default function AccessibilityWidget() {
             </button>
           </div>
         </div>
-      )}
-    </div>
+      </div>
   );
 }
