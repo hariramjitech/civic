@@ -217,6 +217,11 @@ const censorCustomWords = (text, customWords) => {
 
 const moderateContent = async (text) => {
   try {
+    const cleanText = (text || '').trim();
+    if (!cleanText) {
+      return { safe: true, reason: 'empty text', badWords: [] };
+    }
+
     const prompt = `You are an AI content moderator for a civic engagement app in Tamil Nadu, India.
 Analyze the following user text.
 
@@ -231,13 +236,13 @@ We have a two-category moderation system:
 2. BLOCKED POSTS/MESSAGES (safe: false):
    - Direct personal attacks, name-calling, abuse, insults, or threats directed at individuals, politicians, or officials (e.g., "you idiot officer", "kill the mayor", "Thiru Kumar is a bastard", "delinquent fool engineer").
    - Hate speech, derogatory slurs, or harassment targeting groups or personal characteristics (e.g., using identity terms like "gay", caste, or religious terms as slurs, insults, or abuse, such as "gay punda" or "gay bastard").
-   - Vulgar/highly offensive sexual or abusive terms in English, Tamil, Tanglish, or Hindi used as direct insults.
+   - Vulgar/highly offensive sexual or abusive terms in English, Tamil (native or Tanglish), or Hindi used as direct insults.
 
 INSTRUCTIONS FOR OUTPUT:
 - Decide if the text is safe (true) or should be blocked (false).
 - Under "badWords", identify any profanities, vulgar slang, or swear words in English, Tamil (native or Tanglish), or Hindi present in the text so they can be censored (e.g., "fucking", "shit", "punda", "sunni"). Do not include words like "corruption", "rat", "dog", "gay" (unless "gay" is used directly as a derogatory slur).
 
-Text to analyze: "${text}"
+Text to analyze: "${cleanText}"
 
 Respond ONLY with a JSON object (no markdown, no backticks, no code blocks):
 {
@@ -245,8 +250,10 @@ Respond ONLY with a JSON object (no markdown, no backticks, no code blocks):
   "reason": "...", // short explanation if safe is false
   "badWords": ["word1", "word2"] // list of vulgar words/profanities found to be censored
 }`;
+
     const result = await generateContentWithFallback(prompt);
-    const json = result.response.text().replace(/```json?/gi,'').replace(/```/g,'').trim();
+    const textResult = result.response.text();
+    const json = textResult.replace(/```json?/gi, '').replace(/```/g, '').trim();
     return JSON.parse(json);
   } catch (err) {
     console.error('Error in moderateContent:', err);

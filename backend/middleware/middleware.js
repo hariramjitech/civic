@@ -119,7 +119,13 @@ const decryptToken = (encryptedToken) => {
 
 // Stable per-user per-room alias, e.g. "Citizen #7F3A"
 const generateChatAlias = (userId, roomId) => {
-  const hash = crypto.randomBytes(2).toString('hex').toUpperCase();
+  if (!userId || !roomId) return 'Citizen #ANON';
+  const hash = crypto
+    .createHmac('sha256', 'civic-secret-key-for-alias')
+    .update(`${userId}-${roomId}`)
+    .digest('hex')
+    .substring(0, 4)
+    .toUpperCase();
   return `Citizen #${hash}`;
 };
 

@@ -2106,7 +2106,9 @@ html[data-theme='dark'] .glass-card,
 
 /* Chat message bubbles */
 .chat-bubble {
-  max-width: 72%;
+  max-width: 100%;
+  width: fit-content;
+  min-width: 50px;
   padding: 9px 14px;
   font-size: 13px;
   line-height: 1.55;

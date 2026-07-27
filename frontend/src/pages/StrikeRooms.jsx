@@ -3,12 +3,12 @@ import { useCivic } from '../context/CivicContext';
 import api from '../lib/api';
 import { useLocation, Link } from 'react-router-dom';
 import { MapContainer, TileLayer, Marker } from 'react-leaflet';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Flame, Users, ArrowRight, Shield, Bell, 
   MapPin, Loader2, Send, MessageSquare,
   FileText, Printer, Download, Copy, Eye, Sparkles, X,
-  Scale, FileCheck, Check, ChevronLeft, ChevronRight, Gavel, Briefcase
+  Scale, FileCheck, Check, ChevronLeft, ChevronRight, Gavel, Briefcase, Trash2
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -101,6 +101,8 @@ export default function StrikeRooms() {
   const [userAlias, setUserAlias] = useState('');
   const [memberCount, setMemberCount] = useState(0);
   const [onlineCount, setOnlineCount] = useState(1);
+  const [activeMessageMenu, setActiveMessageMenu] = useState(null);
+  const [heartsAnimating, setHeartsAnimating] = useState({});
   const [locating, setLocating] = useState(false);
   const [roomDetailsLoading, setRoomDetailsLoading] = useState(false);
 
@@ -132,6 +134,7 @@ export default function StrikeRooms() {
   const [mobileTab, setMobileTab] = useState('chat'); // 'chat' | 'details'
 
   const messagesEndRef = useRef(null);
+  const lastClickTimeRef = useRef({});
 
   const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -291,6 +294,24 @@ export default function StrikeRooms() {
     loadRoomDetails();
   }, [activeRoom]);
 
+  // Reset message options menu when room changes
+  useEffect(() => {
+    if (activeRoom) {
+      setActiveMessageMenu(null);
+    }
+  }, [activeRoom]);
+
+  const fetchRecentMessages = async (roomId) => {
+    if (!roomId) return;
+    try {
+      const res = await api.get(`/rooms/${roomId}`);
+      setMessages(res.data.messages || []);
+      setMemberCount(res.data.room.memberCount || 0);
+    } catch (err) {
+      console.error('Failed to reload strike room messages:', err);
+    }
+  };
+
   // Setup Socket Listeners
   useEffect(() => {
     if (!socket || !activeRoom) return;
@@ -331,6 +352,18 @@ export default function StrikeRooms() {
       scrollToBottom();
     };
 
+    const handleMessageDeleted = ({ messageId }) => {
+      setMessages((prev) => prev.filter((m) => m._id !== messageId));
+    };
+
+    const handleMessageUpdated = ({ messageId, text }) => {
+      setMessages((prev) => prev.map((m) => m._id === messageId ? { ...m, text } : m));
+    };
+
+    const handleMessageReacted = ({ messageId, reactions }) => {
+      setMessages((prev) => prev.map((m) => m._id === messageId ? { ...m, reactions } : m));
+    };
+
     const handleRejected = ({ reason }) => {
       toast.error(`Message Blocked: ${reason}`);
     };
@@ -358,6 +391,9 @@ export default function StrikeRooms() {
     socket.on('room:user_left', handleUserLeft);
     socket.on('strike:count_update', handleStrikeCountUpdate);
     socket.on('message:new', handleNewMessage);
+    socket.on('message:deleted', handleMessageDeleted);
+    socket.on('message:updated', handleMessageUpdated);
+    socket.on('message:reacted', handleMessageReacted);
     socket.on('message:rejected', handleRejected);
     socket.on('message:flagged', handleMessageFlagged);
     socket.on('message:error', handleMessageError);
@@ -377,6 +413,9 @@ export default function StrikeRooms() {
       socket.off('room:user_left', handleUserLeft);
       socket.off('strike:count_update', handleStrikeCountUpdate);
       socket.off('message:new', handleNewMessage);
+      socket.off('message:deleted', handleMessageDeleted);
+      socket.off('message:updated', handleMessageUpdated);
+      socket.off('message:reacted', handleMessageReacted);
       socket.off('message:rejected', handleRejected);
       socket.off('message:flagged', handleMessageFlagged);
       socket.off('message:error', handleMessageError);
@@ -394,29 +433,101 @@ export default function StrikeRooms() {
     scrollToBottom();
   }, [messages]);
 
+  const handleReactToMessage = (messageId, emoji) => {
+    if (!socket || !activeRoom) return;
+
+    // Optimistic toggle locally
+    setMessages((prev) =>
+      prev.map((m) => {
+        if (m._id !== messageId) return m;
+
+        const currentReactions = { ...(m.reactions || {}) };
+        let usersList = currentReactions[emoji] || [];
+
+        if (usersList.includes(userAlias)) {
+          usersList = usersList.filter((u) => u !== userAlias);
+        } else {
+          usersList = [...usersList, userAlias];
+        }
+
+        if (usersList.length === 0) {
+          delete currentReactions[emoji];
+        } else {
+          currentReactions[emoji] = usersList;
+        }
+
+        return { ...m, reactions: currentReactions };
+      })
+    );
+
+    socket.emit('message:react', { messageId, roomId: activeRoom._id, emoji }, (response) => {
+      if (!response?.ok) {
+        toast.error(response?.error || 'Failed to toggle reaction.');
+        fetchRecentMessages(activeRoom._id);
+      }
+    });
+  };
+
+  const handleDoubleTap = (messageId) => {
+    const now = Date.now();
+    const lastClick = lastClickTimeRef.current[messageId] || 0;
+    if (now - lastClick < 250) {
+      if (lastClickTimeRef.current[`timeout-${messageId}`]) {
+        clearTimeout(lastClickTimeRef.current[`timeout-${messageId}`]);
+      }
+      handleReactToMessage(messageId, '❤️');
+      setHeartsAnimating((prev) => ({ ...prev, [messageId]: true }));
+      setTimeout(() => {
+        setHeartsAnimating((prev) => ({ ...prev, [messageId]: false }));
+      }, 800);
+    } else {
+      lastClickTimeRef.current[`timeout-${messageId}`] = setTimeout(() => {
+        setActiveMessageMenu((prev) => (prev === messageId ? null : messageId));
+      }, 250);
+    }
+    lastClickTimeRef.current[messageId] = now;
+  };
+
+  const handleUnsendMessage = (messageId) => {
+    if (!socket || !activeRoom) return;
+    setMessages((prev) => prev.filter((m) => m._id !== messageId));
+    setActiveMessageMenu(null);
+    socket.emit('message:unsend', { messageId, roomId: activeRoom._id }, (response) => {
+      if (!response?.ok) {
+        toast.error(response?.error || 'Failed to unsend.');
+        fetchRecentMessages(activeRoom._id);
+      } else {
+        toast.success('Message unsent.');
+      }
+    });
+  };
+
   const handleSendMessage = (e) => {
     e.preventDefault();
-    if (!inputText.trim() || !socket || !activeRoom) return;
+    const text = inputText.trim();
+    if (!text || !socket || !activeRoom) return;
     if (!socket.connected) {
       toast.error('Chat is reconnecting. Try again in a moment.');
       return;
     }
 
+    setInputText('');
+
     socket.timeout(8000).emit('message:send', {
       roomId: activeRoom._id,
-      text: inputText.trim(),
+      text,
     }, (err, response) => {
       if (err) {
         toast.error('Message send timed out. Please retry.');
+        setInputText(text);
         return;
       }
 
       if (!response?.ok) {
         toast.error(response?.error || 'Message could not be sent.');
+        setInputText(text);
         return;
       }
-
-      setInputText('');
     });
   };
 
@@ -799,7 +910,7 @@ export default function StrikeRooms() {
   );
 
   return (
-    <div className={`${activeRoom ? 'h-[calc(100vh-3.5rem)]' : 'h-[calc(100vh-7.25rem)]'} lg:h-[calc(100vh-2.5rem)] flex flex-col lg:flex-row gap-0 overflow-hidden relative`}>
+    <div className={`${activeRoom ? 'h-[calc(100vh-3.5rem)]' : 'h-[calc(100vh-7.25rem)]'} lg:h-screen flex flex-col lg:flex-row gap-0 overflow-hidden relative`}>
 
       {/* ———— SIDEBAR ———— */}
       <div className={`w-full lg:w-80 flex flex-col h-full overflow-hidden border-r border-[var(--border-subtle)] bg-[var(--bg-surface)] ${activeRoom ? 'hidden lg:flex' : 'flex'}`}>
@@ -1248,7 +1359,7 @@ export default function StrikeRooms() {
                 </div>
 
                 {/* Messages */}
-                <div className="flex-1 px-3 py-3 overflow-y-auto space-y-3 bg-[var(--bg-base)]">
+                <div className="flex-1 px-3 py-3 overflow-y-auto bg-[var(--bg-base)] flex flex-col gap-y-1">
                   {roomDetailsLoading ? (
                     <div className="h-full flex items-center justify-center">
                       <div className="flex flex-col items-center gap-3 text-center">
@@ -1261,24 +1372,137 @@ export default function StrikeRooms() {
                       <p className="text-xs text-[var(--text-muted)] italic text-center">No messages yet. Start coordinating!</p>
                     </div>
                   ) : (
-                    messages.map((msg) => {
-                      const isMe = msg.senderAlias === userAlias;
-                      return (
-                        <div
-                          key={msg._id}
-                          className={`flex flex-col gap-0.5 ${isMe ? 'items-end' : 'items-start'}`}
-                        >
-                          <span className="text-[8px] text-[var(--text-muted)] font-semibold px-1 uppercase">{isMe ? 'You' : msg.senderAlias || 'Anonymous'}</span>
-                          <div className={`px-4 py-2 rounded-2xl text-xs leading-relaxed max-w-[80%] shadow-3xs ${
-                            isMe
-                              ? 'bg-gradient-to-r from-rose-500 to-orange-500 text-white rounded-tr-xs'
-                              : 'bg-[var(--bg-surface)] text-[var(--text-primary)] border border-[var(--border-default)] rounded-tl-xs'
-                          }`}>
-                            {msg.text}
+                    <>
+                      <div className="flex-1 min-h-0" />
+                      {(() => {
+                        const groupedMessages = messages.reduce((acc, m, idx) => {
+                          const prev = messages[idx - 1];
+                          const sameUser = prev?.senderAlias === m.senderAlias;
+                          const timeDiff = prev ? (new Date(m.createdAt) - new Date(prev.createdAt)) : Infinity;
+                          const sameGroup = sameUser && timeDiff < 300000; // 5 mins
+                          acc.push({ ...m, sameUser, sameGroup });
+                          return acc;
+                        }, []);
+                        return groupedMessages.map((msg) => {
+                          const isMe = msg.senderAlias === userAlias;
+                          return (
+                          <div
+                            key={msg._id}
+                            className={`flex flex-col gap-0.5 ${isMe ? 'items-end' : 'items-start'} ${msg.sameGroup ? 'mt-0.5' : 'mt-3.5'} ${msg.reactions && Object.keys(msg.reactions).length > 0 ? 'mb-2' : ''}`}
+                          >
+                            {!msg.sameGroup && (
+                              <span className="text-[8px] text-[var(--text-muted)] font-semibold px-1 uppercase mb-0.5">{isMe ? 'You' : msg.senderAlias || 'Anonymous'}</span>
+                            )}
+                            
+                            <div className="flex flex-col gap-1 max-w-full">
+                              <div className="flex items-center gap-1.5 group relative max-w-full">
+                                {/* Emoji Bar popup */}
+                                <div className={`absolute z-10 -top-8.5 ${isMe ? 'right-0' : 'left-0'} flex items-center gap-1.5 bg-white dark:bg-slate-900 backdrop-blur-md px-2.5 py-1 rounded-full shadow-md border border-[var(--border-subtle)] transition-all duration-150 ${
+                                  activeMessageMenu === msg._id
+                                    ? 'opacity-100 scale-100 translate-y-0'
+                                    : 'opacity-0 scale-90 translate-y-1 pointer-events-none group-hover:opacity-100 group-hover:scale-100 group-hover:translate-y-0 group-hover:pointer-events-auto'
+                                }`}>
+                                  {['❤️', '👍', '😂', '😮', '😢', '🙏'].map(emoji => (
+                                    <button
+                                      key={emoji}
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleReactToMessage(msg._id, emoji);
+                                        setActiveMessageMenu(null);
+                                      }}
+                                      className="hover:scale-125 active:scale-95 transition-transform duration-100 px-0.5 text-xs cursor-pointer bg-transparent border-0"
+                                    >
+                                      {emoji}
+                                    </button>
+                                  ))}
+                                </div>
+
+                                {isMe && (
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleUnsendMessage(msg._id);
+                                    }}
+                                    className={`transition-all p-1.5 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-500/10 text-rose-450 hover:text-rose-500 cursor-pointer flex items-center justify-center shrink-0 ${
+                                      activeMessageMenu === msg._id
+                                        ? 'opacity-100 scale-100'
+                                        : 'opacity-0 scale-90 pointer-events-none group-hover:opacity-100 group-hover:scale-100 group-hover:translate-y-0 group-hover:pointer-events-auto'
+                                    }`}
+                                    title="Unsend"
+                                  >
+                                    <Trash2 size={12} />
+                                  </button>
+                                )}
+                                
+                                <div className="relative max-w-full">
+                                  <div 
+                                    onClick={() => handleDoubleTap(msg._id)}
+                                    className={`px-4 py-2 rounded-2xl text-xs leading-relaxed cursor-pointer select-text transition-all duration-150 shadow-3xs shrink-0 max-w-full relative overflow-hidden ${
+                                      isMe
+                                        ? 'bg-gradient-to-r from-rose-500 to-orange-500 text-white rounded-tr-xs'
+                                        : 'bg-[var(--bg-surface)] text-[var(--text-primary)] border border-[var(--border-default)] rounded-tl-xs'
+                                    } ${
+                                      activeMessageMenu === msg._id ? 'ring-2 ring-rose-400/30 scale-[0.99]' : ''
+                                    }`}
+                                  >
+                                    {/* Heart double tap pop-up animation */}
+                                    <AnimatePresence>
+                                      {heartsAnimating[msg._id] && (
+                                        <motion.div
+                                          initial={{ scale: 0.3, opacity: 0 }}
+                                          animate={{ scale: [0.3, 1.4, 1], opacity: [0, 1, 1, 0] }}
+                                          exit={{ opacity: 0 }}
+                                          transition={{ duration: 0.7, ease: 'easeOut' }}
+                                          className="absolute inset-0 flex items-center justify-center pointer-events-none z-20 bg-black/5"
+                                        >
+                                          <span className="text-2xl filter drop-shadow-md select-none">❤️</span>
+                                        </motion.div>
+                                      )}
+                                    </AnimatePresence>
+                                    {msg.text}
+                                  </div>
+
+                                  {/* Reactions list */}
+                                  {msg.reactions && Object.keys(msg.reactions).length > 0 && (
+                                    <div className={`absolute -bottom-2.5 ${isMe ? 'right-2' : 'left-2'} flex flex-wrap gap-0.5 z-10 select-none`}>
+                                      {Object.entries(msg.reactions).map(([emoji, users]) => {
+                                        if (!users || users.length === 0) return null;
+                                        const hasReacted = users.includes(userAlias);
+                                        return (
+                                          <button
+                                            key={emoji}
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              handleReactToMessage(msg._id, emoji);
+                                            }}
+                                            className={`flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[9px] font-bold border transition-all duration-100 cursor-pointer shadow-xs ${
+                                              hasReacted
+                                                ? 'bg-emerald-50 dark:bg-emerald-500/10 border-emerald-300 dark:border-emerald-500/30 text-emerald-600 dark:text-emerald-400 scale-105 animate-[bounce_0.2s_ease-out_1]'
+                                                : 'bg-white dark:bg-slate-855 border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:scale-105'
+                                            }`}
+                                          >
+                                            <span>{emoji}</span>
+                                            <span className="text-[8px] opacity-80">{users.length}</span>
+                                          </button>
+                                        );
+                                      })}
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Timestamp */}
+                            {(!msg.sameGroup || activeMessageMenu === msg._id) && (
+                              <span className="text-[8px] text-[var(--text-muted)] px-1 select-none font-medium mt-0.5">
+                                {new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                              </span>
+                            )}
                           </div>
-                        </div>
-                      );
-                    })
+                        );
+                      });
+                    })()}
+                  </>
                   )}
                   <div ref={messagesEndRef} />
                 </div>

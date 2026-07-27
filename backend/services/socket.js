@@ -97,14 +97,15 @@ const initSocket = (io) => {
           [roomId]: { alias },
         };
 
-        // Censor improper words
+        // Censor improper words locally
         const textStats = getProfanityStats(cleanText);
         let censoredText = textStats.censoredText;
 
-        const mod = await moderateContent(censoredText);
+        // Perform Content Moderation synchronously before saving
+        const mod = await moderateContent(cleanText);
         if (!mod.safe) {
-          const reason = mod.reason || 'Message failed moderation.';
-          return fail(reason, 'message:rejected', { reason });
+          const reason = mod.reason || 'Contains inappropriate content, slurs, or direct abuse.';
+          return fail(`Message blocked: ${reason}`);
         }
 
         // Censor any additional bad words detected by Gemini
@@ -132,6 +133,111 @@ const initSocket = (io) => {
       } catch (err) {
         console.error('Socket message send failed:', err);
         return fail('Message could not be sent.');
+      }
+    });
+
+    // ── UNSEND MESSAGE ─────────────────────────
+    socket.on('message:unsend', async ({ messageId, roomId } = {}, ack) => {
+      const hasAck = typeof ack === 'function';
+      const reply = (payload) => {
+        if (hasAck) ack(payload);
+        return payload;
+      };
+
+      try {
+        if (!messageId || !roomId) {
+          return reply({ ok: false, error: 'Message ID and Room ID are required.' });
+        }
+
+        const msg = await Message.findById(messageId);
+        if (!msg) {
+          return reply({ ok: false, error: 'Message not found.' });
+        }
+
+        // Verify ownership using the stable deterministic alias
+        const alias = socket.data.rooms?.[roomId]?.alias || generateChatAlias(clerkId, roomId);
+        if (msg.senderAlias !== alias) {
+          return reply({ ok: false, error: 'You can only unsend your own messages.' });
+        }
+
+        // Delete from DB completely (ephemeral nature)
+        await Message.findByIdAndDelete(messageId);
+
+        // Broadcast deletion
+        io.to(roomId).emit('message:deleted', { messageId, roomId });
+
+        return reply({ ok: true });
+      } catch (err) {
+        console.error('Socket message unsend failed:', err);
+        return reply({ ok: false, error: 'Could not unsend message.' });
+      }
+    });
+
+    // ── REACTION TO MESSAGE ───────────────────
+    socket.on('message:react', async ({ messageId, roomId, emoji } = {}, ack) => {
+      const hasAck = typeof ack === 'function';
+      const reply = (payload) => {
+        if (hasAck) ack(payload);
+        return payload;
+      };
+
+      try {
+        if (!messageId || !roomId || !emoji) {
+          return reply({ ok: false, error: 'Message ID, Room ID, and Emoji are required.' });
+        }
+
+        const msg = await Message.findById(messageId);
+        if (!msg) {
+          return reply({ ok: false, error: 'Message not found.' });
+        }
+
+        const alias = socket.data.rooms?.[roomId]?.alias || generateChatAlias(clerkId, roomId);
+
+        // Ensure msg.reactions is initialized
+        if (!msg.reactions) {
+          msg.reactions = new Map();
+        }
+
+        // Get the list of aliases who reacted with this emoji
+        let usersList = msg.reactions.get(emoji) || [];
+        
+        if (usersList.includes(alias)) {
+          // If already reacted, remove it (toggle off)
+          usersList = usersList.filter(u => u !== alias);
+        } else {
+          // Otherwise, add it (toggle on)
+          usersList.push(alias);
+        }
+
+        if (usersList.length === 0) {
+          msg.reactions.delete(emoji);
+        } else {
+          msg.reactions.set(emoji, usersList);
+        }
+
+        // Mark reactions field as modified since it is a Map
+        msg.markModified('reactions');
+        await msg.save();
+
+        // Convert Map to plain object for broadcasting
+        const plainReactions = {};
+        if (msg.reactions) {
+          for (const [key, val] of msg.reactions.entries()) {
+            plainReactions[key] = val;
+          }
+        }
+
+        // Broadcast reaction update
+        io.to(roomId).emit('message:reacted', {
+          messageId,
+          roomId,
+          reactions: plainReactions
+        });
+
+        return reply({ ok: true, reactions: plainReactions });
+      } catch (err) {
+        console.error('Socket message react failed:', err);
+        return reply({ ok: false, error: 'Could not react to message.' });
       }
     });
 

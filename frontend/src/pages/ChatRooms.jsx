@@ -6,7 +6,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { 
   MessageSquare, Users, Send, Radio, Plus, Search, 
   X, Loader2, Sparkles, Shield, Compass, ChevronLeft,
-  Hash, Lock, Globe, Mic
+  Hash, Lock, Globe, Mic, Trash2
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -58,10 +58,13 @@ export default function ChatRooms() {
   const [memberCount, setMemberCount] = useState(0);
   const [onlineCount, setOnlineCount] = useState(1);
   const [typingUsers, setTypingUsers] = useState(new Set());
+  const [activeMessageMenu, setActiveMessageMenu] = useState(null);
+  const [heartsAnimating, setHeartsAnimating] = useState({});
   
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
   const typingTimeoutRef = useRef(null);
+  const lastClickTimeRef = useRef({});
 
   const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -101,17 +104,25 @@ export default function ChatRooms() {
   }, [districtFilter, isSignedIn, loadingProfile]);
 
   useEffect(() => {
+    if (activeRoom) {
+      setActiveMessageMenu(null);
+    }
+  }, [activeRoom]);
+
+  const fetchRecentMessages = async (roomId) => {
+    if (!roomId) return;
+    try {
+      const res = await api.get(`/rooms/${roomId}`);
+      setMessages(res.data.messages || []);
+      setMemberCount(res.data.room.memberCount || 0);
+      setOnlineCount(1);
+    } catch {}
+  };
+
+  useEffect(() => {
     if (!socket || !activeRoom) return;
     const joinRoom = () => socket.emit('room:join', { roomId: activeRoom._id });
-    const fetchRecentMessages = async () => {
-      try {
-        const res = await api.get(`/rooms/${activeRoom._id}`);
-        setMessages(res.data.messages || []);
-        setMemberCount(res.data.room.memberCount || 0);
-        setOnlineCount(1);
-      } catch {}
-    };
-    fetchRecentMessages();
+    fetchRecentMessages(activeRoom._id);
 
     const handleRoomJoined = ({ roomId, alias, memberCount: count, onlineCount: activeCount }) => {
       if (roomId && roomId !== activeRoom._id) return;
@@ -133,6 +144,15 @@ export default function ChatRooms() {
       if (msg.roomId && msg.roomId !== activeRoom._id) return;
       setMessages((prev) => [...prev, msg]);
     };
+    const handleMessageDeleted = ({ messageId }) => {
+      setMessages((prev) => prev.filter((m) => m._id !== messageId));
+    };
+    const handleMessageUpdated = ({ messageId, text }) => {
+      setMessages((prev) => prev.map((m) => m._id === messageId ? { ...m, text } : m));
+    };
+    const handleMessageReacted = ({ messageId, reactions }) => {
+      setMessages((prev) => prev.map((m) => m._id === messageId ? { ...m, reactions } : m));
+    };
     const handleTyping = ({ roomId, alias }) => {
       if (roomId && roomId !== activeRoom._id) return;
       if (alias) setTypingUsers(prev => { const next = new Set(prev); next.add(alias); return next; });
@@ -152,6 +172,9 @@ export default function ChatRooms() {
     socket.on('room:user_joined', handleUserJoined);
     socket.on('room:user_left', handleUserLeft);
     socket.on('message:new', handleNewMessage);
+    socket.on('message:deleted', handleMessageDeleted);
+    socket.on('message:updated', handleMessageUpdated);
+    socket.on('message:reacted', handleMessageReacted);
     socket.on('message:typing', handleTyping);
     socket.on('message:stop_typing', handleStopTyping);
     socket.on('message:rejected', handleRejected);
@@ -169,6 +192,9 @@ export default function ChatRooms() {
       socket.off('room:user_joined', handleUserJoined);
       socket.off('room:user_left', handleUserLeft);
       socket.off('message:new', handleNewMessage);
+      socket.off('message:deleted', handleMessageDeleted);
+      socket.off('message:updated', handleMessageUpdated);
+      socket.off('message:reacted', handleMessageReacted);
       socket.off('message:typing', handleTyping);
       socket.off('message:stop_typing', handleStopTyping);
       socket.off('message:rejected', handleRejected);
@@ -205,16 +231,96 @@ export default function ChatRooms() {
     }, 2000);
   };
 
+  const handleReactToMessage = (messageId, emoji) => {
+    if (!socket || !activeRoom) return;
+
+    // Optimistic toggle locally
+    setMessages((prev) =>
+      prev.map((m) => {
+        if (m._id !== messageId) return m;
+
+        const currentReactions = { ...(m.reactions || {}) };
+        let usersList = currentReactions[emoji] || [];
+
+        if (usersList.includes(userAlias)) {
+          usersList = usersList.filter((u) => u !== userAlias);
+        } else {
+          usersList = [...usersList, userAlias];
+        }
+
+        if (usersList.length === 0) {
+          delete currentReactions[emoji];
+        } else {
+          currentReactions[emoji] = usersList;
+        }
+
+        return { ...m, reactions: currentReactions };
+      })
+    );
+
+    socket.emit('message:react', { messageId, roomId: activeRoom._id, emoji }, (response) => {
+      if (!response?.ok) {
+        toast.error(response?.error || 'Failed to toggle reaction.');
+        fetchRecentMessages(activeRoom._id);
+      }
+    });
+  };
+
+  const handleDoubleTap = (messageId) => {
+    const now = Date.now();
+    const lastClick = lastClickTimeRef.current[messageId] || 0;
+    if (now - lastClick < 250) {
+      if (lastClickTimeRef.current[`timeout-${messageId}`]) {
+        clearTimeout(lastClickTimeRef.current[`timeout-${messageId}`]);
+      }
+      handleReactToMessage(messageId, '❤️');
+      setHeartsAnimating((prev) => ({ ...prev, [messageId]: true }));
+      setTimeout(() => {
+        setHeartsAnimating((prev) => ({ ...prev, [messageId]: false }));
+      }, 800);
+    } else {
+      lastClickTimeRef.current[`timeout-${messageId}`] = setTimeout(() => {
+        setActiveMessageMenu((prev) => (prev === messageId ? null : messageId));
+      }, 250);
+    }
+    lastClickTimeRef.current[messageId] = now;
+  };
+
+  const handleUnsendMessage = (messageId) => {
+    if (!socket || !activeRoom) return;
+    setMessages((prev) => prev.filter((m) => m._id !== messageId));
+    setActiveMessageMenu(null);
+    socket.emit('message:unsend', { messageId, roomId: activeRoom._id }, (response) => {
+      if (!response?.ok) {
+        toast.error(response?.error || 'Failed to unsend.');
+        fetchRecentMessages(activeRoom._id);
+      } else {
+        toast.success('Message unsent.');
+      }
+    });
+  };
+
   const handleSendMessage = (e) => {
     e.preventDefault();
-    if (!inputText.trim() || !socket || !activeRoom) return;
+    const text = inputText.trim();
+    if (!text || !socket || !activeRoom) return;
     if (!socket.connected) { toast.error('Reconnecting...'); return; }
     socket.emit('message:stop_typing', { roomId: activeRoom._id });
     if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
-    socket.timeout(8000).emit('message:send', { roomId: activeRoom._id, text: inputText.trim() }, (err, response) => {
-      if (err) { toast.error('Send timed out.'); return; }
-      if (!response?.ok) { toast.error(response?.error || 'Send failed.'); return; }
-      setInputText('');
+    
+    setInputText('');
+    
+    socket.timeout(8000).emit('message:send', { roomId: activeRoom._id, text }, (err, response) => {
+      if (err) { 
+        toast.error('Send timed out.');
+        setInputText(text);
+        return; 
+      }
+      if (!response?.ok) { 
+        toast.error(response?.error || 'Send failed.'); 
+        setInputText(text);
+        return; 
+      }
       inputRef.current?.focus();
     });
   };
@@ -255,17 +361,18 @@ export default function ChatRooms() {
     (r.description && r.description.toLowerCase().includes(roomSearch.toLowerCase()))
   );
 
-  // Group messages by date + consecutive sender
+  // Group messages by date + consecutive sender within 5 min window
   const groupedMessages = messages.reduce((acc, msg, i) => {
     const prev = messages[i - 1];
     const sameUser = prev?.senderAlias === msg.senderAlias;
-    const sameMinute = prev && (new Date(msg.createdAt) - new Date(prev.createdAt)) < 60000;
-    acc.push({ ...msg, compact: sameUser && sameMinute });
+    const timeDiff = prev ? (new Date(msg.createdAt) - new Date(prev.createdAt)) : Infinity;
+    const sameGroup = sameUser && timeDiff < 300000; // 5 minute window
+    acc.push({ ...msg, sameUser, sameGroup });
     return acc;
   }, []);
 
   return (
-    <div className={`${activeRoom ? 'h-[calc(100vh-3.5rem)]' : 'h-[calc(100vh-7.25rem)]'} lg:h-[calc(100vh-2.5rem)] flex flex-col lg:flex-row overflow-hidden relative font-sans bg-[var(--bg-base)]`}>
+    <div className={`${activeRoom ? 'h-[calc(100vh-3.5rem)]' : 'h-[calc(100vh-7.25rem)]'} lg:h-screen flex flex-col lg:flex-row overflow-hidden relative font-sans bg-[var(--bg-base)]`}>
       
       {/* ── CHANNELS SIDEBAR ── */}
       <div className={`w-full lg:w-72 flex flex-col h-full overflow-hidden border-r border-[var(--border-subtle)] bg-[var(--bg-surface)] ${activeRoom ? 'hidden lg:flex' : 'flex'}`}>
@@ -297,29 +404,31 @@ export default function ChatRooms() {
         </div>
 
         {/* Search + Filter */}
-        <div className="px-3 py-3 space-y-2 border-b border-[var(--border-subtle)] bg-[var(--bg-elevated)]">
-          <div className="relative">
-            <Search size={13} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" />
-            <input
-              type="text"
-              placeholder="Search channels..."
-              value={roomSearch}
-              onChange={(e) => setRoomSearch(e.target.value)}
-              className="w-full pl-8 pr-3 py-2 text-xs rounded-xl bg-[var(--bg-surface)] border border-[var(--border-subtle)] focus:border-[var(--teal-500)] focus:ring-1 focus:ring-[var(--teal-500)] outline-none transition-all text-[var(--text-primary)] placeholder:text-[var(--text-muted)]"
-            />
+        <div className="px-3.5 py-3.5 space-y-2 border-b border-[var(--border-subtle)] bg-[var(--bg-elevated)]/40">
+          <div className="flex gap-2">
+            <div className="relative flex-1">
+              <Search size={13} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" />
+              <input
+                type="text"
+                placeholder="Search channels..."
+                value={roomSearch}
+                onChange={(e) => setRoomSearch(e.target.value)}
+                className="w-full pl-8 pr-3 py-2 text-xs rounded-xl bg-[var(--bg-surface)] border border-[var(--border-default)] focus:border-[var(--teal-500)] focus:ring-1 focus:ring-[var(--teal-500)] outline-none transition-all text-[var(--text-primary)] placeholder:text-[var(--text-muted)]"
+              />
+            </div>
+            <select
+              value={districtFilter}
+              onChange={(e) => setDistrictFilter(e.target.value)}
+              className="w-32 text-xs py-2 px-2.5 rounded-xl bg-[var(--bg-surface)] border border-[var(--border-default)] focus:border-[var(--teal-500)] transition-all outline-none text-[var(--text-secondary)] cursor-pointer"
+            >
+              <option value="">Districts</option>
+              {districts.map(d => <option key={d} value={d}>{d}</option>)}
+            </select>
           </div>
-          <select
-            value={districtFilter}
-            onChange={(e) => setDistrictFilter(e.target.value)}
-            className="w-full text-xs py-2 px-3 rounded-xl bg-[var(--bg-surface)] border border-[var(--border-subtle)] focus:border-[var(--teal-500)] transition-all outline-none text-[var(--text-secondary)] cursor-pointer"
-          >
-            <option value="">All Districts</option>
-            {districts.map(d => <option key={d} value={d}>{d}</option>)}
-          </select>
         </div>
 
         {/* Channel List */}
-        <div className="flex-1 overflow-y-auto py-2 px-2 space-y-0.5 scrollbar-thin">
+        <div className="flex-1 overflow-y-auto py-2 px-2 space-y-1 scrollbar-thin">
           {loadingRooms ? (
             <div className="space-y-1.5 px-1 pt-2">
               {[1, 2, 3, 4].map(n => <div key={n} className="h-14 skeleton rounded-xl animate-pulse" />)}
@@ -340,30 +449,34 @@ export default function ChatRooms() {
                   key={room._id}
                   onClick={() => setActiveRoom(room)}
                   whileHover={{ x: 2 }}
-                  className={`channel-list-item flex items-center gap-3 p-3 rounded-xl text-left w-full transition-all duration-150 cursor-pointer ${
+                  className={`channel-list-item relative flex items-center gap-3 p-3.5 rounded-xl text-left w-full transition-all duration-150 cursor-pointer overflow-hidden ${
                     isActive
-                      ? 'bg-[var(--teal-glow)] border border-[var(--teal-500)]/25'
-                      : 'hover:bg-[var(--bg-elevated)] border border-transparent'
+                      ? 'bg-gradient-to-r from-[var(--teal-50)] to-white dark:from-slate-900/50 dark:to-slate-900 border border-[var(--border-default)] shadow-3xs'
+                      : 'hover:bg-[var(--bg-elevated)] border border-transparent hover:border-[var(--border-subtle)]'
                   }`}
                 >
+                  {isActive && (
+                    <div className="absolute left-0 top-3.5 bottom-3.5 w-1 bg-[var(--teal-500)] rounded-r-md" />
+                  )}
+
                   {/* Channel avatar */}
-                  <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 text-base ${
+                  <div className={`w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0 text-base transition-colors ${
                     isActive ? 'bg-[var(--teal-500)] text-white shadow-teal' : 'bg-[var(--bg-elevated)] border border-[var(--border-subtle)]'
                   }`}>
-                    <Hash size={14} className={isActive ? 'text-white' : 'text-[var(--text-muted)]'} />
+                    <Hash size={13} className={isActive ? 'text-white' : 'text-[var(--text-muted)]'} />
                   </div>
 
-                  <div className="min-w-0 flex-1">
+                  <div className="min-w-0 flex-1 pl-1">
                     <span className={`block text-xs font-bold truncate ${isActive ? 'text-[var(--teal-500)]' : 'text-[var(--text-primary)]'}`}>
                       {room.name}
                     </span>
                     {room.district && (
-                      <span className="text-[9px] text-[var(--text-muted)] font-semibold uppercase tracking-wider">{room.district}</span>
+                      <span className="text-[8px] text-[var(--text-muted)] font-black uppercase tracking-wider">{room.district}</span>
                     )}
                   </div>
 
-                  <div className="flex items-center gap-1 flex-shrink-0 text-[9px] text-[var(--text-muted)] font-bold">
-                    <Users size={9} />
+                  <div className="flex items-center gap-1 flex-shrink-0 text-[9px] text-[var(--text-muted)] font-extrabold bg-[var(--bg-elevated)] px-2 py-0.5 rounded-full border border-[var(--border-subtle)]">
+                    <Users size={8} />
                     <span>{room.memberCount || 0}</span>
                   </div>
                 </motion.button>
@@ -422,14 +535,17 @@ export default function ChatRooms() {
             </div>
 
             {/* Messages */}
-            <div className="flex-1 overflow-y-auto py-4 px-4 space-y-0.5 bg-[var(--bg-base)]">
+            <div className="flex-1 overflow-y-auto py-4 px-4 bg-[var(--bg-base)] flex flex-col">
               {/* Privacy Notice */}
-              <div className="flex items-center gap-3 mb-5 px-3 py-2.5 bg-[var(--bg-elevated)] border border-[var(--border-subtle)] rounded-2xl max-w-md mx-auto">
+              <div className="flex items-center gap-3 mb-5 px-3 py-2.5 bg-[var(--bg-elevated)] border border-[var(--border-subtle)] rounded-2xl max-w-md mx-auto w-full flex-shrink-0">
                 <Lock size={14} className="text-[var(--teal-500)] flex-shrink-0" />
                 <p className="text-[10px] text-[var(--text-muted)] leading-relaxed font-medium">
                   Ephemeral & anonymous — messages delete permanently when you leave.
                 </p>
               </div>
+
+              {/* Flex spacer to push messages to bottom */}
+              <div className="flex-1 min-h-0" />
 
               <AnimatePresence initial={false}>
                 {groupedMessages.map((msg) => {
@@ -441,38 +557,130 @@ export default function ChatRooms() {
                       initial={{ opacity: 0, y: 10, scale: 0.97 }}
                       animate={{ opacity: 1, y: 0, scale: 1 }}
                       transition={{ duration: 0.18, ease: 'easeOut' }}
-                      className={`flex gap-2.5 items-end ${isMe ? 'justify-end' : 'justify-start'} ${msg.compact ? 'mt-0.5' : 'mt-3'}`}
+                      className={`flex gap-2.5 items-end ${isMe ? 'justify-end' : 'justify-start'} ${msg.sameGroup ? 'mt-0.5' : 'mt-3.5'} ${msg.reactions && Object.keys(msg.reactions).length > 0 ? 'mb-2' : ''}`}
                     >
                       {/* Other user avatar */}
                       {!isMe && (
-                        <div className={`w-7 h-7 rounded-full bg-gradient-to-br ${avatar.bg} flex items-center justify-center font-bold text-[10px] text-white flex-shrink-0 select-none ${msg.compact ? 'opacity-0' : ''}`}>
+                        <div className={`w-7 h-7 rounded-full bg-gradient-to-br ${avatar.bg} flex items-center justify-center font-bold text-[10px] text-white flex-shrink-0 select-none ${msg.sameGroup ? 'opacity-0 h-0 pointer-events-none' : ''}`}>
                           {avatar.char}
                         </div>
                       )}
 
-                      <div className={`flex flex-col gap-1 max-w-[72%] ${isMe ? 'items-end' : 'items-start'}`}>
+                      <div className={`flex flex-col gap-0.5 max-w-[72%] ${isMe ? 'items-end' : 'items-start'}`}>
                         {/* Sender name (only first in group) */}
-                        {!msg.compact && !isMe && (
-                          <span className="text-[9px] font-bold text-[var(--text-muted)] px-1 select-none">
+                        {!msg.sameGroup && !isMe && (
+                          <span className="text-[9px] font-bold text-[var(--text-muted)] px-1 select-none mb-0.5">
                             {msg.senderAlias || 'Anonymous'}
                           </span>
                         )}
                         
-                        {/* Message bubble */}
-                        <div className={`chat-bubble ${isMe ? 'chat-bubble-me' : 'chat-bubble-other'}`}>
-                          {msg.text}
+                        {/* Message bubble + Actions */}
+                        <div className="flex flex-col gap-1 max-w-full">
+                          <div className="flex items-center gap-1.5 group relative max-w-full">
+                            {/* Emoji Bar popup */}
+                            <div className={`absolute z-10 -top-8.5 ${isMe ? 'right-0' : 'left-0'} flex items-center gap-1.5 bg-white dark:bg-slate-900 backdrop-blur-md px-2.5 py-1 rounded-full shadow-md border border-[var(--border-subtle)] transition-all duration-150 ${
+                              activeMessageMenu === msg._id
+                                ? 'opacity-100 scale-100 translate-y-0'
+                                : 'opacity-0 scale-90 translate-y-1 pointer-events-none group-hover:opacity-100 group-hover:scale-100 group-hover:translate-y-0 group-hover:pointer-events-auto'
+                            }`}>
+                              {['❤️', '👍', '😂', '😮', '😢', '🙏'].map(emoji => (
+                                <button
+                                  key={emoji}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleReactToMessage(msg._id, emoji);
+                                    setActiveMessageMenu(null);
+                                  }}
+                                  className="hover:scale-125 active:scale-95 transition-transform duration-100 px-0.5 text-xs cursor-pointer bg-transparent border-0"
+                                >
+                                  {emoji}
+                                </button>
+                              ))}
+                            </div>
+
+                            {isMe && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleUnsendMessage(msg._id);
+                                }}
+                                className={`transition-all p-1.5 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-500/10 text-rose-450 hover:text-rose-500 cursor-pointer flex items-center justify-center shrink-0 ${
+                                  activeMessageMenu === msg._id
+                                    ? 'opacity-100 scale-100'
+                                    : 'opacity-0 scale-90 pointer-events-none group-hover:opacity-100 group-hover:scale-100 group-hover:pointer-events-auto'
+                                }`}
+                                title="Unsend"
+                              >
+                                <Trash2 size={12} />
+                              </button>
+                            )}
+                            
+                            <div className="relative max-w-full">
+                              <div 
+                                onClick={() => handleDoubleTap(msg._id)}
+                                className={`chat-bubble cursor-pointer select-text transition-all duration-150 shrink-0 max-w-full relative overflow-hidden ${
+                                  isMe ? 'chat-bubble-me' : 'chat-bubble-other'
+                                } ${
+                                  activeMessageMenu === msg._id ? 'ring-2 ring-rose-400/30 scale-[0.99]' : ''
+                                }`}
+                              >
+                                {/* Heart double tap pop-up animation */}
+                                <AnimatePresence>
+                                  {heartsAnimating[msg._id] && (
+                                    <motion.div
+                                      initial={{ scale: 0.3, opacity: 0 }}
+                                      animate={{ scale: [0.3, 1.4, 1], opacity: [0, 1, 1, 0] }}
+                                      exit={{ opacity: 0 }}
+                                      transition={{ duration: 0.7, ease: 'easeOut' }}
+                                      className="absolute inset-0 flex items-center justify-center pointer-events-none z-20 bg-black/5"
+                                    >
+                                      <span className="text-2xl filter drop-shadow-md select-none">❤️</span>
+                                    </motion.div>
+                                  )}
+                                </AnimatePresence>
+                                {msg.text}
+                              </div>
+
+                              {/* Reactions list */}
+                              {msg.reactions && Object.keys(msg.reactions).length > 0 && (
+                                <div className={`absolute -bottom-2.5 ${isMe ? 'right-2' : 'left-2'} flex flex-wrap gap-0.5 z-10 select-none`}>
+                                  {Object.entries(msg.reactions).map(([emoji, users]) => {
+                                    if (!users || users.length === 0) return null;
+                                    const hasReacted = users.includes(userAlias);
+                                    return (
+                                      <button
+                                        key={emoji}
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          handleReactToMessage(msg._id, emoji);
+                                        }}
+                                        className={`flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[9px] font-bold border transition-all duration-100 cursor-pointer shadow-xs ${
+                                          hasReacted
+                                            ? 'bg-emerald-50 dark:bg-emerald-500/10 border-emerald-300 dark:border-emerald-500/30 text-emerald-600 dark:text-emerald-400 scale-105 animate-[bounce_0.2s_ease-out_1]'
+                                            : 'bg-white dark:bg-slate-850 border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:scale-105'
+                                        }`}
+                                      >
+                                        <span>{emoji}</span>
+                                        <span className="text-[8px] opacity-80">{users.length}</span>
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              )}
+                            </div>
+                          </div>
                         </div>
 
                         {/* Timestamp */}
-                        {!msg.compact && (
-                          <span className="text-[8px] text-[var(--text-muted)] px-1 select-none font-medium">
+                        {(!msg.sameGroup || activeMessageMenu === msg._id) && (
+                          <span className="text-[8px] text-[var(--text-muted)] px-1 select-none font-medium mt-0.5">
                             {new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                           </span>
                         )}
                       </div>
 
                       {/* My avatar placeholder */}
-                      {isMe && <div className="w-7 flex-shrink-0" />}
+                      {isMe && <div className={`w-7 flex-shrink-0 ${msg.sameGroup ? 'h-0 pointer-events-none' : ''}`} />}
                     </motion.div>
                   );
                 })}
@@ -528,32 +736,35 @@ export default function ChatRooms() {
           </>
         ) : (
           /* Empty state */
-          <div className="flex-1 flex flex-col items-center justify-center gap-6 p-8 text-center">
+          <div className="flex-1 flex flex-col items-center justify-center gap-6 p-8 text-center bg-[var(--bg-base)] relative overflow-hidden" style={{ backgroundImage: 'radial-gradient(circle at top right, rgba(99, 102, 241, 0.05), transparent 40%), radial-gradient(circle at bottom left, rgba(20, 184, 166, 0.03), transparent 30%)' }}>
+            <div className="absolute inset-0 bg-[var(--bg-base)] opacity-50 z-0 pointer-events-none" />
             <motion.div
-              animate={{ y: [0, -8, 0] }}
-              transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
-              className="w-20 h-20 rounded-3xl bg-[var(--teal-glow)] border border-[var(--teal-500)]/20 flex items-center justify-center shadow-teal"
+              animate={{ y: [0, -6, 0] }}
+              transition={{ duration: 4, repeat: Infinity, ease: 'easeInOut' }}
+              className="w-20 h-20 rounded-3xl bg-[var(--bg-surface)] border border-[var(--border-default)] flex items-center justify-center shadow-3xs z-10"
             >
-              <MessageSquare className="w-9 h-9 text-[var(--teal-500)]" />
+              <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-[var(--teal-500)] to-[var(--teal-600)] flex items-center justify-center shadow-sm">
+                <MessageSquare className="w-6 h-6 text-white" />
+              </div>
             </motion.div>
 
-            <div className="space-y-2 max-w-sm">
-              <h4 className="font-display font-black text-lg text-[var(--text-primary)]">CivicTN Channels</h4>
-              <p className="text-sm text-[var(--text-muted)] leading-relaxed">
+            <div className="space-y-2 max-w-sm z-10">
+              <h4 className="font-display font-black text-xl text-[var(--text-primary)]">CivicTN Channels</h4>
+              <p className="text-xs text-[var(--text-muted)] leading-relaxed">
                 Pick a channel from the sidebar to join anonymous civic discussions in your district.
               </p>
             </div>
 
-            <div className="grid grid-cols-3 gap-3 max-w-sm w-full mt-2">
+            <div className="grid grid-cols-3 gap-3.5 max-w-sm w-full mt-4 z-10">
               {[
                 { icon: '🔒', title: 'Anonymous', desc: 'No identity attached' },
                 { icon: '⚡', title: 'Ephemeral', desc: 'Deletes on exit' },
                 { icon: '📍', title: 'Local', desc: 'District-filtered' },
               ].map(card => (
-                <div key={card.title} className="bg-[var(--bg-elevated)] border border-[var(--border-subtle)] p-3 rounded-2xl text-center">
-                  <div className="text-xl mb-1">{card.icon}</div>
-                  <div className="text-[10px] font-black text-[var(--text-primary)]">{card.title}</div>
-                  <div className="text-[9px] text-[var(--text-muted)] mt-0.5">{card.desc}</div>
+                <div key={card.title} className="bg-white/80 dark:bg-slate-900/60 backdrop-blur-md border border-[var(--border-default)] p-4 rounded-2xl text-center hover:scale-103 transition-transform shadow-3xs">
+                  <div className="text-2xl mb-1.5">{card.icon}</div>
+                  <div className="text-[10px] font-bold text-[var(--text-primary)]">{card.title}</div>
+                  <div className="text-[9px] text-[var(--text-muted)] mt-1 leading-snug">{card.desc}</div>
                 </div>
               ))}
             </div>

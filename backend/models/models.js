@@ -183,6 +183,11 @@ const messageSchema = new Schema({
   text: { type: String, required: true, maxlength: 1000 },
   type: { type: String, enum: ['text', 'image', 'system'], default: 'text' },
   isDeleted: { type: Boolean, default: false },
+  reactions: {
+    type: Map,
+    of: [String], // emoji string -> array of sender aliases
+    default: {}
+  }
 }, { timestamps: true });
 
 messageSchema.index({ createdAt: 1 }, { expireAfterSeconds: 259200 }); // Auto-delete messages older than 3 days

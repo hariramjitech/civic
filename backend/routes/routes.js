@@ -1053,9 +1053,7 @@ router.get('/rooms/:id', requireAuth, attachUser, asyncHandler(async (req, res) 
     }
   }
 
-  const messageQuery = room.type === 'discussion'
-    ? { roomId: room._id }
-    : { roomId: room._id, isDeleted: false };
+  const messageQuery = { roomId: room._id, isDeleted: { $ne: true } };
 
   const messages = await Message.find(messageQuery)
     .sort({ createdAt: -1 })
