@@ -31,8 +31,17 @@ const createIcon = (severity) => L.divIcon({
 function MapSync({ center, zoom }) {
   const map = useMap();
   useEffect(() => {
-    if (center) map.setView(center, zoom, { animate: true, duration: 0.8 });
-  }, [center, zoom]);
+    if (center && map) {
+      const panes = map.getPanes ? map.getPanes() : null;
+      if (panes && panes.mapPane) {
+        try {
+          map.setView(center, zoom, { animate: true, duration: 0.8 });
+        } catch (e) {
+          console.warn("Leaflet setView error in MapSync:", e);
+        }
+      }
+    }
+  }, [center, zoom, map]);
   return null;
 }
 

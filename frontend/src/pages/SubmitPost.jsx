@@ -29,8 +29,15 @@ function MapClickHandler({ setPosition }) {
 function MapCenterHandler({ center }) {
   const map = useMap();
   useEffect(() => {
-    if (center) {
-      map.setView(center, map.getZoom());
+    if (center && map) {
+      const panes = map.getPanes ? map.getPanes() : null;
+      if (panes && panes.mapPane) {
+        try {
+          map.setView(center, map.getZoom());
+        } catch (e) {
+          console.warn("Leaflet setView error in MapCenterHandler:", e);
+        }
+      }
     }
   }, [center, map]);
   return null;

@@ -1,15 +1,34 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import Navbar from './Navbar';
 import { useCivic } from '../context/CivicContext';
 import { Toaster } from 'react-hot-toast';
-import { Loader2 } from 'lucide-react';
+import { Loader2, Accessibility } from 'lucide-react';
 import AccessibilityWidget from './AccessibilityWidget';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useLocation } from 'react-router-dom';
+import { useAccessibility } from '../context/AccessibilityContext';
 
 export default function Layout({ children }) {
   const { role, loadingProfile, isSignedIn, hideMobileBottomNav } = useCivic();
   const location = useLocation();
+  const {
+    readingGuide,
+    readingMask,
+    showLauncher,
+    launcherPosition,
+    spokenText,
+    setIsWidgetOpen
+  } = useAccessibility();
+  const [mouseY, setMouseY] = useState(0);
+
+  useEffect(() => {
+    if (!readingGuide && !readingMask) return;
+    const handleMouseMove = (e) => {
+      setMouseY(e.clientY);
+    };
+    window.addEventListener('mousemove', handleMouseMove);
+    return () => window.removeEventListener('mousemove', handleMouseMove);
+  }, [readingGuide, readingMask]);
 
   return (
     <div className="min-h-screen flex flex-col lg:flex-row bg-[var(--bg-base)] text-[var(--text-primary)] transition-colors duration-200">
@@ -139,8 +158,122 @@ export default function Layout({ children }) {
         )}
       </div>
 
-      {/* Floating Accessibility Settings Panel */}
+      {/* Floating Accessibility Settings Panel & Helpers */}
       <AccessibilityWidget />
+
+      {/* Reading Guide Ruler overlay */}
+      {readingGuide && (
+        <div
+          style={{
+            position: 'fixed',
+            left: 0,
+            right: 0,
+            top: mouseY - 6,
+            height: 12,
+            backgroundColor: 'rgba(20, 184, 166, 0.22)',
+            borderTop: '2px solid var(--teal-500)',
+            borderBottom: '2px solid var(--teal-500)',
+            pointerEvents: 'none',
+            zIndex: 99999,
+            transition: 'top 0.05s ease-out',
+          }}
+        />
+      )}
+
+      {/* Reading Focus Mask overlay */}
+      {readingMask && (
+        <>
+          {/* Top dimming layer */}
+          <div
+            style={{
+              position: 'fixed',
+              left: 0,
+              right: 0,
+              top: 0,
+              height: Math.max(0, mouseY - 40),
+              backgroundColor: 'rgba(0, 0, 0, 0.45)',
+              pointerEvents: 'none',
+              zIndex: 99997,
+              transition: 'height 0.05s ease-out',
+            }}
+          />
+          {/* Active clear focus guide boundaries */}
+          <div
+            style={{
+              position: 'fixed',
+              left: 0,
+              right: 0,
+              top: mouseY - 40,
+              height: 80,
+              borderTop: '2px dashed var(--teal-500)',
+              borderBottom: '2px dashed var(--teal-500)',
+              pointerEvents: 'none',
+              zIndex: 99999,
+              transition: 'top 0.05s ease-out',
+            }}
+          />
+          {/* Bottom dimming layer */}
+          <div
+            style={{
+              position: 'fixed',
+              left: 0,
+              right: 0,
+              top: mouseY + 40,
+              bottom: 0,
+              backgroundColor: 'rgba(0, 0, 0, 0.45)',
+              pointerEvents: 'none',
+              zIndex: 99997,
+            }}
+          />
+        </>
+      )}
+
+      {/* Closed Captions Spoken Subtitles */}
+      {spokenText && (
+        <div
+          style={{
+            position: 'fixed',
+            bottom: '80px',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            backgroundColor: 'rgba(0, 0, 0, 0.85)',
+            color: '#ffffff',
+            padding: '10px 20px',
+            borderRadius: '12px',
+            fontSize: '13px',
+            fontWeight: '600',
+            fontFamily: 'var(--font-sans)',
+            boxShadow: 'var(--shadow-xl)',
+            zIndex: 99999,
+            maxWidth: '90%',
+            textAlign: 'center',
+            border: '1px solid rgba(255, 255, 255, 0.15)',
+          }}
+          className="animate-scaleIn"
+        >
+          🔊 {spokenText}
+        </div>
+      )}
+
+      {/* Floating Accessibility Trigger Badge */}
+      {showLauncher && (
+        <button
+          id="accessibility-launcher-btn"
+          onClick={() => setIsWidgetOpen(true)}
+          className={`fixed z-40 w-9 h-9 rounded-full bg-[var(--bg-elevated)] hover:bg-[var(--bg-overlay)] text-[var(--teal-400)] border border-[var(--border-default)] flex items-center justify-center shadow-lg hover:scale-105 active:scale-95 transition-all cursor-pointer ${
+            launcherPosition === 'bottom-right'
+              ? 'bottom-20 right-4 lg:bottom-6 lg:right-6'
+              : 'bottom-20 left-4 lg:bottom-6 lg:left-6'
+          } focus:outline-none`}
+          style={{
+            boxShadow: '0 4px 18px rgba(0, 0, 0, 0.3)',
+          }}
+          aria-label="Open accessibility menu"
+          title="Accessibility Tools"
+        >
+          <Accessibility size={16} className="animate-[pulse_3s_infinite]" />
+        </button>
+      )}
     </div>
   );
 }

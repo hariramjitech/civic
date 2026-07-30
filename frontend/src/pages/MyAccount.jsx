@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { useCivic } from '../context/CivicContext';
-import { useAccessibility } from '../context/AccessibilityContext';
 import api from '../lib/api';
 import { Link } from 'react-router-dom';
 import {
@@ -8,7 +7,8 @@ import {
   Settings, Loader2, Calendar, ShieldAlert, CheckCircle,
   Flame, Award, Edit3, ChevronRight, TrendingUp, Zap, Star,
   Accessibility, Eye, EyeOff, Type, Keyboard, Volume2, VolumeX,
-  Lock, Unlock, ShieldCheck, Mail, Phone, CalendarRange
+  Lock, Unlock, ShieldCheck, Mail, Phone, CalendarRange, Sliders,
+  Activity, MousePointer, Ear
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import toast from 'react-hot-toast';
@@ -41,13 +41,7 @@ function timeAgo(dateStr) {
 
 export default function MyAccount() {
   const { userProfile, role, fetchProfile, isSignedIn } = useCivic();
-  const {
-    theme, setTheme,
-    contrast, setContrast,
-    textSize, setTextSize,
-    highlightFocus, setHighlightFocus,
-    narrate, setNarrate
-  } = useAccessibility();
+
 
   const [activeTab, setActiveTab] = useState('posts');
   const [loading, setLoading] = useState(true);
@@ -443,201 +437,7 @@ export default function MyAccount() {
         })}
       </div>
 
-      {/* ── ACCESSIBILITY SETTINGS PANEL ── */}
-      <div className="bg-[var(--bg-surface)] border border-[var(--border-default)] rounded-3xl p-6 flex flex-col gap-5">
-        <div className="flex items-center gap-2 border-b border-[var(--border-subtle)] pb-3">
-          <Accessibility className="text-[var(--teal-500)]" size={20} />
-          <h3 className="font-display font-black text-sm text-[var(--text-primary)]">
-            Accessibility Preferences
-          </h3>
-        </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-          {/* Theme Selection */}
-          <div className="flex flex-col gap-2">
-            <span className="text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-wider">
-              Interface Theme
-            </span>
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                onClick={() => setTheme('light')}
-                className={`py-2 px-3 rounded-xl border text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-2 ${
-                  theme === 'light'
-                    ? 'border-[var(--teal-500)] bg-[var(--teal-glow)] text-[var(--teal-500)]'
-                    : 'border-[var(--border-default)] bg-[var(--bg-surface)] text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)]'
-                }`}
-              >
-                <Zap size={13} /> Light Theme
-              </button>
-              <button
-                type="button"
-                onClick={() => setTheme('dark')}
-                className={`py-2 px-3 rounded-xl border text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-2 ${
-                  theme === 'dark'
-                    ? 'border-[var(--teal-500)] bg-[var(--teal-glow)] text-[var(--teal-500)]'
-                    : 'border-[var(--border-default)] bg-[var(--bg-surface)] text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)]'
-                }`}
-              >
-                <Zap size={13} /> Dark Theme
-              </button>
-            </div>
-          </div>
-
-          {/* Text Resizing */}
-          <div className="flex flex-col gap-2">
-            <span className="text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-wider">
-              Text Resizing
-            </span>
-            <div className="grid grid-cols-3 gap-2">
-              {[
-                { key: 'normal', label: 'Default (A)', title: 'Normal size' },
-                { key: 'large', label: 'Medium (A+)', title: 'Large size' },
-                { key: 'xlarge', label: 'Large (A++)', title: 'Extra Large' },
-              ].map(item => (
-                <button
-                  key={item.key}
-                  type="button"
-                  onClick={() => setTextSize(item.key)}
-                  title={item.title}
-                  className={`py-2 px-1.5 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
-                    textSize === item.key
-                      ? 'border-[var(--teal-500)] bg-[var(--teal-glow)] text-[var(--teal-500)]'
-                      : 'border-[var(--border-default)] bg-[var(--bg-surface)] text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)]'
-                  }`}
-                >
-                  {item.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* High Contrast Mode */}
-          <div className="flex items-center justify-between bg-[var(--bg-elevated)] p-4 rounded-2xl border border-[var(--border-subtle)]">
-            <div className="flex items-center gap-3">
-              <div className="w-8 h-8 rounded-xl bg-purple-500/10 flex items-center justify-center text-purple-500">
-                <Eye size={16} />
-              </div>
-              <div className="flex flex-col">
-                <span className="text-xs font-bold text-[var(--text-primary)]">High Contrast</span>
-                <span className="text-[9px] font-semibold text-[var(--text-muted)]">WCAG AAA compliance</span>
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={() => setContrast(contrast === 'high' ? 'normal' : 'high')}
-              style={{
-                width: 44,
-                height: 24,
-                borderRadius: 12,
-                border: 'none',
-                position: 'relative',
-                cursor: 'pointer',
-                outline: 'none',
-                backgroundColor: contrast === 'high' ? 'var(--teal-500)' : 'var(--border-default)',
-                transition: 'background-color 0.2s',
-              }}
-            >
-              <div
-                style={{
-                  width: 18,
-                  height: 18,
-                  borderRadius: '50%',
-                  backgroundColor: '#ffffff',
-                  position: 'absolute',
-                  top: 3,
-                  left: contrast === 'high' ? 23 : 3,
-                  transition: 'left 0.2s',
-                }}
-              />
-            </button>
-          </div>
-
-          {/* Focus Outline */}
-          <div className="flex items-center justify-between bg-[var(--bg-elevated)] p-4 rounded-2xl border border-[var(--border-subtle)]">
-            <div className="flex items-center gap-3">
-              <div className="w-8 h-8 rounded-xl bg-blue-500/10 flex items-center justify-center text-blue-500">
-                <Keyboard size={16} />
-              </div>
-              <div className="flex flex-col">
-                <span className="text-xs font-bold text-[var(--text-primary)]">Focus Outline</span>
-                <span className="text-[9px] font-semibold text-[var(--text-muted)]">Highlight active elements</span>
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={() => setHighlightFocus(!highlightFocus)}
-              style={{
-                width: 44,
-                height: 24,
-                borderRadius: 12,
-                border: 'none',
-                position: 'relative',
-                cursor: 'pointer',
-                outline: 'none',
-                backgroundColor: highlightFocus ? 'var(--teal-500)' : 'var(--border-default)',
-                transition: 'background-color 0.2s',
-              }}
-            >
-              <div
-                style={{
-                  width: 18,
-                  height: 18,
-                  borderRadius: '50%',
-                  backgroundColor: '#ffffff',
-                  position: 'absolute',
-                  top: 3,
-                  left: highlightFocus ? 23 : 3,
-                  transition: 'left 0.2s',
-                }}
-              />
-            </button>
-          </div>
-
-          {/* Narrate on Hover */}
-          <div className="flex items-center justify-between bg-[var(--bg-elevated)] p-4 rounded-2xl border border-[var(--border-subtle)] md:col-span-2">
-            <div className="flex items-center gap-3">
-              <div className={`w-8 h-8 rounded-xl flex items-center justify-center ${
-                narrate ? 'bg-amber-500/10 text-amber-500' : 'bg-slate-500/10 text-[var(--text-muted)]'
-              }`}>
-                {narrate ? <Volume2 size={16} /> : <VolumeX size={16} />}
-              </div>
-              <div className="flex flex-col">
-                <span className="text-xs font-bold text-[var(--text-primary)]">Narrate on Hover</span>
-                <span className="text-[9px] font-semibold text-[var(--text-muted)]">Voice helper reads targeted UI text elements</span>
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={() => setNarrate(!narrate)}
-              style={{
-                width: 44,
-                height: 24,
-                borderRadius: 12,
-                border: 'none',
-                position: 'relative',
-                cursor: 'pointer',
-                outline: 'none',
-                backgroundColor: narrate ? 'var(--teal-500)' : 'var(--border-default)',
-                transition: 'background-color 0.2s',
-              }}
-            >
-              <div
-                style={{
-                  width: 18,
-                  height: 18,
-                  borderRadius: '50%',
-                  backgroundColor: '#ffffff',
-                  position: 'absolute',
-                  top: 3,
-                  left: narrate ? 23 : 3,
-                  transition: 'left 0.2s',
-                }}
-              />
-            </button>
-          </div>
-        </div>
-      </div>
 
       {/* ── PRIVACY NOTICE ── */}
       <div className="flex items-start gap-3 px-4 py-3 bg-rose-500/5 border border-rose-500/15 rounded-2xl">

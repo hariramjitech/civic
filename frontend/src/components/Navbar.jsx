@@ -4,7 +4,7 @@ import { UserButton, SignedIn, SignedOut, SignInButton, useUser } from '@clerk/c
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Megaphone, Map, MessageSquare, Flame,
-  PlusCircle, Bell, User, Shield, Home, Plus, Zap
+  PlusCircle, Bell, User, Shield, Home, Plus, Zap, Accessibility
 } from 'lucide-react';
 import { useAccessibility } from '../context/AccessibilityContext';
 import { useCivic } from '../context/CivicContext';
@@ -100,6 +100,14 @@ export default function Navbar({ role }) {
               <span>Admin Panel</span>
             </Link>
           )}
+          {/* Accessibility Toggle Link */}
+          <button
+            onClick={() => setIsWidgetOpen(true)}
+            className="w-full flex items-center gap-3.5 px-3.5 py-2.5 rounded-xl text-sm font-semibold transition-all duration-200 border-none bg-transparent text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-elevated)] cursor-pointer text-left focus:outline-none"
+          >
+            <Accessibility size={20} strokeWidth={1.75} className="text-[var(--text-muted)] group-hover:text-[var(--text-secondary)]" />
+            <span>Accessibility</span>
+          </button>
         </nav>
 
         {/* Bottom CTA + Profile */}
@@ -163,6 +171,14 @@ export default function Navbar({ role }) {
         </Link>
 
         <div className="flex items-center gap-1">
+          <button
+            onClick={() => setIsWidgetOpen(true)}
+            className="p-2 rounded-xl transition-colors text-[var(--text-muted)] hover:bg-[var(--bg-elevated)] cursor-pointer focus:outline-none"
+            aria-label="Accessibility Settings"
+          >
+            <Accessibility size={18} strokeWidth={1.75} />
+          </button>
+
           <SignedIn>
             <Link
               to="/chat"
