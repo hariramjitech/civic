@@ -4,11 +4,12 @@ import api from '../lib/api';
 import { useLocation, Link } from 'react-router-dom';
 import { MapContainer, TileLayer, Marker } from 'react-leaflet';
 import { motion, AnimatePresence } from 'framer-motion';
-import { 
-  Flame, Users, ArrowRight, Shield, Bell, 
+import {
+  Flame, Users, ArrowRight, Shield, Bell,
   MapPin, Loader2, Send, MessageSquare,
   FileText, Printer, Download, Copy, Eye, Sparkles, X,
-  Scale, FileCheck, Check, ChevronLeft, ChevronRight, Gavel, Briefcase, Trash2
+  Scale, FileCheck, Check, ChevronLeft, ChevronRight, Gavel, Briefcase, Trash2,
+  TrendingUp, BookOpen, Navigation2
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -70,7 +71,7 @@ function renderMarkdownText(text = '') {
         </ul>
       );
     }
-    
+
     const lines = trimmed.split('\n');
     return (
       <p key={`p-${blockIdx}`} className="text-xs text-gray-850 leading-relaxed text-justify space-y-1 font-serif">
@@ -91,10 +92,10 @@ export default function StrikeRooms() {
   const [rooms, setRooms] = useState([]);
   const [activeRoom, setActiveRoom] = useState(null);
   const [loading, setLoading] = useState(true);
-  
+
   // Linked post information for active room
   const [linkedPost, setLinkedPost] = useState(null);
-  
+
   // Real-time Chat States
   const [messages, setMessages] = useState([]);
   const [inputText, setInputText] = useState('');
@@ -132,6 +133,7 @@ export default function StrikeRooms() {
   const [docType, setDocType] = useState('collector');
   const [docStep, setDocStep] = useState(1);
   const [mobileTab, setMobileTab] = useState('chat'); // 'chat' | 'details'
+  const [detailsTab, setDetailsTab] = useState('status'); // 'status' | 'officials' | 'legal' | 'petition' | 'map'
 
   const messagesEndRef = useRef(null);
   const lastClickTimeRef = useRef({});
@@ -540,10 +542,10 @@ export default function StrikeRooms() {
       const res = await api.post(`/rooms/${activeRoom._id}/join`);
       setMemberCount(res.data.memberCount);
       toast.success('Joined protest! Your support is logged.');
-      
+
       // Update local room list cache
       setRooms(prev => prev.map(r => r._id === activeRoom._id ? { ...r, memberCount: res.data.memberCount } : r));
-      
+
       // Notify socket server
       if (socket) {
         socket.emit('strike:join', { roomId: activeRoom._id });
@@ -629,10 +631,10 @@ export default function StrikeRooms() {
       } else if (act.actName.toLowerCase().includes('penal')) {
         corpusName = 'ipc';
       }
-      
+
       const num = act.section.replace(/\D/g, '');
       const endpoint = `/laws/${corpusName}/${corpusName === 'constitution' ? 'article' : 'section'}/${num}`;
-      
+
       const res = await api.get(endpoint);
       setActDetails(prev => ({
         ...prev,
@@ -694,7 +696,7 @@ export default function StrikeRooms() {
 
   const handlePrintDoc = () => {
     if (!generatedDoc || !linkedPost) return;
-    
+
     const printWindow = window.open('', '_blank');
     const contactsText = linkedPost.attachedContacts && linkedPost.attachedContacts.length > 0
       ? linkedPost.attachedContacts.map(c => `
@@ -833,7 +835,7 @@ export default function StrikeRooms() {
         </body>
       </html>
     `;
-    
+
     printWindow.document.write(petitionHtml);
     printWindow.document.close();
   };
@@ -905,7 +907,7 @@ export default function StrikeRooms() {
   const isJoined = userProfile?.joinedRooms?.includes(activeRoom?._id);
   const canDeleteRoom = activeRoom && (
     activeRoom.createdBy === userProfile?.clerkId ||
-(activeRoom.postId && ownedPostIds.has(activeRoom.postId)) ||
+    (activeRoom.postId && ownedPostIds.has(activeRoom.postId)) ||
     userProfile?.role === 'admin'
   );
 
@@ -913,52 +915,54 @@ export default function StrikeRooms() {
     <div className={`${activeRoom ? 'h-[calc(100vh-3.5rem)]' : 'h-[calc(100vh-7.25rem)]'} lg:h-screen flex flex-col lg:flex-row gap-0 overflow-hidden relative`}>
 
       {/* ———— SIDEBAR ———— */}
-      <div className={`w-full lg:w-80 flex flex-col h-full overflow-hidden border-r border-[var(--border-subtle)] bg-[var(--bg-surface)] ${activeRoom ? 'hidden lg:flex' : 'flex'}`}>
+      <div className={`w-full lg:w-72 flex flex-col h-full overflow-hidden border-r border-[var(--border-subtle)] bg-[var(--bg-surface)] ${activeRoom ? 'hidden lg:flex' : 'flex'}`}>
         {/* Header */}
-        <div className="px-4 py-3 border-b border-[var(--border-subtle)] flex-shrink-0">
-          <h2 className="text-sm font-bold font-display flex items-center gap-1.5 text-rose-600">
+        <div className="px-5 py-4 border-b border-[var(--border-subtle)] flex-shrink-0">
+          <div className="flex items-center gap-2">
             <Link
               to="/feed"
-              className="lg:hidden p-1.5 rounded-xl hover:bg-[var(--bg-elevated)] text-[var(--text-secondary)] transition-colors cursor-pointer mr-0.5 flex items-center justify-center"
+              className="lg:hidden p-1.5 rounded-lg hover:bg-[var(--bg-elevated)] text-[var(--text-muted)] transition-colors cursor-pointer flex items-center justify-center"
               aria-label="Back to feed"
             >
-              <ChevronLeft size={18} />
+              <ChevronLeft size={16} />
             </Link>
-            <Flame size={16} className="text-rose-500 animate-pulse" />
-            Strike Protest Rooms
-          </h2>
-          <p className="text-[10px] text-[var(--text-muted)] mt-0.5">High intensity complaints mobilized for action.</p>
+            <div>
+              <h2 className="text-sm font-bold text-[var(--text-primary)] tracking-tight">Strikes</h2>
+              <p className="text-[11px] text-[var(--text-muted)] mt-0.5">Active community protests</p>
+            </div>
+          </div>
         </div>
 
         {/* List */}
-        <div className="flex-1 overflow-y-auto px-2 py-2 space-y-1">
+        <div className="flex-1 overflow-y-auto px-3 py-3 space-y-1">
           {loading ? (
-            <div className="space-y-1.5 animate-pulse px-1">
-              {[1, 2, 3].map(n => <div key={n} className="h-14 skeleton rounded-lg" />)}
+            <div className="space-y-2 animate-pulse">
+              {[1, 2, 3].map(n => <div key={n} className="h-14 rounded-xl bg-[var(--bg-elevated)]" />)}
             </div>
           ) : rooms.length === 0 ? (
-            <p className="text-xs text-[var(--text-muted)] italic py-6 text-center">No active community strike rooms found.</p>
+            <div className="py-12 text-center">
+              <Flame size={24} className="mx-auto text-[var(--text-muted)] mb-3 opacity-40" />
+              <p className="text-xs text-[var(--text-muted)]">No active strike rooms</p>
+            </div>
           ) : (
             rooms.map((room) => (
               <button
                 key={room._id}
                 onClick={() => setActiveRoom(room)}
-                className={`w-full text-left px-3 py-2.5 rounded-xl border transition-all text-xs flex items-center justify-between cursor-pointer ${
+                className={`w-full text-left px-4 py-3 rounded-xl transition-all text-xs flex items-center justify-between cursor-pointer ${
                   activeRoom?._id === room._id
-                    ? 'bg-rose-500/5 border-rose-500/30 shadow-xs font-semibold'
-                    : 'bg-[var(--bg-surface)] border-[var(--border-subtle)] hover:border-rose-500/20 hover:bg-rose-500/5'
+                    ? 'bg-[var(--bg-elevated)] font-semibold'
+                    : 'hover:bg-[var(--bg-elevated)]'
                 }`}
               >
                 <div className="truncate pr-2 space-y-0.5 min-w-0">
-                  <span className={`font-semibold block truncate ${
-                    activeRoom?._id === room._id ? 'text-rose-700' : 'text-[var(--text-primary)]'
-                  }`}>{room.name}</span>
+                  <span className="font-semibold block truncate text-[var(--text-primary)] text-[13px]">{room.name}</span>
                   {room.district && (
-                    <span className="text-[9px] text-rose-500 font-bold uppercase tracking-wider">{room.district}</span>
+                    <span className="text-[10px] text-[var(--text-muted)] font-medium">{room.district}</span>
                   )}
                 </div>
-                <div className="flex items-center gap-1 flex-shrink-0 text-[10px] text-rose-600 bg-rose-100 border border-rose-200 px-1.5 py-0.5 rounded-md font-bold">
-                  <Users size={9} />
+                <div className="flex items-center gap-1 flex-shrink-0 text-[11px] text-[var(--text-muted)] bg-[var(--bg-base)] px-2 py-1 rounded-lg font-semibold">
+                  <Users size={10} />
                   <span>{room.memberCount || 0}</span>
                 </div>
               </button>
@@ -971,26 +975,38 @@ export default function StrikeRooms() {
       <div className={`flex-1 flex flex-col h-full overflow-hidden bg-[var(--bg-surface)] ${activeRoom ? 'flex' : 'hidden lg:flex'}`}>
         {activeRoom ? (
           <div className="flex-1 flex flex-col overflow-hidden">
-
-            {/* Top Bar */}
-            <div className="px-4 py-3 border-b border-[var(--border-subtle)] bg-[var(--bg-elevated)] flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 flex-shrink-0">
-              <div className="flex items-center gap-2 min-w-0">
+            {/* Top Bar — WhatsApp group header style */}
+            <div className="px-4 py-3 border-b border-[var(--border-subtle)] bg-[var(--bg-surface)] flex items-center justify-between gap-3 flex-shrink-0">
+              <div className="flex items-center gap-3 min-w-0">
                 <button
                   onClick={() => setActiveRoom(null)}
-                  className="lg:hidden p-1.5 rounded-xl hover:bg-slate-200/50 dark:hover:bg-zinc-800 text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors cursor-pointer mr-1"
+                  className="lg:hidden p-1.5 rounded-lg hover:bg-[var(--bg-elevated)] text-[var(--text-muted)] transition-colors cursor-pointer flex-shrink-0"
                   aria-label="Back to channels"
                 >
-                  <ChevronLeft size={18} />
+                  <ChevronLeft size={16} />
                 </button>
 
-                <div className="w-8 h-8 rounded-lg bg-rose-100 dark:bg-rose-500/10 border border-rose-200 dark:border-rose-500/20 flex items-center justify-center flex-shrink-0">
-                  <Flame size={15} className="text-rose-500" />
+                {/* WhatsApp-style group avatar */}
+                <div
+                  className="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0"
+                  style={{ background: 'linear-gradient(135deg, var(--teal-500), var(--teal-600))' }}
+                >
+                  <Flame size={17} className="text-white" />
                 </div>
+
+                {/* Group name + member pill */}
                 <div className="min-w-0">
-                  <h3 className="font-display font-bold text-[var(--text-primary)] text-sm truncate">{activeRoom.name}</h3>
-                  <span className="text-[9px] uppercase px-1.5 py-0.5 rounded bg-rose-100 text-rose-600 border border-rose-200 font-bold">
-                    Protest Strike
-                  </span>
+                  <h3 className="font-semibold text-[var(--text-primary)] text-[14px] truncate leading-tight">{activeRoom.name}</h3>
+                  <div className="flex items-center gap-2 mt-0.5">
+                    <span className="text-[11px] text-[var(--text-muted)]">
+                      <span className="font-semibold text-[var(--text-secondary)]">{memberCount}</span> members
+                    </span>
+                    <span className="text-[var(--text-muted)] text-[10px]">·</span>
+                    <div className="flex items-center gap-1">
+                      <div className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                      <span className="text-[11px] text-[var(--text-muted)]">{onlineCount} online</span>
+                    </div>
+                  </div>
                 </div>
               </div>
 
@@ -998,53 +1014,54 @@ export default function StrikeRooms() {
                 {canDeleteRoom && (
                   <button
                     onClick={handleDeleteStrikeRoom}
-                    className="px-3 py-1.5 rounded-lg bg-[var(--bg-elevated)] hover:bg-red-50 text-[var(--text-muted)] hover:text-red-600 text-[10px] uppercase font-bold border border-[var(--border-default)] hover:border-red-200 transition-all"
+                    className="px-3 py-1.5 rounded-lg text-[var(--text-muted)] hover:text-[var(--text-primary)] text-xs font-medium border border-[var(--border-default)] hover:bg-[var(--bg-elevated)] transition-all"
                   >
-                    Disband Protest
+                    Disband
                   </button>
                 )}
                 {isJoined ? (
                   <button
                     onClick={handleLeaveStrike}
-                    className="px-3 py-1.5 rounded-lg bg-[var(--bg-elevated)] hover:bg-gray-100 text-[var(--text-secondary)] text-[10px] uppercase font-bold border border-[var(--border-default)] transition-all"
+                    className="px-4 py-1.5 rounded-lg text-[var(--text-muted)] text-xs font-semibold border border-[var(--border-default)] hover:bg-[var(--bg-elevated)] transition-all"
                   >
-                    Withdraw Support
+                    Withdraw
                   </button>
                 ) : (
                   <button
                     onClick={handleJoinStrike}
-                    className="px-4 py-1.5 rounded-lg bg-gradient-to-r from-rose-500 to-orange-500 hover:from-rose-400 hover:to-orange-400 text-white font-extrabold text-[10px] uppercase tracking-wider shadow-md shadow-rose-200 transition-all"
+                    className="px-4 py-2 rounded-xl text-white text-xs font-bold transition-all"
+                    style={{ background: 'var(--teal-500)' }}
                   >
-                    🔥 Lend Support
+                    Lend Support
                   </button>
                 )}
               </div>
             </div>
 
-            {/* Mobile Tab Toggle */}
+            {/* Mobile Tab Toggle — Chat vs Details */}
             <div className="flex lg:hidden border-b border-[var(--border-subtle)] bg-[var(--bg-surface)] flex-shrink-0">
               <button
                 type="button"
                 onClick={() => setMobileTab('chat')}
-                className={`flex-1 py-3 text-center text-xs font-bold transition-all border-b-2 flex items-center justify-center gap-1.5 cursor-pointer ${
+                className={`flex-1 py-2.5 text-center text-[11px] font-bold transition-all border-b-2 flex items-center justify-center gap-1.5 cursor-pointer ${
                   mobileTab === 'chat'
-                    ? 'border-rose-500 text-rose-500 bg-rose-500/5'
-                    : 'border-transparent text-[var(--text-secondary)] hover:bg-slate-50 dark:hover:bg-zinc-900/50'
+                    ? 'border-[var(--teal-500)] text-[var(--teal-500)] bg-[var(--teal-glow)]'
+                    : 'border-transparent text-[var(--text-muted)] hover:text-[var(--text-primary)]'
                 }`}
               >
-                <MessageSquare size={14} />
-                <span>Coordinator Chat</span>
+                <MessageSquare size={13} />
+                <span>Chat</span>
               </button>
               <button
                 type="button"
                 onClick={() => setMobileTab('details')}
-                className={`flex-1 py-3 text-center text-xs font-bold transition-all border-b-2 flex items-center justify-center gap-1.5 cursor-pointer ${
+                className={`flex-1 py-2.5 text-center text-[11px] font-bold transition-all border-b-2 flex items-center justify-center gap-1.5 cursor-pointer ${
                   mobileTab === 'details'
-                    ? 'border-rose-500 text-rose-500 bg-rose-500/5'
-                    : 'border-transparent text-[var(--text-secondary)] hover:bg-slate-50 dark:hover:bg-zinc-900/50'
+                    ? 'border-[var(--teal-500)] text-[var(--teal-500)] bg-[var(--teal-glow)]'
+                    : 'border-transparent text-[var(--text-muted)] hover:text-[var(--text-primary)]'
                 }`}
               >
-                <Shield size={14} />
+                <Shield size={13} />
                 <span>Action & Legal</span>
               </button>
             </div>
@@ -1052,210 +1069,209 @@ export default function StrikeRooms() {
             {/* Content Grid: Info + Chat */}
             <div className="flex-1 flex lg:grid lg:grid-cols-12 overflow-hidden bg-[var(--bg-base)]">
 
-              {/* LEFT: Escalation + Legal + Map */}
-              <div className={`w-full lg:col-span-5 h-full overflow-y-auto p-4 border-b lg:border-b-0 lg:border-r border-[var(--border-subtle)] space-y-4 ${mobileTab === 'details' ? 'block' : 'hidden lg:block'}`}>
+              {/* LEFT: Details Panel */}
+              <div className={`w-full lg:col-span-5 flex flex-col overflow-hidden border-b lg:border-b-0 lg:border-r border-[var(--border-subtle)] bg-[var(--bg-base)] ${mobileTab === 'details' ? 'flex' : 'hidden lg:flex'}`}>
 
-                {/* Escalation Card */}
-                <div className="p-4 rounded-xl border border-rose-200 bg-rose-50 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[10px] text-[var(--text-muted)] font-bold uppercase tracking-wider">Live Escalation State</span>
-                    <span className="text-[10px] text-rose-600 font-extrabold uppercase bg-white border border-rose-200 px-2 py-0.5 rounded">
-                      {currentEscalation.name}
-                    </span>
-                  </div>
-
-                  {/* Progress bar */}
-                  <div className="w-full bg-rose-100 h-2 rounded-full overflow-hidden border border-rose-200">
-                    <div
-                      className="bg-gradient-to-r from-rose-500 to-orange-400 h-full rounded-full transition-all duration-500"
-                      style={{ width: `${Math.min(100, (memberCount / 500) * 100)}%` }}
-                    />
-                  </div>
-
-                  <div className="flex items-start gap-2 text-[10px] text-rose-700 leading-normal">
-                    <Bell size={11} className="text-rose-500 flex-shrink-0 mt-0.5" />
-                    <p>{currentEscalation.text}</p>
-                  </div>
-
-                  <div className="flex items-center gap-2">
-                    <div className="flex items-center gap-1.5 text-[10px] text-rose-600 font-bold">
-                      <Users size={11} />
-                      <span>{memberCount} citizens supporting</span>
-                    </div>
+                {/* ── Tab Nav — icon + label underline style */}
+                <div className="flex-shrink-0 bg-[var(--bg-surface)] border-b border-[var(--border-subtle)]">
+                  <div className="flex items-center overflow-x-auto scrollbar-none">
+                    {[
+                      { id: 'status',   label: 'Status',   Icon: TrendingUp },
+                      { id: 'officials',label: 'Officials', Icon: Users },
+                      { id: 'legal',    label: 'Legal',     Icon: BookOpen },
+                      { id: 'petition', label: 'Petition',  Icon: FileText },
+                      ...(linkedPost?.location?.coordinates ? [{ id: 'map', label: 'Map', Icon: Navigation2 }] : [])
+                    ].map(tab => (
+                      <button
+                        key={tab.id}
+                        onClick={() => setDetailsTab(tab.id)}
+                        className={`shrink-0 flex items-center gap-1.5 px-4 py-3 text-[11px] font-semibold border-b-2 transition-all cursor-pointer whitespace-nowrap ${
+                          detailsTab === tab.id
+                            ? 'border-[var(--teal-500)] text-[var(--teal-500)]'
+                            : 'border-transparent text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:border-[var(--border-default)]'
+                        }`}
+                      >
+                        <tab.Icon size={12} />
+                        {tab.label}
+                      </button>
+                    ))}
                   </div>
                 </div>
 
-                {/* Responsible Authority Hierarchy Card */}
-                <div className="p-4 rounded-xl border border-[var(--border-default)] bg-[var(--bg-surface)] space-y-3">
-                  <div className="flex items-center justify-between border-b border-[var(--border-subtle)] pb-2">
-                    <div className="flex items-center gap-2">
-                      <div className="w-7 h-7 rounded-lg bg-emerald-50 border border-emerald-200 flex items-center justify-center">
-                        <Users size={13} className="text-emerald-600" />
-                      </div>
-                      <span className="text-xs font-bold text-[var(--text-primary)]">Officials Hierarchy</span>
+                {/* Tab Content — min-h-0 is critical so flex-1 actually constrains height */}
+                <div className="flex-1 min-h-0 overflow-y-auto">
+
+                {/* Status Tab */}
+                {detailsTab === 'status' && (
+                <div className="p-4 space-y-3">
+
+                  {/* Escalation name + level pill */}
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-[10px] font-semibold text-[var(--text-muted)] uppercase tracking-widest mb-1">Escalation Level {currentEscalation.lvl}</p>
+                      <p className="text-[15px] font-bold text-[var(--text-primary)] leading-snug">{currentEscalation.name}</p>
                     </div>
-                    <span className="text-[8px] uppercase font-extrabold tracking-wider bg-emerald-500/10 text-emerald-400 px-2 py-0.5 rounded border border-emerald-500/20">
-                      Line of Command
+                    <span className="shrink-0 text-[11px] font-bold px-2.5 py-1 rounded-lg border" style={{ color: 'var(--teal-500)', borderColor: 'var(--teal-500)', background: 'var(--teal-glow)' }}>
+                      {memberCount}
                     </span>
                   </div>
 
+                  {/* Progress */}
+                  <div className="space-y-1">
+                    <div className="flex justify-between">
+                      <span className="text-[10px] text-[var(--text-muted)]">Progress to next level</span>
+                      <span className="text-[10px] font-semibold text-[var(--text-muted)]">{memberCount} / 500</span>
+                    </div>
+                    <div className="w-full bg-[var(--border-subtle)] h-[3px] rounded-full overflow-hidden">
+                      <div className="h-full rounded-full transition-all duration-700" style={{ width: `${Math.min(100, (memberCount / 500) * 100)}%`, background: 'var(--teal-500)' }} />
+                    </div>
+                  </div>
+
+                  {/* Status text */}
+                  <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-4 py-3">
+                    <p className="text-[11px] font-semibold text-[var(--text-primary)] mb-1">What this means</p>
+                    <p className="text-[12px] text-[var(--text-secondary)] leading-relaxed">{currentEscalation.text}</p>
+                  </div>
+
+                  {/* Stats */}
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="rounded-xl bg-[var(--bg-surface)] border border-[var(--border-subtle)] p-3 text-center">
+                      <p className="text-[22px] font-black text-[var(--text-primary)] leading-none">{memberCount}</p>
+                      <p className="text-[10px] text-[var(--text-muted)] mt-1 font-medium">Supporting</p>
+                    </div>
+                    <div className="rounded-xl bg-[var(--bg-surface)] border border-[var(--border-subtle)] p-3 text-center">
+                      <p className="text-[22px] font-black leading-none" style={{ color: 'var(--teal-500)' }}>{currentEscalation.lvl}</p>
+                      <p className="text-[10px] text-[var(--text-muted)] mt-1 font-medium">Tier Level</p>
+                    </div>
+                  </div>
+                </div>
+                )}
+
+                {/* ── Officials Tab */}
+                {detailsTab === 'officials' && (
+                <div className="p-4 space-y-3">
+                  <div className="flex items-center justify-between px-1">
+                    <span className="text-[12px] font-bold text-[var(--text-primary)]">Line of Command</span>
+                    <span className="text-[10px] text-[var(--text-muted)] bg-[var(--bg-surface)] border border-[var(--border-subtle)] px-2 py-0.5 rounded-md">{hierarchy.length} levels</span>
+                  </div>
+
                   {loadingHierarchy ? (
-                    <div className="flex flex-col items-center py-6 space-y-2">
+                    <div className="flex items-center justify-center gap-2 py-10">
                       <Loader2 size={16} className="animate-spin text-[var(--teal-500)]" />
-                      <span className="text-[9px] text-[var(--text-muted)]">Resolving local authorities...</span>
+                      <span className="text-[11px] text-[var(--text-muted)]">Resolving local authorities...</span>
                     </div>
                   ) : hierarchy && hierarchy.length > 0 ? (
-                    <div className="relative pl-3 space-y-4 before:absolute before:left-[9px] before:top-2 before:bottom-2 before:w-[2px] before:bg-gradient-to-b before:from-emerald-500/20 before:via-teal-500/30 before:to-emerald-500/10">
+                    <div className="space-y-2.5">
                       {hierarchy.map((level, idx) => (
-                        <div key={level.level} className="relative pl-5 group">
-                          {/* Connector Dot */}
-                          <div className="absolute left-[-21px] top-1 w-4.5 h-4.5 rounded-full bg-[var(--bg-surface)] border-2 border-emerald-500 flex items-center justify-center text-[8px] font-black text-emerald-400 group-hover:scale-110 transition-transform shadow-[0_0_8px_rgba(16,185,129,0.3)]">
-                            {idx + 1}
-                          </div>
-
-                          <div className="space-y-1">
-                            <div className="flex items-baseline justify-between flex-wrap gap-x-2">
-                              <span className="text-[10px] font-extrabold text-[var(--text-primary)] tracking-wide group-hover:text-emerald-400 transition-colors">
-                                {level.designation}
-                              </span>
-                              <span className="text-[8px] uppercase font-bold tracking-wider text-rose-400/80 bg-rose-500/5 px-1.5 py-0.5 rounded border border-rose-500/10">
-                                {level.timeframe}
-                              </span>
-                            </div>
-                            
-                            <p className="text-[8.5px] text-emerald-500 font-bold uppercase tracking-wider">
-                              {level.department}
-                            </p>
-                            <p className="text-[9px] text-[var(--text-muted)] leading-relaxed italic">
-                              "{level.role}"
-                            </p>
-
-                            {level.contact ? (
-                              <div className="mt-1.5 p-2 rounded-lg bg-[var(--bg-elevated)] border border-[var(--border-subtle)] space-y-1.5 text-[8.5px] group-hover:border-emerald-500/30 transition-colors">
-                                <div className="flex items-center justify-between">
-                                  <span className="font-extrabold text-[var(--text-secondary)]">
-                                    👤 {level.contact.officerName || 'Designated Official'}
-                                  </span>
-                                  <span className="text-[7.5px] font-bold uppercase text-[var(--teal-500)]">Active</span>
-                                </div>
-                                
-                                {level.contact.phone && level.contact.phone.length > 0 && (
-                                  <div className="text-[8px] text-[var(--text-muted)] font-mono">
-                                    📞 {level.contact.phone.join(', ')}
-                                  </div>
-                                )}
-                                {level.contact.email && (
-                                  <div className="text-[8px] text-[var(--text-muted)] font-mono truncate">
-                                    ✉️ {level.contact.email}
-                                  </div>
-                                )}
-                                
-                                <button
-                                  onClick={() => {
-                                    setAddressedAuth(level.designation);
-                                    setShowDocModal(true);
-                                    setDocStep(2);
-                                  }}
-                                  className="mt-1 w-full py-1 text-center bg-emerald-500/10 hover:bg-emerald-500 hover:text-gray-950 text-emerald-400 font-extrabold text-[8px] uppercase tracking-wider rounded border border-emerald-500/20 hover:border-emerald-500 transition-all cursor-pointer"
-                                >
-                                  Address Petition Here
-                                </button>
+                        <div key={level.level} className="rounded-2xl bg-[var(--bg-surface)] border border-[var(--border-subtle)] overflow-hidden">
+                          {/* Header row */}
+                          <div className="px-4 py-3 flex items-center justify-between gap-2 bg-[var(--bg-surface)]">
+                            <div className="flex items-center gap-3 min-w-0">
+                              <div className="w-8 h-8 rounded-xl flex items-center justify-center shrink-0" style={{ background: 'var(--teal-glow)', border: '1px solid var(--teal-500)30' }}>
+                                <Users size={13} className="text-[var(--teal-500)]" />
                               </div>
-                            ) : (
-                              <button
-                                onClick={() => {
-                                  setAddressedAuth(level.designation);
-                                  setShowDocModal(true);
-                                  setDocStep(2);
-                                }}
-                                className="mt-1 py-0.5 px-2 bg-[var(--bg-elevated)] hover:bg-emerald-500/20 text-[var(--text-secondary)] hover:text-emerald-400 font-bold text-[8px] uppercase tracking-wider rounded border border-[var(--border-default)] hover:border-emerald-500/30 transition-all cursor-pointer"
-                              >
-                                Address Petition here
-                              </button>
-                            )}
+                              <div className="min-w-0">
+                                <p className="text-[12px] font-semibold text-[var(--text-primary)] leading-snug truncate">{level.designation}</p>
+                                <p className="text-[10px] text-[var(--text-muted)] truncate">{level.department}</p>
+                              </div>
+                            </div>
+                            <span className="text-[10px] text-[var(--text-muted)] font-semibold shrink-0 bg-[var(--bg-elevated)] border border-[var(--border-subtle)] px-2 py-1 rounded-lg">{level.timeframe}</span>
                           </div>
+
+                          {/* Role */}
+                          <div className="px-4 py-2.5 border-t border-[var(--border-subtle)]">
+                            <p className="text-[11px] text-[var(--text-secondary)] leading-relaxed italic">{level.role}</p>
+                          </div>
+
+                          {/* Contact */}
+                          {level.contact && (
+                            <div className="px-4 pb-3 border-t border-[var(--border-subtle)] pt-2.5 space-y-0.5">
+                              <p className="text-[12px] font-semibold text-[var(--text-primary)]">{level.contact.officerName || 'Designated Official'}</p>
+                              {level.contact.phone?.length > 0 && (
+                                <p className="text-[11px] text-[var(--text-muted)] font-mono">{level.contact.phone.join(' · ')}</p>
+                              )}
+                              {level.contact.email && (
+                                <p className="text-[11px] text-[var(--teal-500)] font-mono truncate">{level.contact.email}</p>
+                              )}
+                            </div>
+                          )}
+
+                          {/* Action */}
+                          <button
+                            onClick={() => { setAddressedAuth(level.designation); setShowDocModal(true); setDocStep(2); }}
+                            className="w-full py-2.5 text-center text-[11px] font-bold border-t border-[var(--border-subtle)] transition-all cursor-pointer"
+                            style={{ color: 'var(--teal-500)' }}
+                            onMouseEnter={e => e.currentTarget.style.background = 'var(--teal-glow)'}
+                            onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                          >
+                            Address Petition →
+                          </button>
                         </div>
                       ))}
                     </div>
                   ) : (
-                    <p className="text-[9px] text-[var(--text-muted)] italic text-center py-2">
-                      Resolving local governance structure...
-                    </p>
+                    <p className="text-[11px] text-[var(--text-muted)] text-center py-8">Resolving local governance structure...</p>
                   )}
                 </div>
+                )}
 
-                {/* Relevant Legal Grounds Card */}
-                <div className="p-4 rounded-xl border border-[var(--border-default)] bg-[var(--bg-surface)] space-y-3">
-                  <div className="flex items-center justify-between border-b border-[var(--border-subtle)] pb-2">
-                    <div className="flex items-center gap-2">
-                      <div className="w-7 h-7 rounded-lg bg-teal-50 border border-teal-200 flex items-center justify-center">
-                        <Scale size={13} className="text-teal-600 animate-pulse" />
-                      </div>
-                      <span className="text-xs font-bold text-[var(--text-primary)]">Statutory & Legal Grounds</span>
-                    </div>
-                    <span className="text-[8px] uppercase font-extrabold tracking-wider bg-teal-500/10 text-teal-400 px-2 py-0.5 rounded border border-teal-500/20">
-                      Grievance Basis
-                    </span>
+                {/* ── Legal Tab */}
+                {detailsTab === 'legal' && (
+                <div className="p-4 space-y-3">
+                  <div className="flex items-center justify-between px-1">
+                    <span className="text-[12px] font-bold text-[var(--text-primary)]">Statutory & Legal Grounds</span>
+                    <span className="text-[10px] text-[var(--text-muted)] bg-[var(--bg-surface)] border border-[var(--border-subtle)] px-2 py-0.5 rounded-md">Grievance Basis</span>
                   </div>
 
                   {loadingActs ? (
-                    <div className="flex flex-col items-center py-6 gap-2">
+                    <div className="flex items-center justify-center gap-2 py-10">
                       <Loader2 size={16} className="animate-spin text-[var(--teal-500)]" />
-                      <span className="text-[9px] text-[var(--text-muted)]">Resolving legal grounds...</span>
+                      <span className="text-[11px] text-[var(--text-muted)]">Resolving legal grounds...</span>
                     </div>
                   ) : suggestedActs && suggestedActs.length > 0 ? (
-                    <div className="space-y-3">
+                    <div className="space-y-2.5">
                       {suggestedActs.map((act, idx) => {
                         const key = `${act.actName}-${act.section}`.toLowerCase();
                         const isExpanded = expandedAct === key;
-                        
+
                         let badgeText = 'BNS';
-                        let badgeStyle = 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20';
-                        if (act.actName.toLowerCase().includes('constitution')) {
-                          badgeText = 'Const';
-                          badgeStyle = 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20';
-                        } else if (act.actName.toLowerCase().includes('penal')) {
-                          badgeText = 'IPC';
-                          badgeStyle = 'bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20';
-                        }
+                        let badgeColor = 'text-amber-500 bg-amber-500/10 border-amber-500/20';
+                        if (act.actName.toLowerCase().includes('constitution')) { badgeText = 'Const'; badgeColor = 'text-emerald-500 bg-emerald-500/10 border-emerald-500/20'; }
+                        else if (act.actName.toLowerCase().includes('penal')) { badgeText = 'IPC'; badgeColor = 'text-blue-500 bg-blue-500/10 border-blue-500/20'; }
 
                         return (
-                          <div 
-                            key={idx} 
-                            className="p-3 bg-[var(--bg-elevated)] border border-[var(--border-subtle)] rounded-xl hover:border-[var(--teal-500)]/30 transition-all space-y-2 cursor-pointer group"
+                          <div
+                            key={idx}
+                            className="rounded-2xl bg-[var(--bg-surface)] border border-[var(--border-subtle)] overflow-hidden cursor-pointer hover:border-[var(--teal-500)]/30 transition-all"
                             onClick={() => toggleActExpand(act)}
                           >
-                            <div className="flex items-center justify-between gap-2">
-                              <div className="flex items-center gap-1.5 min-w-0">
-                                <span className={`text-[8px] font-bold px-1.5 py-0.5 border rounded uppercase ${badgeStyle} shrink-0`}>
+                            <div className="px-4 py-3 flex items-center justify-between gap-2">
+                              <div className="flex items-center gap-2.5 min-w-0">
+                                <span className={`text-[9px] font-bold px-1.5 py-0.5 border rounded-md shrink-0 ${badgeColor}`}>
                                   {badgeText}
                                 </span>
-                                <span className="text-[9px] font-bold text-[var(--text-primary)] truncate">
-                                  {act.section}
-                                </span>
+                                <span className="text-[12px] font-semibold text-[var(--text-primary)] truncate">{act.section}</span>
                               </div>
-                              <span className="text-[8px] text-[var(--text-muted)] group-hover:text-[var(--teal-500)] font-semibold transition-colors shrink-0">
-                                {isExpanded ? 'Hide' : 'Expand'}
-                              </span>
+                              <span className="text-[10px] font-semibold shrink-0" style={{ color: 'var(--teal-500)' }}>{isExpanded ? '↑ Hide' : '↓ More'}</span>
                             </div>
-                            
-                            <p className="text-[10px] font-medium text-[var(--text-secondary)] leading-relaxed">
-                              {act.summary}
-                            </p>
+
+                            <div className="px-4 pb-3 border-t border-[var(--border-subtle)] pt-2.5">
+                              <p className="text-[11px] text-[var(--text-secondary)] leading-relaxed">{act.summary}</p>
+                            </div>
 
                             {isExpanded && (
-                              <div 
-                                className="pt-3 mt-3 border-t border-[var(--border-subtle)] space-y-3"
+                              <div
+                                className="px-3 pb-3 border-t border-[var(--border-subtle)] pt-2 space-y-2"
                                 onClick={(e) => e.stopPropagation()}
                               >
                                 {loadingActDetails && !actDetails[key] ? (
-                                  <div className="flex flex-col items-center py-4 gap-1.5">
+                                  <div className="flex items-center gap-2 py-3 justify-center">
                                     <Loader2 size={12} className="animate-spin text-[var(--teal-500)]" />
-                                    <span className="text-[8px] text-[var(--text-muted)]">Fetching official translations...</span>
+                                    <span className="text-[9px] text-[var(--text-muted)]">Fetching translations...</span>
                                   </div>
                                 ) : actDetails[key] ? (
-                                  <div className="space-y-2.5 animate-fade-in select-text">
-                                    <div className="flex border-b border-[var(--border-subtle)] pb-1 gap-1">
+                                  <div className="space-y-2 select-text">
+                                    <div className="flex gap-1 pb-1 border-b border-[var(--border-subtle)]">
                                       {[
                                         { id: 'en', label: 'English' },
                                         { id: 'ml', label: 'മലയാളം' },
@@ -1265,31 +1281,26 @@ export default function StrikeRooms() {
                                           key={lang.id}
                                           type="button"
                                           onClick={() => setActiveLangTab(lang.id)}
-                                          className={`px-2 py-0.5 text-[8px] font-extrabold rounded-md cursor-pointer transition-colors ${
-                                            activeLangTab === lang.id
-                                              ? 'bg-[var(--teal-glow)] text-[var(--teal-500)] border border-[var(--teal-500)]/20'
-                                              : 'text-[var(--text-muted)] hover:text-[var(--text-primary)]'
+                                          className={`px-2 py-0.5 text-[8px] font-bold rounded cursor-pointer transition-colors ${activeLangTab === lang.id
+                                            ? 'bg-[var(--teal-glow)] text-[var(--teal-500)]'
+                                            : 'text-[var(--text-muted)] hover:text-[var(--text-primary)]'
                                           }`}
                                         >
                                           {lang.label}
                                         </button>
                                       ))}
                                     </div>
-
-                                    <p className="text-[10px] leading-relaxed text-[var(--text-secondary)] font-normal whitespace-pre-line max-h-36 overflow-y-auto pr-1 bg-[var(--bg-surface)] p-2 rounded-lg border border-[var(--border-subtle)]">
+                                    <p className="text-[10px] leading-relaxed text-[var(--text-secondary)] whitespace-pre-line max-h-32 overflow-y-auto">
                                       {actDetails[key].languages?.[activeLangTab] || 'Translation unavailable.'}
                                     </p>
-
                                     {actDetails[key].note && (
-                                      <div className="text-[8px] text-amber-600 dark:text-amber-400 font-semibold bg-amber-500/5 p-2 rounded-lg border border-amber-500/10 leading-normal">
+                                      <p className="text-[9px] text-amber-500 font-medium bg-amber-500/5 px-2 py-1.5 rounded-lg border border-amber-500/10">
                                         ⚠️ {actDetails[key].note}
-                                      </div>
+                                      </p>
                                     )}
                                   </div>
                                 ) : (
-                                  <div className="text-[8.5px] text-[var(--text-muted)] italic text-center py-2">
-                                    Could not load details.
-                                  </div>
+                                  <p className="text-[9px] text-[var(--text-muted)] italic text-center py-2">Could not load details.</p>
                                 )}
                               </div>
                             )}
@@ -1298,43 +1309,43 @@ export default function StrikeRooms() {
                       })}
                     </div>
                   ) : (
-                    <div className="p-3 bg-[var(--bg-elevated)] rounded-xl border border-[var(--border-subtle)] text-[10px] text-[var(--text-muted)] italic select-none text-center">
-                      No citable legal grounds fetched.
-                    </div>
+                    <p className="text-[11px] text-[var(--text-muted)] italic text-center py-8">No citable legal grounds fetched.</p>
                   )}
                 </div>
+                )}
 
-                {/* Legal Petitions Card */}
-                <div className="p-4 rounded-xl border border-[var(--border-default)] bg-[var(--bg-surface)] space-y-3">
-                  <div className="flex items-center gap-2">
-                    <div className="w-7 h-7 rounded-lg bg-teal-50 border border-teal-200 flex items-center justify-center">
-                      <Shield size={13} className="text-teal-600" />
-                    </div>
-                    <span className="text-xs font-bold text-[var(--text-primary)]">Legal Petitions & Complaints</span>
+                {/* Petition Tab */}
+                {detailsTab === 'petition' && (
+                <div className="p-4 space-y-3">
+                  <div>
+                    <p className="text-[10px] font-semibold text-[var(--text-muted)] uppercase tracking-widest mb-1">Legal Petition</p>
+                    <p className="text-[15px] font-bold text-[var(--text-primary)]">Generate a formal document</p>
                   </div>
-                  <p className="text-[10px] text-[var(--text-muted)] leading-relaxed">
-                    Draft a formal, legally structured representation from this strike room's data. Volunteers can print the generated document and take it directly to authorities.
+                  <p className="text-[12px] text-[var(--text-secondary)] leading-relaxed">
+                    Draft a formally structured petition from this room's data for submission to authorities.
                   </p>
                   <button
                     onClick={() => { setShowDocModal(true); setGeneratedDoc(null); setDocStep(1); }}
-                    className="w-full py-2.5 bg-gradient-to-r from-teal-500 to-emerald-500 hover:from-teal-400 hover:to-emerald-400 text-white font-bold text-[10px] uppercase tracking-wider rounded-lg transition-all shadow-sm flex items-center justify-center gap-1.5 cursor-pointer"
+                    className="w-full py-3 text-white text-[13px] font-bold rounded-xl transition-all flex items-center justify-center gap-2 cursor-pointer"
+                    style={{ background: 'var(--teal-500)' }}
                   >
-                    <FileText size={12} />
-                    <span>Generate Legal Document</span>
+                    <FileText size={14} />
+                    <span>Generate Document</span>
                   </button>
                 </div>
+                )}
 
-                {/* Map */}
-                {linkedPost?.location?.coordinates && (
-                  <div className="space-y-2">
-                    <div className="text-[10px] text-[var(--text-muted)] uppercase font-bold tracking-wider flex items-center gap-1.5">
-                      <MapPin size={11} className="text-[var(--teal-500)]" />
-                      <span>Incident Location Map</span>
+                {/* ── Map Tab */}
+                {detailsTab === 'map' && linkedPost?.location?.coordinates && (
+                  <div className="p-4 space-y-3">
+                    <div className="flex items-center gap-2 px-1">
+                      <MapPin size={12} className="text-[var(--teal-500)]" />
+                      <span className="text-[12px] font-bold text-[var(--text-primary)]">Incident Location</span>
                     </div>
-                    <div className="h-40 rounded-xl overflow-hidden border border-[var(--border-default)] shadow-sm">
+                    <div className="h-[calc(100vh-22rem)] min-h-48 rounded-2xl overflow-hidden border border-[var(--border-subtle)]">
                       <MapContainer
                         center={[linkedPost.location.coordinates[1], linkedPost.location.coordinates[0]]}
-                        zoom={13}
+                        zoom={14}
                         className="h-full w-full"
                         zoomControl={false}
                       >
@@ -1344,17 +1355,18 @@ export default function StrikeRooms() {
                     </div>
                   </div>
                 )}
+
+                </div>{/* end tab content */}
               </div>
 
               {/* RIGHT: Coordinator Chat */}
               <div className={`flex-1 lg:col-span-7 flex flex-col h-full overflow-hidden ${mobileTab === 'chat' ? 'flex' : 'hidden lg:flex'}`}>
                 {/* Chat Header */}
-                <div className="px-4 py-2 border-b border-[var(--border-subtle)] bg-[var(--bg-elevated)] flex items-center gap-2 flex-shrink-0">
-                  <MessageSquare size={13} className="text-rose-500" />
-                  <span className="text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-wider">Protest Coordinator Chat</span>
-                  <div className="ml-auto flex items-center gap-1">
-                    <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                    <span className="text-[9px] text-[var(--text-muted)]">{onlineCount} online</span>
+                <div className="px-5 py-3 border-b border-[var(--border-subtle)] bg-[var(--bg-surface)] flex items-center gap-3 flex-shrink-0">
+                  <span className="text-[12px] font-semibold text-[var(--text-primary)]">Coordinator Chat</span>
+                  <div className="ml-auto flex items-center gap-1.5">
+                    <div className="w-2 h-2 rounded-full bg-emerald-400" />
+                    <span className="text-[11px] text-[var(--text-muted)]">{onlineCount} online</span>
                   </div>
                 </div>
 
@@ -1386,142 +1398,139 @@ export default function StrikeRooms() {
                         return groupedMessages.map((msg) => {
                           const isMe = msg.senderAlias === userAlias;
                           return (
-                          <div
-                            key={msg._id}
-                            className={`flex flex-col gap-0.5 ${isMe ? 'items-end' : 'items-start'} ${msg.sameGroup ? 'mt-0.5' : 'mt-3.5'} ${msg.reactions && Object.keys(msg.reactions).length > 0 ? 'mb-2' : ''}`}
-                          >
-                            {!msg.sameGroup && (
-                              <span className="text-[8px] text-[var(--text-muted)] font-semibold px-1 uppercase mb-0.5">{isMe ? 'You' : msg.senderAlias || 'Anonymous'}</span>
-                            )}
-                            
-                            <div className="flex flex-col gap-1 max-w-full">
-                              <div className="flex items-center gap-1.5 group relative max-w-full">
-                                {/* Emoji Bar popup */}
-                                <div className={`absolute z-10 -top-8.5 ${isMe ? 'right-0' : 'left-0'} flex items-center gap-1.5 bg-white dark:bg-slate-900 backdrop-blur-md px-2.5 py-1 rounded-full shadow-md border border-[var(--border-subtle)] transition-all duration-150 ${
-                                  activeMessageMenu === msg._id
-                                    ? 'opacity-100 scale-100 translate-y-0'
-                                    : 'opacity-0 scale-90 translate-y-1 pointer-events-none group-hover:opacity-100 group-hover:scale-100 group-hover:translate-y-0 group-hover:pointer-events-auto'
-                                }`}>
-                                  {['❤️', '👍', '😂', '😮', '😢', '🙏'].map(emoji => (
-                                    <button
-                                      key={emoji}
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        handleReactToMessage(msg._id, emoji);
-                                        setActiveMessageMenu(null);
-                                      }}
-                                      className="hover:scale-125 active:scale-95 transition-transform duration-100 px-0.5 text-xs cursor-pointer bg-transparent border-0"
-                                    >
-                                      {emoji}
-                                    </button>
-                                  ))}
-                                </div>
+                            <div
+                              key={msg._id}
+                              className={`flex flex-col gap-0.5 ${isMe ? 'items-end' : 'items-start'} ${msg.sameGroup ? 'mt-0.5' : 'mt-3.5'} ${msg.reactions && Object.keys(msg.reactions).length > 0 ? 'mb-2' : ''}`}
+                            >
+                              {!msg.sameGroup && (
+                                <span className="text-[8px] text-[var(--text-muted)] font-semibold px-1 uppercase mb-0.5">{isMe ? 'You' : msg.senderAlias || 'Anonymous'}</span>
+                              )}
 
-                                {isMe && (
-                                  <button
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      handleUnsendMessage(msg._id);
-                                    }}
-                                    className={`transition-all p-1.5 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-500/10 text-rose-450 hover:text-rose-500 cursor-pointer flex items-center justify-center shrink-0 ${
-                                      activeMessageMenu === msg._id
-                                        ? 'opacity-100 scale-100'
-                                        : 'opacity-0 scale-90 pointer-events-none group-hover:opacity-100 group-hover:scale-100 group-hover:translate-y-0 group-hover:pointer-events-auto'
-                                    }`}
-                                    title="Unsend"
-                                  >
-                                    <Trash2 size={12} />
-                                  </button>
-                                )}
-                                
-                                <div className="relative max-w-full">
-                                  <div 
-                                    onClick={() => handleDoubleTap(msg._id)}
-                                    className={`px-4 py-2 rounded-2xl text-xs leading-relaxed cursor-pointer select-text transition-all duration-150 shadow-3xs shrink-0 max-w-full relative overflow-hidden ${
-                                      isMe
-                                        ? 'bg-gradient-to-r from-rose-500 to-orange-500 text-white rounded-tr-xs'
-                                        : 'bg-[var(--bg-surface)] text-[var(--text-primary)] border border-[var(--border-default)] rounded-tl-xs'
-                                    } ${
-                                      activeMessageMenu === msg._id ? 'ring-2 ring-rose-400/30 scale-[0.99]' : ''
-                                    }`}
-                                  >
-                                    {/* Heart double tap pop-up animation */}
-                                    <AnimatePresence>
-                                      {heartsAnimating[msg._id] && (
-                                        <motion.div
-                                          initial={{ scale: 0.3, opacity: 0 }}
-                                          animate={{ scale: [0.3, 1.4, 1], opacity: [0, 1, 1, 0] }}
-                                          exit={{ opacity: 0 }}
-                                          transition={{ duration: 0.7, ease: 'easeOut' }}
-                                          className="absolute inset-0 flex items-center justify-center pointer-events-none z-20 bg-black/5"
-                                        >
-                                          <span className="text-2xl filter drop-shadow-md select-none">❤️</span>
-                                        </motion.div>
-                                      )}
-                                    </AnimatePresence>
-                                    {msg.text}
+                              <div className="flex flex-col gap-1 max-w-full">
+                                <div className="flex items-center gap-1.5 group relative max-w-full">
+                                  {/* Emoji Bar popup */}
+                                  <div className={`absolute z-10 -top-8.5 ${isMe ? 'right-0' : 'left-0'} flex items-center gap-1.5 bg-white dark:bg-slate-900 backdrop-blur-md px-2.5 py-1 rounded-full shadow-md border border-[var(--border-subtle)] transition-all duration-150 ${activeMessageMenu === msg._id
+                                      ? 'opacity-100 scale-100 translate-y-0'
+                                      : 'opacity-0 scale-90 translate-y-1 pointer-events-none group-hover:opacity-100 group-hover:scale-100 group-hover:translate-y-0 group-hover:pointer-events-auto'
+                                    }`}>
+                                    {['❤️', '👍', '😂', '😮', '😢', '🙏'].map(emoji => (
+                                      <button
+                                        key={emoji}
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          handleReactToMessage(msg._id, emoji);
+                                          setActiveMessageMenu(null);
+                                        }}
+                                        className="hover:scale-125 active:scale-95 transition-transform duration-100 px-0.5 text-xs cursor-pointer bg-transparent border-0"
+                                      >
+                                        {emoji}
+                                      </button>
+                                    ))}
                                   </div>
 
-                                  {/* Reactions list */}
-                                  {msg.reactions && Object.keys(msg.reactions).length > 0 && (
-                                    <div className={`absolute -bottom-2.5 ${isMe ? 'right-2' : 'left-2'} flex flex-wrap gap-0.5 z-10 select-none`}>
-                                      {Object.entries(msg.reactions).map(([emoji, users]) => {
-                                        if (!users || users.length === 0) return null;
-                                        const hasReacted = users.includes(userAlias);
-                                        return (
-                                          <button
-                                            key={emoji}
-                                            onClick={(e) => {
-                                              e.stopPropagation();
-                                              handleReactToMessage(msg._id, emoji);
-                                            }}
-                                            className={`flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[9px] font-bold border transition-all duration-100 cursor-pointer shadow-xs ${
-                                              hasReacted
-                                                ? 'bg-emerald-50 dark:bg-emerald-500/10 border-emerald-300 dark:border-emerald-500/30 text-emerald-600 dark:text-emerald-400 scale-105 animate-[bounce_0.2s_ease-out_1]'
-                                                : 'bg-white dark:bg-slate-855 border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:scale-105'
-                                            }`}
-                                          >
-                                            <span>{emoji}</span>
-                                            <span className="text-[8px] opacity-80">{users.length}</span>
-                                          </button>
-                                        );
-                                      })}
-                                    </div>
+                                  {isMe && (
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleUnsendMessage(msg._id);
+                                      }}
+                                      className={`transition-all p-1.5 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-500/10 text-rose-450 hover:text-rose-500 cursor-pointer flex items-center justify-center shrink-0 ${activeMessageMenu === msg._id
+                                          ? 'opacity-100 scale-100'
+                                          : 'opacity-0 scale-90 pointer-events-none group-hover:opacity-100 group-hover:scale-100 group-hover:translate-y-0 group-hover:pointer-events-auto'
+                                        }`}
+                                      title="Unsend"
+                                    >
+                                      <Trash2 size={12} />
+                                    </button>
                                   )}
+
+                                  <div className="relative max-w-full">
+                                    <div
+                                      onClick={() => handleDoubleTap(msg._id)}
+                                      className={`px-4 py-2.5 rounded-2xl text-[12px] leading-relaxed cursor-pointer select-text transition-all duration-150 shrink-0 max-w-full relative overflow-hidden ${isMe
+                                          ? 'text-white rounded-tr-sm'
+                                          : 'bg-[var(--bg-surface)] text-[var(--text-primary)] border border-[var(--border-default)] rounded-tl-sm'
+                                        } ${activeMessageMenu === msg._id ? 'scale-[0.99]' : ''
+                                        }`}
+                                      style={isMe ? { background: 'var(--teal-500)' } : {}}
+                                    >
+                                      {/* Heart double tap pop-up animation */}
+                                      <AnimatePresence>
+                                        {heartsAnimating[msg._id] && (
+                                          <motion.div
+                                            initial={{ scale: 0.3, opacity: 0 }}
+                                            animate={{ scale: [0.3, 1.4, 1], opacity: [0, 1, 1, 0] }}
+                                            exit={{ opacity: 0 }}
+                                            transition={{ duration: 0.7, ease: 'easeOut' }}
+                                            className="absolute inset-0 flex items-center justify-center pointer-events-none z-20 bg-black/5"
+                                          >
+                                            <span className="text-2xl filter drop-shadow-md select-none">❤️</span>
+                                          </motion.div>
+                                        )}
+                                      </AnimatePresence>
+                                      {msg.text}
+                                    </div>
+
+                                    {/* Reactions list */}
+                                    {msg.reactions && Object.keys(msg.reactions).length > 0 && (
+                                      <div className={`absolute -bottom-2.5 ${isMe ? 'right-2' : 'left-2'} flex flex-wrap gap-0.5 z-10 select-none`}>
+                                        {Object.entries(msg.reactions).map(([emoji, users]) => {
+                                          if (!users || users.length === 0) return null;
+                                          const hasReacted = users.includes(userAlias);
+                                          return (
+                                            <button
+                                              key={emoji}
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                handleReactToMessage(msg._id, emoji);
+                                              }}
+                                              className={`flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[9px] font-bold border transition-all duration-100 cursor-pointer shadow-xs ${hasReacted
+                                                  ? 'bg-emerald-50 dark:bg-emerald-500/10 border-emerald-300 dark:border-emerald-500/30 text-emerald-600 dark:text-emerald-400 scale-105 animate-[bounce_0.2s_ease-out_1]'
+                                                  : 'bg-white dark:bg-slate-855 border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:scale-105'
+                                                }`}
+                                            >
+                                              <span>{emoji}</span>
+                                              <span className="text-[8px] opacity-80">{users.length}</span>
+                                            </button>
+                                          );
+                                        })}
+                                      </div>
+                                    )}
+                                  </div>
                                 </div>
                               </div>
-                            </div>
 
-                            {/* Timestamp */}
-                            {(!msg.sameGroup || activeMessageMenu === msg._id) && (
-                              <span className="text-[8px] text-[var(--text-muted)] px-1 select-none font-medium mt-0.5">
-                                {new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                              </span>
-                            )}
-                          </div>
-                        );
-                      });
-                    })()}
-                  </>
+                              {/* Timestamp */}
+                              {(!msg.sameGroup || activeMessageMenu === msg._id) && (
+                                <span className="text-[8px] text-[var(--text-muted)] px-1 select-none font-medium mt-0.5">
+                                  {new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                </span>
+                              )}
+                            </div>
+                          );
+                        });
+                      })()}
+                    </>
                   )}
                   <div ref={messagesEndRef} />
                 </div>
 
                 {/* Send Input */}
-                <form onSubmit={handleSendMessage} className="px-4 py-3 border-t border-[var(--border-subtle)] bg-[var(--bg-elevated)] flex items-center gap-2.5 flex-shrink-0">
-                  <div className="relative flex-1 flex items-center bg-[var(--bg-surface)] border border-[var(--border-default)] rounded-full px-4 py-1.5 focus-within:ring-1 focus-within:ring-rose-500 focus-within:border-rose-500 transition-all">
+                <form onSubmit={handleSendMessage} className="px-4 py-3 border-t border-[var(--border-subtle)] bg-[var(--bg-surface)] flex items-center gap-2.5 flex-shrink-0">
+                  <div className="relative flex-1 flex items-center bg-[var(--bg-elevated)] border border-[var(--border-default)] rounded-full px-4 py-2 focus-within:border-[var(--teal-500)] transition-all">
                     <input
                       type="text"
                       placeholder="Coordinate strike plans anonymously..."
                       value={inputText}
                       onChange={(e) => setInputText(e.target.value)}
-                      className="flex-1 bg-transparent text-xs outline-none py-1 border-none focus:ring-0 focus:border-none shadow-none"
+                      className="flex-1 bg-transparent text-[12px] outline-none border-none focus:ring-0 shadow-none text-[var(--text-primary)] placeholder:text-[var(--text-muted)]"
                     />
                   </div>
                   <button
                     type="submit"
                     disabled={roomDetailsLoading}
-                    className="w-9 h-9 flex items-center justify-center rounded-full bg-rose-500 hover:bg-rose-600 text-white transition-colors disabled:opacity-50 shrink-0 shadow-sm cursor-pointer"
+                    className="w-9 h-9 flex items-center justify-center rounded-full text-white transition-colors disabled:opacity-40 shrink-0 cursor-pointer"
+                    style={{ background: 'var(--teal-500)' }}
                   >
                     <Send size={13} />
                   </button>
@@ -1530,14 +1539,14 @@ export default function StrikeRooms() {
             </div>
           </div>
         ) : (
-          <div className="flex-1 flex flex-col items-center justify-center gap-4 p-8 text-center">
-            <div className="w-16 h-16 rounded-2xl bg-rose-50 border border-rose-200 flex items-center justify-center">
-              <Flame className="w-8 h-8 text-rose-400" />
+          <div className="flex-1 flex flex-col items-center justify-center gap-5 p-8 text-center">
+            <div className="w-16 h-16 rounded-2xl bg-[var(--bg-elevated)] border border-[var(--border-default)] flex items-center justify-center">
+              <Flame className="w-7 h-7 text-[var(--text-muted)]" />
             </div>
             <div>
-              <h4 className="font-bold text-[var(--text-primary)] font-display text-sm">Select a Strike Room</h4>
-              <p className="text-xs text-[var(--text-muted)] max-w-xs mt-1.5 leading-relaxed">
-                Enter an active protest room to lend digital support signatures and coordinate resolution demands.
+              <h4 className="font-semibold text-[var(--text-primary)] text-[15px] tracking-tight">Select a Strike Room</h4>
+              <p className="text-[12px] text-[var(--text-muted)] max-w-xs mt-1.5 leading-relaxed">
+                Enter an active protest room to lend support and coordinate resolution demands.
               </p>
             </div>
           </div>
@@ -1592,7 +1601,7 @@ export default function StrikeRooms() {
                       </label>
                       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
                         {/* Collectorate Grievance */}
-                        <div 
+                        <div
                           onClick={() => setDocType('collector')}
                           className={`p-3 rounded-xl border cursor-pointer transition-all flex flex-col space-y-1.5 ${docType === 'collector' ? 'bg-emerald-500/10 border-emerald-400/80 shadow-[0_0_12px_rgba(16,185,129,0.1)]' : 'bg-[var(--bg-overlay)] border-[var(--border-default)] hover:border-[var(--text-muted)]'}`}
                         >
@@ -1606,7 +1615,7 @@ export default function StrikeRooms() {
                         </div>
 
                         {/* Municipal */}
-                        <div 
+                        <div
                           onClick={() => setDocType('municipal')}
                           className={`p-3 rounded-xl border cursor-pointer transition-all flex flex-col space-y-1.5 ${docType === 'municipal' ? 'bg-emerald-500/10 border-emerald-400/80 shadow-[0_0_12px_rgba(16,185,129,0.1)]' : 'bg-[var(--bg-overlay)] border-[var(--border-default)] hover:border-[var(--text-muted)]'}`}
                         >
@@ -1620,7 +1629,7 @@ export default function StrikeRooms() {
                         </div>
 
                         {/* High Court PIL */}
-                        <div 
+                        <div
                           onClick={() => setDocType('court')}
                           className={`p-3 rounded-xl border cursor-pointer transition-all flex flex-col space-y-1.5 ${docType === 'court' ? 'bg-emerald-500/10 border-emerald-400/80 shadow-[0_0_12px_rgba(16,185,129,0.1)]' : 'bg-[var(--bg-overlay)] border-[var(--border-default)] hover:border-[var(--text-muted)]'}`}
                         >
@@ -1634,7 +1643,7 @@ export default function StrikeRooms() {
                         </div>
 
                         {/* RTI */}
-                        <div 
+                        <div
                           onClick={() => setDocType('rti')}
                           className={`p-3 rounded-xl border cursor-pointer transition-all flex flex-col space-y-1.5 ${docType === 'rti' ? 'bg-emerald-500/10 border-emerald-400/80 shadow-[0_0_12px_rgba(16,185,129,0.1)]' : 'bg-[var(--bg-overlay)] border-[var(--border-default)] hover:border-[var(--text-muted)]'}`}
                         >
@@ -1648,7 +1657,7 @@ export default function StrikeRooms() {
                         </div>
 
                         {/* Police */}
-                        <div 
+                        <div
                           onClick={() => setDocType('police')}
                           className={`p-3 rounded-xl border cursor-pointer transition-all flex flex-col space-y-1.5 ${docType === 'police' ? 'bg-emerald-500/10 border-emerald-400/80 shadow-[0_0_12px_rgba(16,185,129,0.1)]' : 'bg-[var(--bg-overlay)] border-[var(--border-default)] hover:border-[var(--text-muted)]'}`}
                         >
@@ -1662,7 +1671,7 @@ export default function StrikeRooms() {
                         </div>
 
                         {/* Consumer notice */}
-                        <div 
+                        <div
                           onClick={() => setDocType('consumer')}
                           className={`p-3 rounded-xl border cursor-pointer transition-all flex flex-col space-y-1.5 ${docType === 'consumer' ? 'bg-emerald-500/10 border-emerald-400/80 shadow-[0_0_12px_rgba(16,185,129,0.1)]' : 'bg-[var(--bg-overlay)] border-[var(--border-default)] hover:border-[var(--text-muted)]'}`}
                         >
@@ -1698,11 +1707,11 @@ export default function StrikeRooms() {
                             const isExpanded = expandedAct === key;
 
                             return (
-                              <div 
+                              <div
                                 key={`${act.actName}-${act.section}`}
                                 className={`p-2.5 rounded-lg border text-xs transition-colors flex flex-col gap-2 ${isChecked ? 'bg-emerald-500/5 border-emerald-500/30' : 'bg-[var(--bg-elevated)] border-[var(--border-default)] hover:border-emerald-500/20'}`}
                               >
-                                <div 
+                                <div
                                   className="flex items-start gap-3 cursor-pointer w-full"
                                   onClick={() => {
                                     if (isChecked) {
@@ -1715,7 +1724,7 @@ export default function StrikeRooms() {
                                   <input
                                     type="checkbox"
                                     checked={isChecked}
-                                    onChange={() => {}}
+                                    onChange={() => { }}
                                     className="mt-0.5 rounded border border-[var(--border-default)] text-[var(--teal-500)] focus:ring-[var(--teal-500)] cursor-pointer"
                                   />
                                   <div className="space-y-0.5 flex-1 min-w-0">
@@ -1739,7 +1748,7 @@ export default function StrikeRooms() {
                                 </div>
 
                                 {isExpanded && (
-                                  <div 
+                                  <div
                                     className="pl-8 pt-2 mt-2 border-t border-[var(--border-subtle)] space-y-2 select-text"
                                     onClick={(e) => e.stopPropagation()}
                                   >
@@ -1760,11 +1769,10 @@ export default function StrikeRooms() {
                                               key={lang.id}
                                               type="button"
                                               onClick={() => setActiveLangTab(lang.id)}
-                                              className={`px-2 py-0.5 text-[8px] font-extrabold rounded-md cursor-pointer transition-colors ${
-                                                activeLangTab === lang.id
+                                              className={`px-2 py-0.5 text-[8px] font-extrabold rounded-md cursor-pointer transition-colors ${activeLangTab === lang.id
                                                   ? 'bg-[var(--teal-glow)] text-[var(--teal-500)] border border-[var(--teal-500)]/20'
                                                   : 'text-[var(--text-muted)] hover:text-[var(--text-primary)]'
-                                              }`}
+                                                }`}
                                             >
                                               {lang.label}
                                             </button>
@@ -2023,11 +2031,10 @@ export default function StrikeRooms() {
                   <div className="flex items-center space-x-2">
                     <button
                       onClick={() => setIsEditingDoc(!isEditingDoc)}
-                      className={`px-3 py-1 rounded text-[10px] font-bold uppercase transition-all flex items-center space-x-1 cursor-pointer ${
-                        isEditingDoc
+                      className={`px-3 py-1 rounded text-[10px] font-bold uppercase transition-all flex items-center space-x-1 cursor-pointer ${isEditingDoc
                           ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
                           : 'bg-[var(--bg-elevated)] text-[var(--text-muted)] border border-[var(--border-default)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-overlay)]'
-                      }`}
+                        }`}
                     >
                       <span>{isEditingDoc ? 'View Preview' : 'Edit Text'}</span>
                     </button>

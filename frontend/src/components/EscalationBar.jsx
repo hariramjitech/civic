@@ -5,15 +5,15 @@ import { useReducedMotion } from 'framer-motion';
 
 // SRS FR-9: Escalation thresholds
 const THRESHOLDS = [
-  { count: 50,  label: 'Asst. Engineer',    color: '#f97316', glow: 'rgba(249,115,22,0.25)' },
-  { count: 100, label: 'Exec. Engineer',    color: '#f43f5e', glow: 'rgba(244,63,94,0.25)' },
+  { count: 50, label: 'Asst. Engineer', color: '#f97316', glow: 'rgba(249,115,22,0.25)' },
+  { count: 100, label: 'Exec. Engineer', color: '#f43f5e', glow: 'rgba(244,63,94,0.25)' },
   { count: 200, label: 'Mun. Commissioner', color: '#a855f7', glow: 'rgba(168,85,247,0.25)' },
 ];
 
 function getLevel(supportCount) {
   if (supportCount >= 200) return 2;
   if (supportCount >= 100) return 1;
-  if (supportCount >= 50)  return 0;
+  if (supportCount >= 50) return 0;
   return -1; // not yet escalated
 }
 
@@ -27,7 +27,7 @@ function getNextThreshold(supportCount) {
 export default function EscalationBar({ supportCount = 0, className = '' }) {
   const shouldReduce = useReducedMotion();
   const level = getLevel(supportCount);
-  const next  = getNextThreshold(supportCount);
+  const next = getNextThreshold(supportCount);
   const currentThreshold = level >= 0 ? THRESHOLDS[level] : null;
   const isMaxEscalation = !next;
 
@@ -35,7 +35,7 @@ export default function EscalationBar({ supportCount = 0, className = '' }) {
   const prevCount = level >= 0 ? THRESHOLDS[level].count : 0;
   const nextCount = next ? next.count : THRESHOLDS[THRESHOLDS.length - 1].count;
   const rangeSize = nextCount - prevCount;
-  const progress  = next ? Math.min(((supportCount - prevCount) / rangeSize) * 100, 100) : 100;
+  const progress = next ? Math.min(((supportCount - prevCount) / rangeSize) * 100, 100) : 100;
 
   const barColor = next
     ? next.color

@@ -16,6 +16,7 @@ const {
   requireAuth, attachUser, requireRole,
   upload, uploadToCloudinary,
   postLimiter, aiLimiter, asyncHandler,
+  authLimiter, uploadLimiter, strictLimiter,
   generateChatAlias,
   encryptField, decryptField,
   encryptTokenDeterministic, decryptToken,
@@ -38,7 +39,7 @@ const {
 // ═══════════════════════════════════════════
 
 // Sync / get current user profile
-router.get('/auth/me', requireAuth, attachUser, asyncHandler(async (req, res) => {
+router.get('/auth/me', authLimiter, requireAuth, attachUser, asyncHandler(async (req, res) => {
   const user = req.user;
   res.json({
     id: user._id,
@@ -61,7 +62,7 @@ router.get('/auth/me', requireAuth, attachUser, asyncHandler(async (req, res) =>
 }));
 
 // Update user profile (district, displayName, email, phoneNumber, age, aadhaarNumber)
-router.patch('/auth/profile', requireAuth, attachUser, asyncHandler(async (req, res) => {
+router.patch('/auth/profile', authLimiter, requireAuth, attachUser, asyncHandler(async (req, res) => {
   const { district, displayName, email, phoneNumber, age, aadhaarNumber } = req.body;
   const updateObj = {};
   if (district !== undefined) updateObj.district = district;
@@ -297,6 +298,7 @@ router.post('/posts',
   requireAuth,
   attachUser,
   postLimiter,
+  uploadLimiter,
   upload.array('images', 5),
   asyncHandler(async (req, res) => {
     let { title, description, lat, lng, category: manualCategory } = req.body;
@@ -548,6 +550,8 @@ GPS Match Status: ${imageMetadata.gpsMatchStatus}`;
     await User.findByIdAndUpdate(req.user._id, {
       $addToSet: { postTokens: encryptedToken }
     });
+    // Invalidate token cache so this new token is visible immediately
+    cache.delete(`tokens:${req.user.clerkId}`);
 
     const populated = await Post.findById(post._id)
       .select('-anonToken')
@@ -602,7 +606,7 @@ router.patch('/posts/:id/status', requireAuth, attachUser, asyncHandler(async (r
 }));
 
 // DELETE /api/posts/:id — soft delete (own post only)
-router.delete('/posts/:id', requireAuth, attachUser, asyncHandler(async (req, res) => {
+router.delete('/posts/:id', strictLimiter, requireAuth, attachUser, asyncHandler(async (req, res) => {
   const post = await Post.findById(req.params.id);
   if (!post || post.isDeleted) return res.status(404).json({ error: 'Post not found' });
   if (!req.user.postTokens?.includes(post.anonToken) && !['admin'].includes(req.user.role)) {
@@ -940,6 +944,8 @@ router.post('/posts/:id/comments', requireAuth, attachUser, asyncHandler(async (
   await User.findByIdAndUpdate(req.user._id, {
     $addToSet: { commentTokens: encryptedCommentToken }
   });
+  // Invalidate token cache so this new token is visible immediately
+  cache.delete(`tokens:${req.user.clerkId}`);
 
   cache.invalidatePattern('posts:');
   cache.invalidatePattern('analytics:');
@@ -1540,7 +1546,7 @@ router.post('/ai/predict-risk', requireAuth, attachUser, requireRole('admin', 'd
 );
 
 // GET /api/ai/gov-data/:district — open government infrastructure data
-router.get('/ai/gov-data/:district', requireAuth, asyncHandler(async (req, res) => {
+router.get('/ai/gov-data/:district', asyncHandler(async (req, res) => {
   const data = await fetchGovRoadData(req.params.district);
   res.json({ data, source: 'data.gov.in' });
 }));
@@ -1703,7 +1709,7 @@ router.get('/admin/users', requireAuth, attachUser, requireRole('admin'), asyncH
 }));
 
 // PATCH /api/admin/users/:id/role — change user role (admin only)
-router.patch('/admin/users/:id/role', requireAuth, attachUser, requireRole('admin'), asyncHandler(async (req, res) => {
+router.patch('/admin/users/:id/role', strictLimiter, requireAuth, attachUser, requireRole('admin'), asyncHandler(async (req, res) => {
   const { role } = req.body;
   const validRoles = ['citizen', 'officer', 'department', 'admin'];
   if (!validRoles.includes(role)) return res.status(400).json({ error: 'Invalid role' });
@@ -1718,7 +1724,7 @@ router.patch('/admin/users/:id/role', requireAuth, attachUser, requireRole('admi
 }));
 
 // DELETE /api/admin/posts/:id — hard delete (admin)
-router.delete('/admin/posts/:id', requireAuth, attachUser, requireRole('admin'), asyncHandler(async (req, res) => {
+router.delete('/admin/posts/:id', strictLimiter, requireAuth, attachUser, requireRole('admin'), asyncHandler(async (req, res) => {
   await Post.findByIdAndDelete(req.params.id);
   await AuditLog.create({
     action: 'post_deleted', targetType: 'post', targetId: req.params.id,

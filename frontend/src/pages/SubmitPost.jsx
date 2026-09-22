@@ -30,13 +30,13 @@ function MapCenterHandler({ center }) {
   const map = useMap();
   useEffect(() => {
     if (center && map) {
-      const panes = map.getPanes ? map.getPanes() : null;
-      if (panes && panes.mapPane) {
-        try {
+      try {
+        const container = map.getContainer();
+        if (container && container.clientWidth > 0 && container.clientHeight > 0) {
           map.setView(center, map.getZoom());
-        } catch (e) {
-          console.warn("Leaflet setView error in MapCenterHandler:", e);
         }
+      } catch (e) {
+        console.warn("Leaflet setView error in MapCenterHandler:", e);
       }
     }
   }, [center, map]);
@@ -63,12 +63,12 @@ const isSuspiciousImage = (res) => {
   if (!res) return false;
   const status = res.originalityStatus;
   if (!status) return false;
-  
+
   // Explicitly block flagged statuses
   if (['stock_photo_detected', 'suspicious_screenshot', 'manipulated', 'screen_spoof_detected'].includes(status)) {
     return true;
   }
-  
+
   // If unknown, check if the analysis text indicates it's a photo of a screen, display, or printout
   if (status === 'unknown' && res.originalityAnalysis) {
     const analysis = res.originalityAnalysis.toLowerCase();
@@ -77,7 +77,7 @@ const isSuspiciousImage = (res) => {
       return true;
     }
   }
-  
+
   return false;
 };
 
@@ -121,13 +121,16 @@ export default function SubmitPost() {
   const [isValidated, setIsValidated] = useState(false);
   const [cameraDevices, setCameraDevices] = useState([]);
   const [activeCameraId, setActiveCameraId] = useState('');
-  
+
   // AI Camera spoof validation states
   const [isVerifyingScan, setIsVerifyingScan] = useState(false);
   const [scanVerificationStep, setScanVerificationStep] = useState('');
   const [scanErrorAlert, setScanErrorAlert] = useState('');
 
   const videoRef = useRef(null);
+  // Guard: prevents detectLocation() firing twice in React StrictMode dev mode
+  // (StrictMode intentionally mounts → unmounts → remounts, running effects twice)
+  const hasDetectedRef = useRef(false);
 
   // Submit
   const [submitting, setSubmitting] = useState(false);
@@ -169,8 +172,10 @@ export default function SubmitPost() {
     );
   };
 
-  // Auto-detect location on mount
+  // Auto-detect location on mount — guarded against StrictMode double-fire
   useEffect(() => {
+    if (hasDetectedRef.current) return; // already ran
+    hasDetectedRef.current = true;
     detectLocation();
   }, []);
 
@@ -199,7 +204,7 @@ export default function SubmitPost() {
           const canvas = document.createElement('canvas');
           let width = img.width;
           let height = img.height;
-          
+
           const maxDim = 1200;
           if (width > maxDim || height > maxDim) {
             if (width > height) {
@@ -210,12 +215,12 @@ export default function SubmitPost() {
               height = maxDim;
             }
           }
-          
+
           canvas.width = width;
           canvas.height = height;
           const ctx = canvas.getContext('2d');
           ctx.drawImage(img, 0, 0, width, height);
-          
+
           canvas.toBlob((blob) => {
             if (!blob) {
               resolve(file);
@@ -233,7 +238,7 @@ export default function SubmitPost() {
   const processFiles = async (files) => {
     if (!files || !files.length) return;
     const arr = Array.from(files).slice(0, 5);
-    
+
     const toastId = toast.loading('Optimizing image compression...');
     try {
       const compressedArr = await Promise.all(arr.map(f => compressImage(f)));
@@ -275,7 +280,7 @@ export default function SubmitPost() {
       });
       if (description) fd.append('description', description);
       const res = await api.post('/ai/classify', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
-      
+
       setAiResult(res.data);
       if (res.data.category) {
         setCategory(res.data.category);
@@ -284,7 +289,7 @@ export default function SubmitPost() {
           setTitle(`Reported ${res.data.category.toUpperCase()}: ${res.data.summary}`);
         }
       }
-      
+
       // Warning for stock / screenshot / manipulated fakes / screen spoofs
       if (isSuspiciousImage(res.data)) {
         const type = res.data.originalityStatus?.replace('_', ' ') || 'suspicious replay/spoof';
@@ -360,7 +365,7 @@ export default function SubmitPost() {
     if (!isSignedIn) { toast.error('Sign in to submit.'); return; }
     if (!title.trim() || !description.trim()) { toast.error('Title and description required.'); return; }
     if (!position) { toast.error('Please pin the issue location.'); return; }
-    
+
     if (aiResult) {
       if (aiResult.allImagesRelevant === false) {
         toast.error(`Submission blocked: ${aiResult.relevanceExplanation || 'Uploaded images do not match the reported issue.'}`);
@@ -381,10 +386,10 @@ export default function SubmitPost() {
       fd.append('lat', position.lat);
       fd.append('lng', position.lng);
       fd.append('category', category);
-      
+
       selectedFiles.forEach(f => fd.append('images', f));
       const res = await api.post('/posts', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
-      
+
       if (res.data.post?.isDuplicate) {
         setNewPostId(res.data.post._id);
         const dupOfId = res.data.post.duplicateOf;
@@ -414,17 +419,17 @@ export default function SubmitPost() {
     if (!newPostId || !duplicateOfId) return;
     try {
       setResolvingDuplicate(true);
-      
+
       // 1. Upvote the original post
       try {
         await api.post(`/posts/${duplicateOfId}/like`);
       } catch (err) {
         console.error("Failed to upvote original post:", err);
       }
-      
+
       // 2. Delete our temporary duplicate post
       await api.delete(`/posts/${newPostId}`);
-      
+
       toast.success('Your vote was added to the existing report. Duplicate report discarded.');
       setShowDuplicateModal(false);
       navigate(`/posts/${duplicateOfId}`);
@@ -440,10 +445,10 @@ export default function SubmitPost() {
     if (!newPostId) return;
     try {
       setResolvingDuplicate(true);
-      
+
       // 1. Mark our post as non-duplicate/publish
       await api.post(`/posts/${newPostId}/resolve-duplicate`);
-      
+
       toast.success('Your report has been published separately!');
       setShowDuplicateModal(false);
       navigate(`/posts/${newPostId}`);
@@ -462,30 +467,30 @@ export default function SubmitPost() {
     setIsValidated(false);
     setDetections([]);
     setScannerMessage('Connecting to camera...');
-    
+
     if (scannerStream) {
       scannerStream.getTracks().forEach(t => t.stop());
     }
-    
+
     try {
       const constraints = {
-        video: deviceId 
-          ? { deviceId: { exact: deviceId } } 
+        video: deviceId
+          ? { deviceId: { exact: deviceId } }
           : { facingMode: { ideal: 'environment' } },
         audio: false
       };
-      
+
       const stream = await navigator.mediaDevices.getUserMedia(constraints);
       setScannerStream(stream);
-      
+
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
       }
-      
+
       const devices = await navigator.mediaDevices.enumerateDevices();
       const videoInputs = devices.filter(d => d.kind === 'videoinput');
       setCameraDevices(videoInputs);
-      
+
       if (!deviceId && videoInputs.length > 0) {
         const activeTrack = stream.getVideoTracks()[0];
         const activeLabel = activeTrack?.label;
@@ -494,7 +499,7 @@ export default function SubmitPost() {
           setActiveCameraId(matchingDevice.deviceId);
         }
       }
-      
+
       setScannerMessage('Scanning for civic issues...');
     } catch (err) {
       console.error('Camera access error:', err);
@@ -533,52 +538,52 @@ export default function SubmitPost() {
 
     const width = 160;
     const height = 120;
-    
+
     const canvas = document.createElement('canvas');
     canvas.width = width;
     canvas.height = height;
     const ctx = canvas.getContext('2d');
-    
+
     ctx.drawImage(video, 0, 0, width, height);
-    
+
     let imgData;
     try {
       imgData = ctx.getImageData(0, 0, width, height);
     } catch (e) {
       return [];
     }
-    
+
     const data = imgData.data;
     const edges = new Uint8Array(width * height);
-    
+
     // Sobel-like edge differential gradient
     for (let y = 1; y < height - 1; y++) {
       for (let x = 1; x < width - 1; x++) {
         const idx = (y * width + x) * 4;
-        
+
         const r = data[idx];
         const g = data[idx + 1];
         const b = data[idx + 2];
         const v = 0.299 * r + 0.587 * g + 0.114 * b;
-        
+
         const vRight = 0.299 * data[idx + 4] + 0.587 * data[idx + 5] + 0.114 * data[idx + 6];
         const vDown = 0.299 * data[((y + 1) * width + x) * 4] + 0.587 * data[((y + 1) * width + x) * 4 + 1] + 0.114 * data[((y + 1) * width + x) * 4 + 2];
-        
+
         const dx = vRight - v;
         const dy = vDown - v;
         const magnitude = Math.sqrt(dx * dx + dy * dy);
-        
+
         edges[y * width + x] = magnitude > 35 ? magnitude : 0;
       }
     }
-    
+
     // Grid feature aggregation
     const gridCols = 8;
     const gridRows = 6;
     const cellW = width / gridCols;
     const cellH = height / gridRows;
     const grid = new Uint8Array(gridCols * gridRows);
-    
+
     for (let r = 0; r < gridRows; r++) {
       for (let c = 0; c < gridCols; c++) {
         let edgeCount = 0;
@@ -586,34 +591,34 @@ export default function SubmitPost() {
         const endX = Math.floor((c + 1) * cellW);
         const startY = Math.floor(r * cellH);
         const endY = Math.floor((r + 1) * cellH);
-        
+
         for (let y = startY; y < endY; y++) {
           for (let x = startX; x < endX; x++) {
             if (edges[y * width + x] > 0) edgeCount++;
           }
         }
-        
+
         if (edgeCount > (cellW * cellH) * 0.12) {
           grid[r * gridCols + c] = 1;
         }
       }
     }
-    
+
     // Breadth-First-Search connected cell clustering
     const visited = new Uint8Array(gridCols * gridRows);
     const localDetections = [];
-    
+
     for (let r = 0; r < gridRows; r++) {
       for (let c = 0; c < gridCols; c++) {
         const gridIdx = r * gridCols + c;
         if (grid[gridIdx] === 1 && visited[gridIdx] === 0) {
           const queue = [[r, c]];
           visited[gridIdx] = 1;
-          
+
           let minR = r, maxR = r;
           let minC = c, maxC = c;
           let size = 0;
-          
+
           while (queue.length > 0) {
             const [currR, currC] = queue.shift();
             size++;
@@ -621,14 +626,14 @@ export default function SubmitPost() {
             maxR = Math.max(maxR, currR);
             minC = Math.min(minC, currC);
             maxC = Math.max(maxC, currC);
-            
+
             const neighbors = [
               [currR - 1, currC],
               [currR + 1, currC],
               [currR, currC - 1],
               [currR, currC + 1]
             ];
-            
+
             for (const [nr, nc] of neighbors) {
               if (nr >= 0 && nr < gridRows && nc >= 0 && nc < gridCols) {
                 const nIdx = nr * gridCols + nc;
@@ -639,15 +644,15 @@ export default function SubmitPost() {
               }
             }
           }
-          
+
           const ymin = Math.floor((minR / gridRows) * 1000);
           const xmin = Math.floor((minC / gridCols) * 1000);
           const ymax = Math.floor(((maxR + 1) / gridRows) * 1000);
           const xmax = Math.floor(((maxC + 1) / gridCols) * 1000);
-          
+
           let label = 'Civic Issue';
           let issueCategory = 'other';
-          
+
           if (category === 'roads') {
             label = 'Road Damage / Pothole';
             issueCategory = 'roads';
@@ -664,7 +669,7 @@ export default function SubmitPost() {
             label = 'Municipal Damage';
             issueCategory = 'municipal';
           }
-          
+
           if (size >= 2) {
             localDetections.push({
               label,
@@ -676,54 +681,54 @@ export default function SubmitPost() {
         }
       }
     }
-    
+
     return localDetections;
   };
 
   const capturePhoto = () => {
     const video = videoRef.current;
     if (!video) return;
-    
+
     const canvas = document.createElement('canvas');
     canvas.width = video.videoWidth || 640;
     canvas.height = video.videoHeight || 480;
-    
+
     const ctx = canvas.getContext('2d');
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-    
+
     canvas.toBlob(async (blob) => {
       if (!blob) return;
       const file = new File([blob], `camera-capture-${Date.now()}.jpg`, { type: 'image/jpeg' });
-      
+
       setIsVerifyingScan(true);
       setScanErrorAlert('');
-      
+
       try {
         setScanVerificationStep('Checking luminance variance...');
         await new Promise(r => setTimeout(r, 600));
-        
+
         setScanVerificationStep('Analyzing Moire interference patterns...');
         await new Promise(r => setTimeout(r, 600));
-        
+
         setScanVerificationStep('Detecting bezel/frame spoofing...');
         await new Promise(r => setTimeout(r, 600));
-        
+
         setScanVerificationStep('Running Gemini AI Forensic originality validation...');
-        
+
         const fd = new FormData();
         fd.append('images', file);
         if (description) fd.append('description', description);
-        
+
         const res = await api.post('/ai/classify', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
         const aiData = res.data;
-        
+
         if (isSuspiciousImage(aiData)) {
           const type = aiData.originalityStatus?.replace('_', ' ') || 'suspicious display/spoof';
           setScanErrorAlert(`Authenticity Validation Failed: Replay attack detected. The image appears to be a ${type}. Please point your camera at a real, live physical civic issue.`);
           setIsVerifyingScan(false);
           return;
         }
-        
+
         const newFiles = [...selectedFiles, file].slice(0, 5);
         setSelectedFiles(newFiles);
         setPreviews(newFiles.map(f => URL.createObjectURL(f)));
@@ -734,7 +739,7 @@ export default function SubmitPost() {
             setTitle(`Reported ${aiData.category.toUpperCase()}: ${aiData.summary}`);
           }
         }
-        
+
         closeScanner();
         toast.success('Evidence photo verified and captured!');
       } catch (err) {
@@ -748,12 +753,12 @@ export default function SubmitPost() {
 
   useEffect(() => {
     if (!showScanner || !scannerStream) return;
-    
+
     const interval = setInterval(() => {
       if (!videoRef.current) return;
       const results = detectCivicIssuesClient(videoRef.current);
       setDetections(results);
-      
+
       const matches = results.filter(det => det.category === category);
       if (matches.length > 0) {
         setIsValidated(true);
@@ -767,7 +772,7 @@ export default function SubmitPost() {
         }
       }
     }, 150);
-    
+
     return () => clearInterval(interval);
   }, [showScanner, scannerStream, category]);
 
@@ -777,7 +782,7 @@ export default function SubmitPost() {
     else if (aiResult?.originalityStatus === 'suspicious_screenshot') score -= 40;
     else if (aiResult?.originalityStatus === 'manipulated') score -= 70;
     else if (aiResult?.originalityStatus === 'unknown' || !aiResult?.originalityStatus) score -= 10;
-    
+
     if (aiResult?.allImagesRelevant === false) score -= 90;
     return Math.max(5, score);
   };
@@ -871,7 +876,7 @@ export default function SubmitPost() {
                 <Sparkles size={13} />
                 AI Suggested Version
               </div>
-              
+
               <textarea
                 value={rewrittenText}
                 onChange={e => setRewrittenText(e.target.value)}
@@ -1161,7 +1166,7 @@ export default function SubmitPost() {
                   <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>Confidence</div>
                   <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--teal-400)' }}>{Math.round((aiResult.confidence || 0) * 100)}%</div>
                 </div>
-                
+
                 {aiResult.originalityStatus && (
                   <div style={{ gridColumn: '1/-1', display: 'flex', flexDirection: 'column', gap: 6, padding: '12px 14px', borderRadius: 8, background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', marginTop: 4 }}>
                     <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-primary)', textTransform: 'uppercase', letterSpacing: '0.06em', display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -1170,13 +1175,13 @@ export default function SubmitPost() {
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: 12 }}>
                       <span style={{ color: 'var(--text-muted)' }}>Status:</span>
-                      <span style={{ 
-                        fontWeight: 800, 
-                        textTransform: 'uppercase', 
-                        color: aiResult.originalityStatus === 'authentic' 
-                          ? '#4ade80' 
-                          : isSuspiciousImage(aiResult) 
-                            ? '#f43f5e' 
+                      <span style={{
+                        fontWeight: 800,
+                        textTransform: 'uppercase',
+                        color: aiResult.originalityStatus === 'authentic'
+                          ? '#4ade80'
+                          : isSuspiciousImage(aiResult)
+                            ? '#f43f5e'
                             : '#fbbf24'
                       }}>
                         {aiResult.originalityStatus?.replace('_', ' ')}
@@ -1258,7 +1263,7 @@ export default function SubmitPost() {
                 <Sparkles size={14} />
                 AI Validation Breakdown
               </div>
-              
+
               <div className="legitimacy-meter-container">
                 <div className="legitimacy-ring">
                   <svg>
@@ -1276,7 +1281,7 @@ export default function SubmitPost() {
                     {getClientLegitimacyScore()}%
                   </div>
                 </div>
-                
+
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                   <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>
                     Report Legitimacy Score
@@ -1303,9 +1308,9 @@ export default function SubmitPost() {
                 </div>
                 <div style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-subtle)', padding: '8px 12px', borderRadius: 8 }}>
                   <span style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Software / Source Editor</span>
-                  <span style={{ 
-                    fontSize: 12, 
-                    fontWeight: 700, 
+                  <span style={{
+                    fontSize: 12,
+                    fontWeight: 700,
                     color: aiResult.metadata?.software && aiResult.metadata.software !== 'Unknown' && aiResult.metadata.software !== 'None' ? '#f43f5e' : 'var(--text-primary)'
                   }}>
                     {aiResult.metadata?.software || 'None / Direct Photo'}
@@ -1319,13 +1324,13 @@ export default function SubmitPost() {
                 </div>
                 <div style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-subtle)', padding: '8px 12px', borderRadius: 8 }}>
                   <span style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', textTransform: 'uppercase', letterSpacing: '0.05em' }}>AI Forensics Assessment</span>
-                  <span style={{ 
-                    fontSize: 12, 
-                    fontWeight: 700, 
-                    color: aiResult.originalityStatus === 'authentic' 
-                      ? '#4ade80' 
-                      : isSuspiciousImage(aiResult) 
-                        ? '#f43f5e' 
+                  <span style={{
+                    fontSize: 12,
+                    fontWeight: 700,
+                    color: aiResult.originalityStatus === 'authentic'
+                      ? '#4ade80'
+                      : isSuspiciousImage(aiResult)
+                        ? '#f43f5e'
                         : '#fbbf24'
                   }}>
                     {aiResult.originalityStatus?.replace('_', ' ').toUpperCase()}
@@ -1495,8 +1500,8 @@ export default function SubmitPost() {
             onClick={handleSubmit}
             disabled={submitting || isSubmitDisabled()}
             className="btn btn-primary"
-            style={{ 
-              flex: 1, 
+            style={{
+              flex: 1,
               opacity: isSubmitDisabled() ? 0.55 : 1,
               cursor: isSubmitDisabled() ? 'not-allowed' : 'pointer',
               background: isSubmitDisabled() ? '#374151' : undefined,
@@ -1553,7 +1558,7 @@ export default function SubmitPost() {
               {detections.map((det, idx) => {
                 const [ymin, xmin, ymax, xmax] = det.box_2d;
                 const isMatching = det.category === category;
-                
+
                 const style = {
                   top: `${ymin / 10}%`,
                   left: `${xmin / 10}%`,

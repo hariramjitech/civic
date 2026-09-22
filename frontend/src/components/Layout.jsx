@@ -84,7 +84,7 @@ export default function Layout({ children }) {
       <div className={`flex-1 flex flex-col min-h-screen ${
         location.pathname === '/' 
           ? '' 
-          : `lg:pl-[240px] ${hideMobileBottomNav ? 'pb-0' : 'pb-[60px] lg:pb-0'}`
+          : `lg:pl-[64px] ${hideMobileBottomNav ? 'pb-0' : 'pb-[60px] lg:pb-0'}`
       } relative z-10`}>
         
         {/* Main page content */}

@@ -25,7 +25,7 @@ const userSchema = new Schema({
   commentTokens: [{ type: String }],         // HMAC tokens of own comments
   likedPosts: [{ type: Schema.Types.ObjectId, ref: 'Post' }],
   supportedPosts: [{ type: Schema.Types.ObjectId, ref: 'Post' }],
-  votedPolls: [{ type: Map, of: String }],// pollId → optionIndex
+  votedPolls: { type: Map, of: String, default: {} }, // pollId → optionIndex
   joinedRooms: [{ type: Schema.Types.ObjectId, ref: 'ChatRoom' }],
   isActive: { type: Boolean, default: true },
 }, { timestamps: true });

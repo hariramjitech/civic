@@ -15,13 +15,15 @@
   --nav-height: 68px;
 
   /* Background layers - True Light Theme Default (Solid and premium) */
-  --bg-base: #f7f9fa; /* X Light Mode Background */
+  --bg-base: #f7f9fa;
+  /* X Light Mode Background */
   --bg-surface: #ffffff;
   --bg-elevated: #f8fafc;
   --bg-overlay: #f1f5f9;
 
   /* Borders - Adjusted for Slate/Gray contrast on light background */
-  --border-subtle: #eff3f4; /* X Style light borders */
+  --border-subtle: #eff3f4;
+  /* X Style light borders */
   --border-default: #e2e8f0;
   --border-strong: #cbd5e1;
 
@@ -89,13 +91,17 @@
 
 /* Accessibility Preferences Styles */
 html[data-theme="dark"] {
-  --bg-base: #000000;      /* X Lights Out Dark Theme */
-  --bg-surface: #09090b;   /* zinc-950 */
-  --bg-elevated: #16181c;  /* X Dark Elevated inputs/sidebar */
+  --bg-base: #000000;
+  /* X Lights Out Dark Theme */
+  --bg-surface: #09090b;
+  /* zinc-950 */
+  --bg-elevated: #16181c;
+  /* X Dark Elevated inputs/sidebar */
   --bg-overlay: #202227;
 
   --border-subtle: #16181c;
-  --border-default: #2f3336; /* X Dark mode border */
+  --border-default: #2f3336;
+  /* X Dark mode border */
   --border-strong: #3e4144;
 
   --text-primary: #e7e9ea;
@@ -135,6 +141,7 @@ html[data-contrast="high"] {
 html[data-text-size="large"] {
   font-size: 112.5% !important;
 }
+
 html[data-text-size="xlarge"] {
   font-size: 125% !important;
 }
@@ -224,9 +231,11 @@ html[data-big-cursor="true"] * {
     background-size: cover;
     background-position: center center;
     background-repeat: no-repeat;
-    opacity: 0.08; /* Ambient civic grid lines (8% opacity) */
+    opacity: 0.08;
+    /* Ambient civic grid lines (8% opacity) */
     pointer-events: none;
-    transform: translate3d(0, 0, 0); /* Force GPU acceleration */
+    transform: translate3d(0, 0, 0);
+    /* Force GPU acceleration */
   }
 
   h1,
@@ -1257,7 +1266,8 @@ html[data-theme='dark'],
 
 html[data-theme='dark'] body::before,
 :root[data-theme='dark'] body::before {
-  opacity: 0.05; /* Subtler grid lines in dark mode (5% opacity) */
+  opacity: 0.05;
+  /* Subtler grid lines in dark mode (5% opacity) */
 }
 
 /* 2. High Contrast Theme Override */
@@ -1829,7 +1839,8 @@ html[data-theme='dark'] .glass-card,
   width: 100%;
   height: 100%;
   object-fit: cover;
-  transform: scaleX(1); /* environment camera is non-mirrored, user/front can be mirrored if needed */
+  transform: scaleX(1);
+  /* environment camera is non-mirrored, user/front can be mirrored if needed */
 }
 
 /* Glowing green overlay when validated */
@@ -1858,9 +1869,17 @@ html[data-theme='dark'] .glass-card,
 }
 
 @keyframes scanner-sweep {
-  0% { top: 0%; }
-  50% { top: 100%; }
-  100% { top: 0%; }
+  0% {
+    top: 0%;
+  }
+
+  50% {
+    top: 100%;
+  }
+
+  100% {
+    top: 0%;
+  }
 }
 
 .scanner-corners {
@@ -1929,7 +1948,8 @@ html[data-theme='dark'] .glass-card,
 /* Bounding box styles */
 .scanner-bbox {
   position: absolute;
-  border: 3px solid #ef4444; /* default red */
+  border: 3px solid #ef4444;
+  /* default red */
   background: rgba(239, 68, 68, 0.08);
   box-shadow: 0 0 10px rgba(239, 68, 68, 0.3);
   border-radius: 6px;
@@ -1946,9 +1966,17 @@ html[data-theme='dark'] .glass-card,
 }
 
 @keyframes pulse-glow-box {
-  0% { box-shadow: 0 0 6px rgba(45, 212, 191, 0.3); }
-  50% { box-shadow: 0 0 18px rgba(45, 212, 191, 0.6); }
-  100% { box-shadow: 0 0 6px rgba(45, 212, 191, 0.3); }
+  0% {
+    box-shadow: 0 0 6px rgba(45, 212, 191, 0.3);
+  }
+
+  50% {
+    box-shadow: 0 0 18px rgba(45, 212, 191, 0.6);
+  }
+
+  100% {
+    box-shadow: 0 0 6px rgba(45, 212, 191, 0.3);
+  }
 }
 
 .scanner-bbox-label {
@@ -1964,7 +1992,7 @@ html[data-theme='dark'] .glass-card,
   text-transform: uppercase;
   white-space: nowrap;
   letter-spacing: 0.06em;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
 }
 
 .scanner-bbox.matching .scanner-bbox-label {
@@ -2229,6 +2257,7 @@ html[data-theme='dark'] .glass-card,
   from {
     transform: translateX(100%);
   }
+
   to {
     transform: translateX(0);
   }
@@ -2239,6 +2268,7 @@ html[data-theme='dark'] .glass-card,
     transform: scale(0.95);
     opacity: 0;
   }
+
   to {
     transform: scale(1);
     opacity: 1;
@@ -2252,3 +2282,44 @@ html[data-theme='dark'] .glass-card,
 .animate-scaleIn {
   animation: scaleIn 0.2s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
 }
+
+/* ─────────────────────────────────────────────────────── */
+/*  CUSTOM LEAFLET MAP STYLING                            */
+/* ─────────────────────────────────────────────────────── */
+.leaflet-popup-content-wrapper {
+  background: var(--bg-surface) !important;
+  color: var(--text-primary) !important;
+  border-radius: 16px !important;
+  box-shadow: 0 12px 30px -4px rgba(0, 0, 0, 0.18), 0 4px 12px -2px rgba(0, 0, 0, 0.08) !important;
+  border: 1px solid var(--border-default) !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+}
+
+.leaflet-popup-content {
+  margin: 12px 14px !important;
+  line-height: 1.4 !important;
+  font-family: var(--font-sans) !important;
+}
+
+.leaflet-popup-tip {
+  background: var(--bg-surface) !important;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1) !important;
+}
+
+.leaflet-container {
+  font-family: var(--font-sans) !important;
+  z-index: 1;
+  background-color: var(--bg-overlay) !important;
+}
+
+.leaflet-container a.leaflet-popup-close-button {
+  color: var(--text-muted) !important;
+  top: 8px !important;
+  right: 8px !important;
+  font-size: 16px !important;
+}
+
+.leaflet-container a.leaflet-popup-close-button:hover {
+  color: var(--text-primary) !important;
+}

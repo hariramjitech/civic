@@ -71,6 +71,36 @@ class Cache {
     this.store.clear();
     console.log('💾 [Cache] Flushed all items');
   }
+
+  /**
+   * Get-or-set: returns cached value if present, otherwise calls the async
+   * factory function, stores the result, and returns it.
+   * @param {string} key
+   * @param {Function} factory  Async function that returns the value to cache
+   * @param {number} ttlMs      Time to live in milliseconds (default 1 minute)
+   * @returns {Promise<any>}
+   */
+  async getOrSet(key, factory, ttlMs = 60000) {
+    const cached = this.get(key);
+    if (cached !== null) return cached;
+    const value = await factory();
+    this.set(key, value, ttlMs);
+    return value;
+  }
+
+  /**
+   * Returns the number of live (non-expired) items currently in the cache
+   * @returns {number}
+   */
+  size() {
+    const now = Date.now();
+    let count = 0;
+    for (const item of this.store.values()) {
+      if (now <= item.expiresAt) count++;
+    }
+    return count;
+  }
 }
+
 
 module.exports = new Cache();

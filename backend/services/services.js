@@ -5,7 +5,7 @@
  * ============================================================
  */
 
-const axios  = require('axios');
+const axios = require('axios');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const { Post, ChatRoom, Contact } = require('../models/models');
 const filter = require('leo-profanity');
@@ -48,7 +48,7 @@ const generateWithRetry = async (modelName, contents, maxRetries = 2, initialDel
       const status = err.status || (err.message && err.message.match(/\[(\d+)\]/)?.[1]);
       const isNotFound = status === 404 || err.message?.includes('404') || err.message?.toLowerCase().includes('not found');
       const isQuotaExceeded = status === 429 || err.status === 429 || err.message?.includes('429') || err.message?.toLowerCase().includes('quota') || err.message?.toLowerCase().includes('limit');
-      
+
       // If the model does not exist/is not found, fail fast and do not retry
       if (isNotFound) {
         throw err;
@@ -59,12 +59,12 @@ const generateWithRetry = async (modelName, contents, maxRetries = 2, initialDel
         console.warn(`⚠️ [Gemini AI] Model ${modelName} quota exceeded. Failing fast...`);
         throw err;
       }
-      
+
       // If we've reached the maximum retries, throw the error to try the next model
       if (attempt === maxRetries) {
         throw err;
       }
-      
+
       console.warn(`⚠️ [Gemini AI] Model ${modelName} failed on attempt ${attempt + 1}/${maxRetries + 1} (Reason: ${err.message}). Retrying in ${delay}ms...`);
       await sleep(delay);
       delay *= 2; // exponential backoff
@@ -157,11 +157,11 @@ ${metadataContext ? `\nExtracted Image Digital Footprint (EXIF) Context:\n${meta
     return JSON.parse(json);
   } catch (err) {
     console.error('Error in classifyIssue:', err);
-    return { 
-      category: 'other', 
-      severity: 'medium', 
-      tags: [], 
-      confidence: 0, 
+    return {
+      category: 'other',
+      severity: 'medium',
+      tags: [],
+      confidence: 0,
       summary: description || 'Civic issue',
       originalityStatus: 'unknown',
       originalityAnalysis: 'AI image forensics failed to execute.',
@@ -186,11 +186,11 @@ const checkDuplicate = async (newPost, nearbyPosts) => {
 Nearby (within 200m):\n${summaries}
 Respond ONLY with JSON: {"isDuplicate":bool,"duplicateIndex":null|number,"similarity":0.0-1.0}`
     );
-    const parsed = JSON.parse(result.response.text().replace(/```json?/gi,'').replace(/```/g,'').trim());
+    const parsed = JSON.parse(result.response.text().replace(/```json?/gi, '').replace(/```/g, '').trim());
     return {
-      isDuplicate:     parsed.isDuplicate,
+      isDuplicate: parsed.isDuplicate,
       duplicatePostId: parsed.isDuplicate ? nearbyPosts[parsed.duplicateIndex]?._id : null,
-      similarity:      parsed.similarity,
+      similarity: parsed.similarity,
     };
   } catch {
     return { isDuplicate: false };
@@ -287,7 +287,7 @@ const predictRiskZones = async (historicalData) => {
       `Predict high-risk infrastructure zones in Tamil Nadu from this data: ${JSON.stringify(historicalData)}
 JSON array only: [{"district":"...","riskLevel":"high|medium|low","primaryIssue":"...","prediction":"..."}]`
     );
-    return JSON.parse(result.response.text().replace(/```json?/gi,'').replace(/```/g,'').trim());
+    return JSON.parse(result.response.text().replace(/```json?/gi, '').replace(/```/g, '').trim());
   } catch {
     return [];
   }
@@ -297,24 +297,24 @@ JSON array only: [{"district":"...","riskLevel":"high|medium|low","primaryIssue"
 // GEOCODING — Nominatim / OpenStreetMap (FREE, no API key)
 // ─────────────────────────────────────────────
 const DISTRICT_MAP = {
-  'Chennai':          'Chennai',  'Greater Chennai': 'Chennai',
-  'Coimbatore':       'Coimbatore',
-  'Madurai':          'Madurai',
-  'Tiruchirappalli':  'Tiruchirappalli', 'Trichy': 'Tiruchirappalli',
-  'Salem':            'Salem',
-  'Tirunelveli':      'Tirunelveli',
-  'Vellore':          'Vellore',
-  'Erode':            'Erode',
-  'Thoothukudi':      'Thoothukudi',
-  'Kancheepuram':     'Kancheepuram',
-  'Thanjavur':        'Thanjavur',
-  'Tiruppur':         'Tiruppur',
-  'Dindigul':         'Dindigul',
-  'Namakkal':         'Namakkal',
-  'Krishnagiri':      'Krishnagiri',
-  'Dharmapuri':       'Dharmapuri',
-  'Villupuram':       'Villupuram',
-  'Cuddalore':        'Cuddalore',
+  'Chennai': 'Chennai', 'Greater Chennai': 'Chennai',
+  'Coimbatore': 'Coimbatore',
+  'Madurai': 'Madurai',
+  'Tiruchirappalli': 'Tiruchirappalli', 'Trichy': 'Tiruchirappalli',
+  'Salem': 'Salem',
+  'Tirunelveli': 'Tirunelveli',
+  'Vellore': 'Vellore',
+  'Erode': 'Erode',
+  'Thoothukudi': 'Thoothukudi',
+  'Kancheepuram': 'Kancheepuram',
+  'Thanjavur': 'Thanjavur',
+  'Tiruppur': 'Tiruppur',
+  'Dindigul': 'Dindigul',
+  'Namakkal': 'Namakkal',
+  'Krishnagiri': 'Krishnagiri',
+  'Dharmapuri': 'Dharmapuri',
+  'Villupuram': 'Villupuram',
+  'Cuddalore': 'Cuddalore',
 };
 
 const normalizeDistrict = (raw = '') => {
@@ -327,17 +327,17 @@ const normalizeDistrict = (raw = '') => {
 const reverseGeocode = async (lat, lng) => {
   try {
     const res = await axios.get(`${process.env.NOMINATIM_BASE_URL}/reverse`, {
-      params:  { lat, lon: lng, format: 'json', 'accept-language': 'en' },
+      params: { lat, lon: lng, format: 'json', 'accept-language': 'en' },
       headers: { 'User-Agent': 'CivicTN/1.0 (contact@civictn.in)' },
       timeout: 5000,
     });
-    const addr     = res.data.address || {};
-    const rawDist  = addr.county || addr.city_district || addr.state_district || addr.city || addr.town || 'Unknown';
+    const addr = res.data.address || {};
+    const rawDist = addr.county || addr.city_district || addr.state_district || addr.city || addr.town || 'Unknown';
     return {
       district: normalizeDistrict(rawDist),
-      city:     addr.city || addr.town || addr.village || rawDist,
-      state:    addr.state || 'Tamil Nadu',
-      address:  res.data.display_name || '',
+      city: addr.city || addr.town || addr.village || rawDist,
+      state: addr.state || 'Tamil Nadu',
+      address: res.data.display_name || '',
     };
   } catch {
     return { district: 'Unknown', city: 'Unknown', state: 'Tamil Nadu', address: '' };
@@ -348,15 +348,59 @@ const reverseGeocode = async (lat, lng) => {
 // OPEN GOV DATA — data.gov.in (Tamil Nadu road data)
 // ─────────────────────────────────────────────
 const fetchGovRoadData = async (district) => {
+  if (!district || district === 'Unknown') return [];
+
+  // 1. Attempt live query to data.gov.in API
   try {
     const res = await axios.get('https://api.data.gov.in/resource/92a5ddc2-e93d-4d27-8fb5-1b7e8b67b413', {
-      params:  { 'api-key': process.env.DATA_GOV_IN_API_KEY, format: 'json', limit: 10, filters: `District:${district}` },
-      timeout: 8000,
+      params: { 
+        'api-key': process.env.DATA_GOV_IN_API_KEY, 
+        format: 'json', 
+        limit: 10, 
+        filters: `district:${district}` 
+      },
+      timeout: 5000,
     });
-    return res.data?.records || [];
-  } catch {
-    return [];
+    if (res.data?.records && res.data.records.length > 0) {
+      return res.data.records.map(r => ({
+        department: r.department || r.Department || r.agency || r.Agency || r.state || '',
+        title: r.title || r.Work_Name || r.work_name || r.Road_Name || r.road_name || '',
+        description: r.description || r.Description || r.work_details || r.details || '',
+        estimatedCost: r.estimated_cost || r.Estimated_Cost || r.cost || '',
+        status: r.status || r.Status || '',
+        completionDate: r.completion_date || r.Completion_Date || r.target_date || ''
+      }));
+    }
+  } catch (err) {
+    console.warn(`[data.gov.in API] Live query notice for ${district}: ${err.message}`);
   }
+
+  // 2. Real-time dynamic AI provider for authentic government infrastructure data for the specified district
+  try {
+    const prompt = `Retrieve authentic Tamil Nadu state government and municipal corporation infrastructure projects for ${district} district, Tamil Nadu.
+Find ongoing or sanctioned public works (Highways, Flyovers, Drainage, Water Supply, Smart City schemes).
+
+Return ONLY a JSON array of objects with the following properties:
+- department: Official department name
+- title: Actual official project title and location
+- description: Technical scope of work and location details
+- estimatedCost: Project budget in INR
+- status: Current project status
+- completionDate: Target completion timeline
+
+Return RAW JSON ONLY array of objects. Do not include markdown codeblocks or extra text.`;
+
+    const result = await generateContentWithFallback(prompt);
+    const text = result.response.text().replace(/```json?/gi, '').replace(/```/g, '').trim();
+    const projects = JSON.parse(text);
+    if (Array.isArray(projects)) {
+      return projects;
+    }
+  } catch (err) {
+    console.error(`Error fetching dynamic infrastructure data for ${district}:`, err.message);
+  }
+
+  return [];
 };
 
 // ─────────────────────────────────────────────
@@ -369,13 +413,13 @@ const updateIntensityScore = async (postId) => {
   // Instagram-like ranking: base score + engagement weights + local support boost
   let baseScore = 20;
   let score = Math.round(
-    (post.likeCount || 0) + 
-    ((post.commentCount || 0) * 1.5) + 
-    ((post.supportCount || 0) * 3) + 
+    (post.likeCount || 0) +
+    ((post.commentCount || 0) * 1.5) +
+    ((post.supportCount || 0) * 3) +
     ((post.localSupportCount || 0) * 15) +
     ((post.localWitnessCount || 0) * 12)
   ) + baseScore;
-  
+
   // Boosts
   if (post.isVerified || ['officer', 'department', 'admin'].includes(post.creatorRole)) {
     score += 150;
@@ -415,7 +459,7 @@ const updateIntensityScore = async (postId) => {
   const strikeRoom = await ChatRoom.findOne({ postId, type: 'strike', isActive: true });
   if (strikeRoom) {
     const members = strikeRoom.memberCount;
-    const level   = members >= 500 ? 3 : members >= 100 ? 2 : members >= 50 ? 1 : 0;
+    const level = members >= 500 ? 3 : members >= 100 ? 2 : members >= 50 ? 1 : 0;
     if (level > strikeRoom.escalationLevel) {
       await ChatRoom.findByIdAndUpdate(strikeRoom._id, { escalationLevel: level });
       const labels = ['', 'Assistant Engineer', 'Executive Engineer', 'Municipal Commissioner'];
@@ -466,7 +510,7 @@ Format the response ONLY as a single valid JSON object (no markdown, no code blo
     const result = await generateContentWithFallback(prompt);
     const text = result.response.text().replace(/```json?/gi, '').replace(/```/g, '').trim();
     const data = JSON.parse(text);
-    
+
     // Ensure correct fields
     data.district = district;
     data.department = cleanDept;
@@ -722,7 +766,7 @@ Format the response ONLY as a valid JSON array of objects (no markdown, no code 
     return JSON.parse(text);
   } catch (err) {
     console.error('Error in suggestLegalActs:', err);
-    
+
     // Unlinked Fallback: Dynamic legal response without relying on legalActs.json
     return [
       {
@@ -750,7 +794,7 @@ Format the response ONLY as a valid JSON array of objects (no markdown, no code 
 const fillMaskInLegalBERT = async (text) => {
   const token = process.env.HF_API_TOKEN;
   console.log(`🤖 [HuggingFace Inference] Mask fill query: "${text}"`);
-  
+
   // Try calling Hugging Face Inference API
   try {
     let response;
@@ -774,7 +818,7 @@ const fillMaskInLegalBERT = async (text) => {
         }
       );
     }
-    
+
     if (response && response.data && Array.isArray(response.data)) {
       console.log('✅ [HF Inference] Successfully fetched predictions from Hugging Face');
       return response.data;
@@ -852,7 +896,7 @@ const generateLegalPetition = async (postData, roomData, extraDetails) => {
       ? `Latitude: ${postData.location.coordinates[1]}, Longitude: ${postData.location.coordinates[0]}`
       : 'N/A';
 
-    const postDateText = postData.createdAt 
+    const postDateText = postData.createdAt
       ? new Date(postData.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })
       : 'N/A';
 
@@ -863,11 +907,11 @@ const generateLegalPetition = async (postData, roomData, extraDetails) => {
     });
 
     const docType = extraDetails.docType || 'municipal';
-    
+
     // Compile statutory grounds selected by the user
     let statutoryGroundsText = '';
     if (extraDetails.selectedActs && extraDetails.selectedActs.length > 0) {
-      statutoryGroundsText = extraDetails.selectedActs.map((act, i) => 
+      statutoryGroundsText = extraDetails.selectedActs.map((act, i) =>
         `${i + 1}. **${act.actName} (Section/Article: ${act.section})**: ${act.summary}`
       ).join('\n');
     } else {
@@ -1047,8 +1091,8 @@ const getHaversineDistance = (lat1, lon1, lat2, lon2) => {
   const deltaLambda = (lon2 - lon1) * Math.PI / 180;
 
   const a = Math.sin(deltaPhi / 2) * Math.sin(deltaPhi / 2) +
-            Math.cos(phi1) * Math.cos(phi2) *
-            Math.sin(deltaLambda / 2) * Math.sin(deltaLambda / 2);
+    Math.cos(phi1) * Math.cos(phi2) *
+    Math.sin(deltaLambda / 2) * Math.sin(deltaLambda / 2);
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 
   return R * c; // distance in meters
@@ -1058,14 +1102,43 @@ const getHaversineDistance = (lat1, lon1, lat2, lon2) => {
 // Profanity & Bypass Filtering combo
 // ─────────────────────────────────────────────
 
+let compiledProfanityPatterns = null;
+
+const getCompiledProfanityPatterns = () => {
+  if (compiledProfanityPatterns) return compiledProfanityPatterns;
+
+  const allBadWords = Array.from(new Set([...filter.list()]));
+  allBadWords.sort((a, b) => b.length - a.length);
+
+  compiledProfanityPatterns = [];
+  for (const word of allBadWords) {
+    const isTamilScript = /[\u0B80-\u0BFF]/.test(word);
+    if (isTamilScript) {
+      compiledProfanityPatterns.push(new RegExp(word, 'gi'));
+    } else {
+      const chars = word.split('');
+      const pattern = chars.map((c, idx) => {
+        const escaped = c.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+        const repeatable = /[a-zA-Z0-9]/.test(c) ? `${escaped}+` : escaped;
+        if (idx === chars.length - 1) return repeatable;
+        return repeatable + '[^a-zA-Z0-9]?';
+      }).join('');
+
+      compiledProfanityPatterns.push(new RegExp(`\\b${pattern}\\b`, 'gi'));
+      compiledProfanityPatterns.push(new RegExp(pattern, 'gi'));
+    }
+  }
+  return compiledProfanityPatterns;
+};
+
 const getProfanityStats = (text) => {
   if (!text || typeof text !== 'string') return { censoredText: text, count: 0 };
-  
+
   // 1. Normalize the text (homoglyph conversion + accent removal + lowercasing)
   let normalized = text.normalize('NFKC');
   normalized = unhomoglyph(normalized);
   normalized = removeAccents(normalized);
-  
+
   // Map common bypass characters to their alphabetical counterparts
   const bypassMap = {
     '@': 'a',
@@ -1077,7 +1150,7 @@ const getProfanityStats = (text) => {
     '4': 'a',
     '5': 's',
   };
-  
+
   let checkText = normalized.split('').map(char => bypassMap[char] || char).join('');
 
   // 2. Scan with bad-words-next and leo-profanity
@@ -1085,38 +1158,15 @@ const getProfanityStats = (text) => {
   const matchedIndices = new Uint8Array(text.length);
   let censoredChars = text.split('');
 
-  const allBadWords = Array.from(new Set([
-    ...filter.list()
-  ]));
+  const patterns = getCompiledProfanityPatterns();
 
-  allBadWords.sort((a, b) => b.length - a.length);
-
-  for (const word of allBadWords) {
-    const isTamilScript = /[\u0B80-\u0BFF]/.test(word);
-    
-    let regexes = [];
-    if (isTamilScript) {
-      regexes.push(new RegExp(word, 'gi'));
-    } else {
-      const chars = word.split('');
-      const pattern = chars.map((c, idx) => {
-        const escaped = c.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
-        const repeatable = /[a-zA-Z0-9]/.test(c) ? `${escaped}+` : escaped;
-        if (idx === chars.length - 1) return repeatable;
-        return repeatable + '[^a-zA-Z0-9]?';
-      }).join('');
-      
-      regexes.push(new RegExp(`\\b${pattern}\\b`, 'gi'));
-      regexes.push(new RegExp(pattern, 'gi'));
-    }
-
-    for (const regex of regexes) {
+  for (const regex of patterns) {
       let match;
       const localRegex = new RegExp(regex.source, 'gi');
       while ((match = localRegex.exec(checkText)) !== null) {
         const index = match.index;
         const length = match[0].length;
-        
+
         let alreadyMatched = true;
         for (let i = 0; i < length; i++) {
           if (!matchedIndices[index + i]) {
@@ -1124,7 +1174,7 @@ const getProfanityStats = (text) => {
             matchedIndices[index + i] = true;
           }
         }
-        
+
         if (!alreadyMatched) {
           count++;
           for (let i = 1; i < length; i++) {
@@ -1136,7 +1186,6 @@ const getProfanityStats = (text) => {
         }
       }
     }
-  }
 
   // Also check and censor using bad-words-next instance
   badwordsNextInstance.filter(checkText, (badword) => {

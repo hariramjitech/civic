@@ -26,6 +26,9 @@ const { generalLimiter, errorHandler, sanitizeInput } = require('./middleware/mi
 // APP + HTTP SERVER
 // ─────────────────────────────────────────────
 const app    = express();
+if (process.env.NODE_ENV === 'production' || process.env.TRUST_PROXY === 'true') {
+  app.set('trust proxy', 1);
+}
 const server = http.createServer(app);
 
 // Dynamic CORS Origin Helper - supports comma-separated URLs in FRONTEND_URL env var

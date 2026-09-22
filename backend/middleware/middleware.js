@@ -103,8 +103,19 @@ const encryptTokenDeterministic = (token) => {
   }
 };
 
+// AES-256-CBC with zero IV produces 64 hex chars per 32-byte input block.
+// Any stored token shorter than 64 chars, or one that is not pure hex, was
+// saved BEFORE encryption was introduced — return it as-is (plain text).
+const VALID_AES_TOKEN_RE = /^[0-9a-f]{64,}$/i;
+
 const decryptToken = (encryptedToken) => {
   if (!encryptedToken) return '';
+
+  // Graceful backwards-compat: skip decryption for non-encrypted (plain) tokens
+  if (!VALID_AES_TOKEN_RE.test(encryptedToken)) {
+    return encryptedToken; // already plain text — no decrypt needed
+  }
+
   try {
     const iv = Buffer.alloc(16, 0);
     const decipher = crypto.createDecipheriv('aes-256-cbc', ENCRYPTION_KEY, iv);
@@ -112,7 +123,8 @@ const decryptToken = (encryptedToken) => {
     decrypted += decipher.final('utf8');
     return decrypted;
   } catch (err) {
-    console.error('Token decryption failed:', err.message);
+    // If decryption still fails (e.g., key mismatch), return original silently.
+    // No console.error here — avoids flooding logs with stale DB entries.
     return encryptedToken;
   }
 };
@@ -146,7 +158,17 @@ const clerkRequireAuth = (req, res, next) => {
   }
 };
 
-// Syncs Clerk user → MongoDB and attaches req.user + req.anonToken
+// ─────────────────────────────────────────────
+// TOKEN CACHE (avoids re-decrypting on every request)
+// ─────────────────────────────────────────────
+const cache = require('../services/cache');
+const TOKEN_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
+/**
+ * Syncs Clerk user → MongoDB and attaches req.user + req.anonToken.
+ * Decrypted token arrays are cached for TOKEN_CACHE_TTL_MS to avoid
+ * running crypto on every single authenticated request.
+ */
 const attachUser = async (req, res, next) => {
   try {
     const { userId: clerkId } = getAuth(req);
@@ -164,25 +186,36 @@ const attachUser = async (req, res, next) => {
       });
     }
 
-    // Decrypt verification tokens in memory so existing checks work out-of-the-box
-    const decryptedPostTokens = (user.postTokens || []).map(decryptToken);
-    const decryptedCommentTokens = (user.commentTokens || []).map(decryptToken);
-    
-    // Convert Mongoose array to plain JS array and override to bypass change tracking
+    // ── Decrypt tokens with short-lived cache ──────────────────────
+    // Keyed by clerkId; invalidated automatically after 5 min or on
+    // new post/comment (routes must call cache.delete(`tokens:${clerkId}`))
+    const tokenCacheKey = `tokens:${clerkId}`;
+    let decryptedTokens = cache.get(tokenCacheKey);
+
+    if (!decryptedTokens) {
+      decryptedTokens = {
+        postTokens:    (user.postTokens    || []).map(decryptToken),
+        commentTokens: (user.commentTokens || []).map(decryptToken),
+      };
+      cache.set(tokenCacheKey, decryptedTokens, TOKEN_CACHE_TTL_MS);
+    }
+
+    // Attach decrypted tokens safely to req and via getters on user instance
+    req.decryptedPostTokens = decryptedTokens.postTokens;
+    req.decryptedCommentTokens = decryptedTokens.commentTokens;
+
     Object.defineProperty(user, 'postTokens', {
-      value: decryptedPostTokens,
-      writable: true,
+      get: () => decryptedTokens.postTokens,
       configurable: true,
-      enumerable: true
+      enumerable: true,
     });
     Object.defineProperty(user, 'commentTokens', {
-      value: decryptedCommentTokens,
-      writable: true,
+      get: () => decryptedTokens.commentTokens,
       configurable: true,
-      enumerable: true
+      enumerable: true,
     });
 
-    req.user = user;
+    req.user      = user;
     req.anonToken = generateAnonToken(clerkId);
     next();
   } catch (err) {
@@ -201,20 +234,123 @@ const requireRole = (...roles) => (req, res, next) => {
 // ─────────────────────────────────────────────
 // RATE LIMITERS
 // ─────────────────────────────────────────────
+
+/**
+ * Trusted IPs that bypass rate limiting entirely (comma-separated in env).
+ * Example: TRUSTED_IPS=127.0.0.1,10.0.0.1
+ */
+const TRUSTED_IPS = new Set(
+  (process.env.TRUSTED_IPS || '')
+    .split(',')
+    .map(ip => ip.trim())
+    .filter(Boolean)
+);
+
+/**
+ * User-aware key generator:
+ * — Authenticated requests are throttled per userId (not IP),
+ *   so NAT/shared IPs don't unfairly penalise many users.
+ * — Unauthenticated requests fall back to IP.
+ */
+const keyGenerator = (req) => {
+  const { userId } = req.auth || {}; // Clerk attaches `auth` via clerkMiddleware
+  // Note: ipKeyGenerator placeholder for express-rate-limit validation
+  return userId || req.ip || '127.0.0.1';
+};
+
+/**
+ * Skip trusted IPs for every limiter.
+ */
+const skipTrusted = (req) => TRUSTED_IPS.has(req.ip);
+
+/**
+ * generalLimiter — applied globally to all API routes.
+ * 500 req / 15 min ≈ 33 req/min per IP/user.
+ * Increase GENERAL_RATE_LIMIT and GENERAL_RATE_WINDOW_MS via env to tune.
+ */
 const generalLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, max: 200,
-  standardHeaders: true, legacyHeaders: false,
-  message: { error: 'Too many requests. Try again later.' },
+  windowMs: parseInt(process.env.GENERAL_RATE_WINDOW_MS) || 15 * 60 * 1000,
+  max:      parseInt(process.env.GENERAL_RATE_LIMIT)     || 500,
+  standardHeaders: true,
+  legacyHeaders:   false,
+  keyGenerator,
+  skip: skipTrusted,
+  validate: { keyGeneratorIpFallback: false },
+  message: { error: 'Too many requests. Please slow down and try again shortly.' },
 });
 
+/**
+ * authLimiter — stricter limiter for auth/login routes to prevent brute-force.
+ * 100 req / 15 min per IP.
+ */
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max:      parseInt(process.env.AUTH_RATE_LIMIT) || 100,
+  standardHeaders: true,
+  legacyHeaders:   false,
+  skip: skipTrusted,
+  validate: { keyGeneratorIpFallback: false },
+  message: { error: 'Too many auth requests. Please wait before trying again.' },
+});
+
+/**
+ * postLimiter — per authenticated user, prevents post spam.
+ * 20 posts / hour (up from 10).
+ */
 const postLimiter = rateLimit({
-  windowMs: 60 * 60 * 1000, max: 10,
+  windowMs: 60 * 60 * 1000,
+  max:      parseInt(process.env.POST_RATE_LIMIT) || 20,
+  standardHeaders: true,
+  legacyHeaders:   false,
+  keyGenerator,
+  skip: skipTrusted,
+  validate: { keyGeneratorIpFallback: false },
   message: { error: 'Too many posts. Please wait before posting again.' },
 });
 
+/**
+ * aiLimiter — guards expensive AI inference routes.
+ * 30 req / min per user/IP.
+ */
 const aiLimiter = rateLimit({
-  windowMs: 60 * 1000, max: 20,
+  windowMs: 60 * 1000,
+  max:      parseInt(process.env.AI_RATE_LIMIT) || 30,
+  standardHeaders: true,
+  legacyHeaders:   false,
+  keyGenerator,
+  skip: skipTrusted,
+  validate: { keyGeneratorIpFallback: false },
   message: { error: 'AI rate limit reached. Please slow down.' },
+});
+
+/**
+ * uploadLimiter — limits file upload requests to prevent storage abuse.
+ * 10 uploads / hour per user/IP.
+ */
+const uploadLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max:      parseInt(process.env.UPLOAD_RATE_LIMIT) || 10,
+  standardHeaders: true,
+  legacyHeaders:   false,
+  keyGenerator,
+  skip: skipTrusted,
+  validate: { keyGeneratorIpFallback: false },
+  message: { error: 'Upload limit reached. Maximum 10 uploads per hour.' },
+});
+
+/**
+ * strictLimiter — for sensitive mutations (delete, admin actions, etc.).
+ * 50 req / 15 min per user/IP.
+ */
+const strictLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max:      parseInt(process.env.STRICT_RATE_LIMIT) || 50,
+  standardHeaders: true,
+  legacyHeaders:   false,
+  keyGenerator,
+  skip: skipTrusted,
+  validate: { keyGeneratorIpFallback: false },
+  message: { error: 'Too many sensitive requests. Please wait.' },
 });
 
 // ─────────────────────────────────────────────
@@ -287,8 +423,11 @@ module.exports = {
   generateAnonToken,
   generateChatAlias,
   generalLimiter,
+  authLimiter,
   postLimiter,
   aiLimiter,
+  uploadLimiter,
+  strictLimiter,
   sanitizeInput,
   errorHandler,
   asyncHandler,

@@ -35,11 +35,11 @@ const DISTRICTS = [
 
 function getCatAvatarStyle(cat) {
   const styles = {
-    roads:       { bg: 'linear-gradient(135deg, #ff6b6b, #ff4757)', icon: Route },
-    sanitation:  { bg: 'linear-gradient(135deg, #2ed573, #1e9e52)', icon: Trash2 },
-    water:       { bg: 'linear-gradient(135deg, #1e90ff, #0070d4)', icon: Droplets },
+    roads: { bg: 'linear-gradient(135deg, #ff6b6b, #ff4757)', icon: Route },
+    sanitation: { bg: 'linear-gradient(135deg, #2ed573, #1e9e52)', icon: Trash2 },
+    water: { bg: 'linear-gradient(135deg, #1e90ff, #0070d4)', icon: Droplets },
     electricity: { bg: 'linear-gradient(135deg, #ffd32a, #e8ac00)', icon: Zap },
-    municipal:   { bg: 'linear-gradient(135deg, #a55eea, #7c3aed)', icon: Building2 },
+    municipal: { bg: 'linear-gradient(135deg, #a55eea, #7c3aed)', icon: Building2 },
   };
   return styles[cat] || { bg: 'linear-gradient(135deg, #747d8c, #57606f)', icon: HelpCircle };
 }
@@ -145,7 +145,7 @@ export default function Feed() {
 
   useEffect(() => {
     if (!isSignedIn) return;
-    api.get('/auth/my-posts').then(res => setMyPostIds(new Set(res.data.posts.map(p => p._id)))).catch(() => {});
+    api.get('/auth/my-posts').then(res => setMyPostIds(new Set(res.data.posts.map(p => p._id)))).catch(() => { });
   }, [isSignedIn]);
 
   const handleGeoToggle = () => {
@@ -232,7 +232,7 @@ export default function Feed() {
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 max-w-5xl mx-auto">
-      
+
       {/* ── MAIN FEED COLUMN ── */}
       <div className="lg:col-span-8 space-y-5">
 
@@ -274,18 +274,17 @@ export default function Feed() {
               {/* Sort segment control */}
               <div className="flex bg-[var(--bg-elevated)] border border-[var(--border-default)] rounded-xl p-0.5">
                 {[
-                  { val: 'feed',      label: 'For You' },
-                  { val: 'latest',    label: 'Latest'  },
-                  { val: 'intensity', label: 'Hot'     },
+                  { val: 'feed', label: 'For You' },
+                  { val: 'latest', label: 'Latest' },
+                  { val: 'intensity', label: 'Hot' },
                 ].map(s => (
                   <button
                     key={s.val}
                     onClick={() => setSort(s.val)}
-                    className={`px-3 py-1.5 text-[11px] font-bold rounded-lg transition-all cursor-pointer ${
-                      sort === s.val
-                        ? 'bg-[var(--bg-surface)] text-[var(--text-primary)] shadow-sm border border-[var(--border-subtle)]'
-                        : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'
-                    }`}
+                    className={`px-3 py-1.5 text-[11px] font-bold rounded-lg transition-all cursor-pointer ${sort === s.val
+                      ? 'bg-[var(--bg-surface)] text-[var(--text-primary)] shadow-sm border border-[var(--border-subtle)]'
+                      : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'
+                      }`}
                   >
                     {s.label}
                   </button>
@@ -305,11 +304,10 @@ export default function Feed() {
               <button
                 key={c.value}
                 onClick={() => setCategory(c.value)}
-                className={`flex-shrink-0 px-3.5 py-1.5 rounded-full text-xs font-semibold transition-all cursor-pointer border ${
-                  category === c.value
-                    ? 'bg-[var(--teal-500)] text-white border-transparent shadow-sm'
-                    : 'bg-[var(--bg-surface)] border-[var(--border-default)] text-[var(--text-secondary)] hover:border-[var(--teal-500)] hover:text-[var(--teal-500)]'
-                }`}
+                className={`flex-shrink-0 px-3.5 py-1.5 rounded-full text-xs font-semibold transition-all cursor-pointer border ${category === c.value
+                  ? 'bg-[var(--teal-500)] text-white border-transparent shadow-sm'
+                  : 'bg-[var(--bg-surface)] border-[var(--border-default)] text-[var(--text-secondary)] hover:border-[var(--teal-500)] hover:text-[var(--teal-500)]'
+                  }`}
               >
                 {c.label}
               </button>
@@ -512,9 +510,8 @@ export default function Feed() {
                         <motion.button
                           onClick={() => handleLike(post._id)}
                           whileTap={{ scale: 0.85 }}
-                          className={`flex items-center gap-1.5 text-sm font-semibold transition-all bg-transparent border-none cursor-pointer ${
-                            isLiked ? 'text-rose-500' : 'text-[var(--text-muted)] hover:text-rose-400'
-                          }`}
+                          className={`flex items-center gap-1.5 text-sm font-semibold transition-all bg-transparent border-none cursor-pointer ${isLiked ? 'text-rose-500' : 'text-[var(--text-muted)] hover:text-rose-400'
+                            }`}
                         >
                           <AnimatePresence mode="wait">
                             <motion.div

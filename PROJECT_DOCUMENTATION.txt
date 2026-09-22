@@ -1,0 +1,778 @@
+====================================================================================================
+ AI-POWERED SMART INFRASTRUCTURE MONITORING AND CIVIC ISSUE MANAGEMENT SYSTEM ("CIVIC PLATFORM")
+                   EXTENSIVE TECHNICAL WORKFLOW, ARCHITECTURE, USER FLOW & API SPECIFICATION
+====================================================================================================
+
+DOCUMENT VERSION: 3.0.0
+LAST UPDATED: 2026-09-06
+PROJECT ROOT: civic/
+
+====================================================================================================
+1. SYSTEM OVERVIEW & VISION
+====================================================================================================
+The AI-Powered Smart Infrastructure Monitoring and Civic Issue Management System ("Civic Platform") 
+is an end-to-end web-based platform designed to transform traditional municipal governance and civic issue 
+resolution into an automated, transparent, data-driven, and citizen-empowered ecosystem.
+
+In modern municipalities, citizen feedback regarding damaged roads, water leakages, overflow garbage bins, 
+drainage blockages, and non-functional streetlights remains bottlenecked by outdated manual processes. 
+The Civic Platform solves these challenges by combining modern web technologies (React + Vite + Leaflet), 
+multimodal Artificial Intelligence (Google Gemini 2.5/3.0 Flash), 2dsphere spatial deduplication, real-time 
+WebSockets, and automated multi-tier administrative escalation engines.
+
+====================================================================================================
+2. PROBLEMS RECTIFIED BY THIS PLATFORM (TRADITIONAL VS. CIVIC PLATFORM)
+====================================================================================================
+
++----------------------------------+----------------------------------+----------------------------------+
+| CHALLENGE / ISSUE                | TRADITIONAL CIVIC SYSTEM         | CIVIC PLATFORM SOLUTION          |
++----------------------------------+----------------------------------+----------------------------------+
+| 1. Fragmented Reporting          | Citizens must call numbers,      | Unified web portal with GPS map  |
+|    Channels                      | send emails, or visit offices.   | & instant photo upload.          |
++----------------------------------+----------------------------------+----------------------------------+
+| 2. Complaint Triage &            | Manual inspection by clerks      | Multimodal Gemini AI auto-tags   |
+|    Categorization                | causing multi-day delays.        | category & severity in seconds.  |
++----------------------------------+----------------------------------+----------------------------------+
+| 3. Duplicate Complaint           | Multiple users report same       | MongoDB 2dsphere 500m spatial    |
+|    Overload                      | pothole, creating backlogs.      | deduplication & upvote merging.  |
++----------------------------------+----------------------------------+----------------------------------+
+| 4. Untracked Delays &            | Complaints sit idle without      | Automated 4-tier Escalation      |
+|    No SLA Accountability         | administrative visibility.       | Engine based on engagement score.|
++----------------------------------+----------------------------------+----------------------------------+
+| 5. Fake / Misleading Reports     | Stock photos or off-topic        | EXIF GPS forensic check &        |
+|    & Spam                        | spam images pass unchecked.      | Gemini visual relevance scoring. |
++----------------------------------+----------------------------------+----------------------------------+
+| 6. Citizen Isolation &           | Citizens feel unheard and        | Real-time Strike Rooms &         |
+|    Helplessness                  | disconnected from progress.      | Volunteer Self-Fix Campaigns.    |
++----------------------------------+----------------------------------+----------------------------------+
+| 7. Resolution Verification       | Verbal claims by field teams     | Mandatory Before/After photo     |
+|    and Quality Control           | with no verification photo.      | proof + 1-5 Star Citizen Rating. |
++----------------------------------+----------------------------------+----------------------------------+
+
+====================================================================================================
+3. MAIN FEATURES LIST
+====================================================================================================
+
+1. Multimodal Gemini AI Triage Engine:
+   - Auto-extracts issue categories ('roads', 'sanitation', 'water', 'electricity', 'municipal').
+   - Predicts severity level ('low', 'medium', 'high', 'critical').
+   - Performs visual relevance analysis and detects irrelevant or stock imagery.
+
+2. EXIF Forensic & GPS Metadata Analyzer:
+   - Extracts camera model, timestamp, and embedded EXIF GPS coordinates from uploaded photos.
+   - Calculates distance between camera EXIF coordinates and user-selected map coordinates to tag authenticity.
+
+3. 2dsphere Spatial Deduplication & Upvote Merging:
+   - Scans 500m radius using MongoDB `$near` indexing for active issues in the same category.
+   - Auto-merges duplicates, incrementing `supportCount` instead of creating redundant departmental tickets.
+
+4. Dynamic Intensity Score & 4-Tier Automated Escalation Engine:
+   - Computes live Intensity Score: Intensity = (Likes x 1) + (Support x 2) + (LocalSupport x 4) + (Witnesses x 3).
+   - Tier 0 (<50): Assistant Engineer / Field Officer.
+   - Tier 1 (50-99): Executive Engineer.
+   - Tier 2 (100-199): Superintending Engineer / Department Head.
+   - Tier 3 (200+): Municipal Commissioner & Auto-Spawns Public Strike Room.
+
+5. Proximity-Verified Witnessing System:
+   - Checks user's real-time browser location against the complaint location.
+   - Users within 500m receive "Verified Local Witness" status, adding heavy weight (+4) to the Intensity Score.
+
+6. Official Tamil Nadu District Contact Auto-Attacher:
+   - Automatically reverse-geocodes lat/lng into official district boundaries via Nominatim.
+   - Attaches designated contact phone numbers, emails, officer names, and official portals directly to the post card.
+
+7. Real-Time Chat & Public Strike Rooms:
+   - Ephemeral real-time messaging powered by Socket.io.
+   - Generates random anonymous aliases per room (e.g. "Citizen #7F3A") to protect citizen identity.
+   - Auto-deletes inactive chat messages after 3 days via MongoDB TTL indexes.
+
+8. Community Self-Fix & Volunteer Campaign Drive:
+   - Allows citizens to organize volunteer cleanups or minor repairs for abandoned issues.
+   - Features meeting scheduler, volunteer sign-up counter, and material/tool pledge tracker (brooms, trash bags, paint).
+
+9. Mandatory Before/After Resolution Verification:
+   - Requires field officers to upload photographic evidence of fixed infrastructure.
+   - Unlocks citizen rating (1-5 Stars) and feedback scorecard.
+
+10. Interactive Leaflet GIS Maps & Heatmaps:
+    - Displays city-wide complaint markers, cluster groups, severity-based color coding, and density heatmaps.
+
+====================================================================================================
+4. USER FLOWS (STEP-BY-STEP USER JOURNEYS)
+====================================================================================================
+
+----------------------------------------------------------------------------------------------------
+USER FLOW A: CITIZEN JOURNEY (REPORTING & COMMUNITY ACTION)
+----------------------------------------------------------------------------------------------------
+[STEP 1: AUTHENTICATION & LOCATION]
+  Citizen opens Web App -> Authenticates via Clerk (Email/OAuth) -> Platform loads user profile & home district.
+
+[STEP 2: ISSUE SUBMISSION]
+  Citizen clicks "Report Issue" -> Uploads photo -> App fetches browser GPS coordinates [lng, lat] -> User enters Title & Description -> Clicks Submit.
+
+[STEP 3: AI TRIAGE & FORENSICS]
+  Server executes EXIF metadata extraction -> Gemini AI classifies category & severity -> Server checks 500m radius for duplicates.
+  - If Duplicate: System merges post into primary issue, increments support count, and notifies citizen.
+  - If Unique: System creates new Post, calculates anonToken, attaches district contacts, and publishes to feed.
+
+[STEP 4: SOCIAL ENGAGEMENT & WITNESSING]
+  Citizen views issue on map feed -> Clicks "I Am Affected Too" (Support) or "Verify as Witness" (if within 500m).
+  Server updates Intensity Score dynamically -> WebSockets broadcast live support updates to all viewers.
+
+[STEP 5: STRIKE ROOM & VOLUNTEER CAMPAIGN]
+  If issue reaches Tier 3 (>200 intensity), user joins auto-spawned "Public Strike Room".
+  User can click "Organize Volunteer Drive" -> Sets date/time/meeting point -> Pledges 2 Trash Bags -> Other citizens join drive.
+
+[STEP 6: RESOLUTION RATING]
+  Field officer marks issue resolved with Before/After photo -> Citizen receives notification -> Citizen rates resolution 5 Stars with positive feedback.
+
+----------------------------------------------------------------------------------------------------
+USER FLOW B: FIELD OFFICER JOURNEY (INSPECTION & RESOLUTION)
+----------------------------------------------------------------------------------------------------
+[STEP 1: DASHBOARD ACCESS]
+  Officer logs in -> Dashboard filters assigned issues by District and Department (e.g. Chennai Roads Dept).
+
+[STEP 2: FIELD INSPECTION]
+  Officer selects high-priority ticket on Leaflet map -> Views GPS coordinates, AI severity, and attached citizen photos -> Navigates to physical location.
+
+[STEP 3: STATUS UPDATING]
+  Officer updates status to "IN_PROGRESS" -> Adds official update note ("Repair crew dispatched with asphalt patch").
+
+[STEP 4: SUBMIT RESOLUTION EVIDENCE]
+  Upon work completion, officer takes photo of repaired asset -> Uploads photo as "After Image" -> Clicks "Mark as Resolved".
+
+----------------------------------------------------------------------------------------------------
+USER FLOW C: MUNICIPAL ADMINISTRATOR JOURNEY (MONITORING & AUDITING)
+----------------------------------------------------------------------------------------------------
+[STEP 1: EXECUTIVE ANALYTICS VIEW]
+  Administrator accesses analytics dashboard -> Reviews city-wide metrics: Total Complaints, Hotspot Zones, Departmental SLA Compliance Rate.
+
+[STEP 2: ESCALATION MONITORING]
+  Admin reviews "Critical Escalations Queue" (Tier 2 & Tier 3 issues requiring Superintending Engineer / Commissioner intervention).
+
+[STEP 3: OFFICER & DEPT RE-ASSIGNMENT]
+  If a department is lagging, Admin reassigns complaint tickets or updates contact details in the District Contact Directory.
+
+[STEP 4: GOVT REPORT GENERATION]
+  Admin selects date range and district -> Clicks "Generate AI Executive Summary" -> System generates downloadable PDF/Excel audit report.
+
+====================================================================================================
+5. SYSTEM ARCHITECTURE & TECHNOLOGY STACK
+====================================================================================================
+
++--------------------------------------------------------------------------------------------------+
+|                                    CLIENT LAYER (FRONTEND)                                       |
+|  React 18 + Vite | Tailwind CSS | Leaflet Maps (GIS) | Socket.io-client | Clerk Authentication UI  |
++--------------------------------------------------------------------------------------------------+
+                                               │
+                                     HTTPS / WSS (WebSockets)
+                                               │
+                                               ▼
++--------------------------------------------------------------------------------------------------+
+|                                   SERVER LAYER (BACKEND API)                                     |
+|  Node.js + Express.js | Socket.io Real-Time Server | Clerk Middleware Security | Helmet & CORS      |
+|  - Router & Controller Middleware                                                                |
+|  - Rate Limiters & Input Sanitizers                                                              |
+|  - Content Moderation (leo-profanity, bad-words-next, unhomoglyph)                              |
++--------------------------------------------------------------------------------------------------+
+       │                                  │                                    │
+       │ Mongo DB                         │ REST / SDK                         │ HTTP (Nominatim)
+       ▼                                  ▼                                    ▼
++-----------------------+      +-----------------------+            +-----------------------+
+|   DATABASE LAYER      |      |     AI / ML LAYER     |            |  GEOCODING / EXTERNAL |
+| MongoDB Atlas         |      | Google Gemini AI      |            | OpenStreetMap /       |
+| Mongoose ORM          |      | Multimodal Models     |            | Nominatim API         |
+| - 2dsphere GIS        |      | (Flash 2.5/3.0)       |            | Reverse Geocoding     |
+| - TTL Auto-Deletion   |      | Image & Text Analysis |            | Address Resolution    |
++-----------------------+      +-----------------------+            +-----------------------+
+
+====================================================================================================
+6. EXHAUSTIVE REST API & WEBSOCKET REFERENCE WITH PAYLOAD EXAMPLES
+====================================================================================================
+
+----------------------------------------------------------------------------------------------------
+1. AUTH & USER PROFILE
+----------------------------------------------------------------------------------------------------
+GET /api/auth/me
+Headers: Authorization: Bearer <clerk_token>
+Response (200 OK):
+{
+  "id": "66da921f4a9b8f0012345678",
+  "clerkId": "user_2Pz8X...",
+  "displayName": "Ramesh Kumar",
+  "role": "citizen",
+  "district": "Chennai",
+  "email": "ramesh@example.com",
+  "myStats": { "postCount": 4, "commentCount": 12, "likedCount": 18 }
+}
+
+PATCH /api/auth/profile
+Headers: Authorization: Bearer <clerk_token>, Content-Type: application/json
+Request Body:
+{
+  "displayName": "Ramesh K.",
+  "district": "Chennai",
+  "phoneNumber": "+919876543210"
+}
+Response (200 OK):
+{
+  "success": true,
+  "user": { "displayName": "Ramesh K.", "district": "Chennai" }
+}
+
+----------------------------------------------------------------------------------------------------
+2. CIVIC POSTS & ISSUE REPORTING
+----------------------------------------------------------------------------------------------------
+POST /api/posts
+Headers: Authorization: Bearer <clerk_token>, Content-Type: application/json
+Request Body:
+{
+  "title": "Severe deep pothole causing traffic jams near Mount Road",
+  "description": "A 2-foot deep pothole has formed near the metro station. Multiple two-wheelers have lost control.",
+  "images": ["data:image/jpeg;base64,/9j/4AAQSkZJRg..."],
+  "location": {
+    "type": "Point",
+    "coordinates": [80.2707, 13.0827]
+  },
+  "address": "Anna Salai, Mount Road, Chennai, Tamil Nadu"
+}
+
+Response (201 Created - Unique New Issue):
+{
+  "success": true,
+  "isDuplicate": false,
+  "post": {
+    "_id": "66da95204a9b8f0012349999",
+    "title": "Severe deep pothole causing traffic jams near Mount Road",
+    "category": "roads",
+    "severity": "high",
+    "status": "reported",
+    "intensityScore": 0,
+    "district": "Chennai",
+    "aiTags": ["pothole", "road_damage", "traffic_hazard"],
+    "aiConfidence": 0.94,
+    "imageMetadata": {
+      "hasGPS": true,
+      "gpsMatchStatus": "matched"
+    },
+    "attachedContacts": [
+      {
+        "department": "roads",
+        "officerName": "Er. K. Swaminathan",
+        "designation": "Divisional Engineer (Highways)",
+        "phone": ["+914425300000"],
+        "email": "de.highways.chn@tn.gov.in"
+      }
+    ]
+  }
+}
+
+Response (200 OK - Duplicate Auto-Merged):
+{
+  "success": true,
+  "isDuplicate": true,
+  "message": "A matching complaint was detected within 500m. Your vote was automatically added to support the existing report.",
+  "existingPostId": "66da81104a9b8f0012341111"
+}
+
+GET /api/posts?district=Chennai&category=roads&status=reported&sort=intensityScore
+Response (200 OK):
+{
+  "posts": [ ...array of post objects... ],
+  "page": 1,
+  "total": 42
+}
+
+POST /api/posts/:id/support
+Headers: Authorization: Bearer <clerk_token>
+Response (200 OK):
+{
+  "success": true,
+  "supportCount": 15,
+  "intensityScore": 48,
+  "escalationLevel": 0
+}
+
+POST /api/posts/:id/witness
+Headers: Authorization: Bearer <clerk_token>, Content-Type: application/json
+Request Body:
+{
+  "userLat": 13.0828,
+  "userLng": 80.2708,
+  "status": "confirmed",
+  "note": "Verified in person while commuting to work."
+}
+Response (200 OK):
+{
+  "success": true,
+  "distanceMeters": 14.2,
+  "isLocal": true,
+  "witnessCount": 4,
+  "localWitnessCount": 3,
+  "intensityScore": 62
+}
+
+PATCH /api/posts/:id/status
+Headers: Authorization: Bearer <clerk_token>, Content-Type: application/json
+Request Body:
+{
+  "status": "resolved",
+  "resolutionNote": "Pothole filled with cold asphalt mix and roller compacted.",
+  "resolutionImage": "https://res.cloudinary.com/civic/image/upload/v1234/resolved_pothole.jpg"
+}
+Response (200 OK):
+{
+  "success": true,
+  "status": "resolved",
+  "resolvedAt": "2026-09-06T13:29:00.000Z"
+}
+
+----------------------------------------------------------------------------------------------------
+3. CHAT ROOMS & WEBSOCKET EVENTS
+----------------------------------------------------------------------------------------------------
+GET /api/rooms?district=Chennai
+Response (200 OK):
+{
+  "rooms": [
+    {
+      "_id": "66da99994a9b8f0012347777",
+      "name": "Chennai Roads & Traffic Watch",
+      "type": "discussion",
+      "district": "Chennai",
+      "memberCount": 184
+    },
+    {
+      "_id": "66da88884a9b8f0012346666",
+      "name": "STRIKE ROOM: Anna Salai Water Logging",
+      "type": "strike",
+      "district": "Chennai",
+      "intensityScore": 240,
+      "escalationLevel": 3
+    }
+  ]
+}
+
+Socket.io WebSockets API Reference:
+
+Client Emission -> `room:join`
+Payload: { "roomId": "66da99994a9b8f0012347777" }
+Server Broadcast -> `room:user_joined`
+Payload: { "roomId": "...", "alias": "Citizen #9B1A", "memberCount": 185, "onlineCount": 14 }
+
+Client Emission -> `message:send`
+Payload: { "roomId": "66da99994a9b8f0012347777", "text": "Field officers are currently setting up barricades near the pothole." }
+Server Broadcast -> `message:new`
+Payload: {
+  "_id": "66da9aa04a9b8f0012345555",
+  "roomId": "66da99994a9b8f0012347777",
+  "senderAlias": "Citizen #9B1A",
+  "text": "Field officers are currently setting up barricades near the pothole.",
+  "createdAt": "2026-09-06T13:29:10.000Z"
+}
+
+Server System Event -> `feed:escalation_triggered`
+Payload: {
+  "postId": "66da95204a9b8f0012349999",
+  "title": "Severe deep pothole near Mount Road",
+  "newEscalationLevel": 3,
+  "escalatedTo": "Municipal Commissioner",
+  "strikeRoomId": "66da88884a9b8f0012346666"
+}
+
+----------------------------------------------------------------------------------------------------
+4. VOLUNTEER CAMPAIGN DRIVES
+----------------------------------------------------------------------------------------------------
+POST /api/campaigns
+Headers: Authorization: Bearer <clerk_token>, Content-Type: application/json
+Request Body:
+{
+  "postId": "66da95204a9b8f0012349999",
+  "meetingDate": "2026-09-10T09:00:00.000Z",
+  "meetingTime": "9:00 AM",
+  "meetingPoint": "Opposite Metro Gate 2, Mount Road",
+  "targetVolunteers": 10,
+  "materials": [
+    { "item": "Safety Cones", "targetCount": 4 },
+    { "item": "Cold Asphalt Mix Bags", "targetCount": 5 }
+  ]
+}
+Response (201 Created):
+{
+  "success": true,
+  "campaign": {
+    "_id": "66da9bb04a9b8f0012348888",
+    "postId": "66da95204a9b8f0012349999",
+    "status": "scheduled",
+    "volunteers": [ { "clerkId": "user_2Pz8X...", "displayName": "Anonymous Volunteer" } ]
+  }
+}
+
+POST /api/campaigns/:id/pledge
+Headers: Authorization: Bearer <clerk_token>, Content-Type: application/json
+Request Body:
+{
+  "materialItem": "Safety Cones",
+  "quantity": 2
+}
+Response (200 OK):
+{
+  "success": true,
+  "message": "Pledge recorded successfully!"
+}
+
+====================================================================================================
+7. COMPREHENSIVE DIAGRAM SOURCE CODE & ARCHITECTURAL DATA SPECIFICATIONS
+====================================================================================================
+
+The following specifications provide full code syntax across multiple standard diagram engines 
+(Mermaid, PlantUML, Graphviz DOT). These specifications contain all data nodes, edges, interfaces, 
+and state transitions necessary to automatically generate or visually inspect system diagrams.
+
+----------------------------------------------------------------------------------------------------
+DIAGRAM 1: HIGH-LEVEL SYSTEM ARCHITECTURE (MERMAID GRAPH)
+----------------------------------------------------------------------------------------------------
+```mermaid
+graph TD
+    subgraph Client Layer [Frontend - React 18 + Vite]
+        UI[User Interface / React Pages]
+        Leaflet[Leaflet GIS Map Component]
+        SocketClient[Socket.io WS Client]
+        ClerkUI[Clerk Auth Frontend SDK]
+    end
+
+    subgraph API Layer [Backend - Express Node.js Server]
+        AuthMW[Clerk Security Middleware]
+        ModMW[Profanity & Input Sanitizer]
+        REST[Express REST Controller Routing]
+        SocketServer[Socket.io Real-Time WS Engine]
+        EscEngine[Dynamic Intensity & Escalation Engine]
+    end
+
+    subgraph AI & Forensic Layer [Multimodal AI Engine]
+        Gemini[Google Gemini 2.5 / 3.0 Flash]
+        EXIF[EXIF Metadata Forensic Parser]
+    end
+
+    subgraph Data & External Layer [Database & Services]
+        MongoDB[(MongoDB Atlas + 2dsphere Spatial Index)]
+        Nominatim[OpenStreetMap Nominatim Geocoder]
+    end
+
+    UI -->|HTTP GET/POST/PATCH| AuthMW
+    AuthMW --> ModMW
+    ModMW --> REST
+    SocketClient <-->|WSS Bi-directional WebSockets| SocketServer
+    REST --> EXIF
+    REST --> Gemini
+    REST --> Nominatim
+    REST --> MongoDB
+    SocketServer <--> MongoDB
+    REST --> EscEngine
+    EscEngine --> SocketServer
+```
+
+----------------------------------------------------------------------------------------------------
+DIAGRAM 2: CONTAINER & DEPLOYMENT ARCHITECTURE (PLANTUML)
+----------------------------------------------------------------------------------------------------
+```plantuml
+@startuml
+title Civic Platform - Container & Deployment Diagram
+
+node "Client Browser (Desktop / Mobile)" {
+  component [React 18 Single Page App] as SPA
+  component [Leaflet Maps Engine] as Maps
+  component [Clerk Auth SDK] as ClerkSDK
+}
+
+node "Cloud Infrastructure (Vercel / Render / AWS)" {
+  node "Node.js Express Application Server" {
+    component [Clerk Middleware] as AuthMW
+    component [REST API Controller Routes] as API
+    component [Socket.io WebSocket Server] as SocketServer
+    component [Auto-Escalation Engine] as EscEngine
+    component [Content Sanitizer & Profanity Engine] as Sanitizer
+  }
+
+  node "AI Forensic Micro-Services" {
+    component [EXIF Parser (exif-parser)] as EXIF
+    component [Gemini Multimodal Client SDK] as GeminiClient
+  }
+}
+
+cloud "External API Ecosystem" {
+  database "Google Gemini AI Cloud (2.5/3.0 Flash)" as GeminiCloud
+  database "MongoDB Atlas (Cluster with 2dsphere)" as MongoAtlas
+  node "OpenStreetMap Nominatim API" as NominatimAPI
+  node "Clerk Identity Provider" as ClerkCloud
+}
+
+SPA --> AuthMW : HTTPS API Requests
+SPA <--> SocketServer : WebSocket (WSS) Connections
+ClerkSDK <--> ClerkCloud : OAuth / JWT Token Exchange
+AuthMW --> Sanitizer
+Sanitizer --> API
+API --> EXIF : Parse JPEG Metadata
+API --> GeminiClient : Send Image + Prompt
+GeminiClient <--> GeminiCloud : Gemini API Call
+API --> NominatimAPI : Lat/Lng to District Text
+API <--> MongoAtlas : Mongoose Queries & 2dsphere Spatial Indexing
+API --> EscEngine : Calculate Intensity Scores
+EscEngine --> SocketServer : Broadcast Level 1/2/3 Escalations
+@enduml
+```
+
+----------------------------------------------------------------------------------------------------
+DIAGRAM 3: BACKEND COMPONENT & DATA PIPELINE TOPOLOGY (GRAPHVIZ / DOT)
+----------------------------------------------------------------------------------------------------
+```dot
+digraph CivicBackendTopology {
+    rankdir=LR;
+    node [shape=box, style=filled, fontname="Helvetica"];
+
+    // Node Definitions
+    subgraph cluster_client {
+        label = "Client Layer";
+        color = lightgrey;
+        style = filled;
+        node [fillcolor=white];
+        ClientApp [label="React 18 Frontend App"];
+    }
+
+    subgraph cluster_express {
+        label = "Express Server (server.js / routes.js)";
+        color = lightblue;
+        style = filled;
+        node [fillcolor=white];
+        Middleware [label="Middleware\n(Clerk + RateLimiter + Profanity)"];
+        PostController [label="Post Controller\n(POST /api/posts)"];
+        WitnessController [label="Witness Controller\n(POST /api/posts/:id/witness)"];
+        EscalationService [label="Escalation Engine\n(services.js)"];
+        SocketService [label="Socket.io Engine\n(socket.js)"];
+    }
+
+    subgraph cluster_ai {
+        label = "AI & Forensics Engine";
+        color = lightyellow;
+        style = filled;
+        node [fillcolor=white];
+        EXIFParser [label="EXIF Parser"];
+        GeminiAI [label="Google Gemini AI\n(Flash 2.5 / 3.0 Fallback Chain)"];
+    }
+
+    subgraph cluster_storage {
+        label = "Storage Layer";
+        color = lightgreen;
+        style = filled;
+        node [fillcolor=white];
+        MongoDB [label="MongoDB Atlas\n(2dsphere Spatial Index)"];
+    }
+
+    // Connections
+    ClientApp -> Middleware [label="HTTP Request"];
+    Middleware -> PostController [label="Validated Req"];
+    Middleware -> WitnessController;
+    PostController -> EXIFParser [label="Check EXIF GPS"];
+    PostController -> GeminiAI [label="Classify Category & Severity"];
+    PostController -> MongoDB [label="2dsphere $near 500m Deduplication"];
+    WitnessController -> EscalationService [label="Recalculate Intensity"];
+    EscalationService -> SocketService [label="Trigger Escalation Event"];
+    SocketService -> ClientApp [label="WebSocket Broadcast"];
+}
+```
+
+----------------------------------------------------------------------------------------------------
+DIAGRAM 4: COMPLAINT LIFECYCLE & ROUTING WORKFLOW (MERMAID SEQUENCE)
+----------------------------------------------------------------------------------------------------
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Citizen
+    participant Client as React App
+    participant Server as Express Server
+    participant Gemini as Gemini AI
+    participant DB as MongoDB
+    actor Officer as Department Officer
+
+    Citizen->>Client: Upload Photo + GPS + Description
+    Client->>Server: POST /api/posts
+    Server->>Gemini: Classify Category, Severity & Check Image
+    Gemini-->>Server: Return {category, severity, relevance}
+    Server->>DB: Query 500m radius for duplicates
+    alt Duplicate Found
+        Server->>DB: Link as Duplicate, Increment Support Count
+        Server-->>Client: Return Merged Issue Notice
+    else Unique New Issue
+        Server->>DB: Save New Post & Assign Official Contact
+        Server-->>Client: Post Created Successfully
+    end
+
+    loop Realtime Engagement
+        Citizen->>Server: Upvote / Witness Issue
+        Server->>Server: Recalculate Intensity Score
+        opt Intensity Threshold Exceeded (>50 / 100 / 200)
+            Server->>DB: Upgrade Escalation Level
+            Server->>Server: Broadcast Escalation Event via WebSockets
+        end
+    end
+
+    Officer->>Client: Submit Resolution Proof (Before/After Photos)
+    Client->>Server: PATCH /api/posts/:id/status (Resolved)
+    Server->>DB: Update Status to Resolved
+    Server-->>Citizen: Push Notification / Live Update
+    Citizen->>Server: Rate Resolution (1-5 Stars)
+```
+
+----------------------------------------------------------------------------------------------------
+DIAGRAM 5: POST STATUS & ESCALATION STATE MACHINE (MERMAID STATE DIAGRAM)
+----------------------------------------------------------------------------------------------------
+```mermaid
+stateDiagram-v2
+    [*] --> REPORTED : Post Created (Unique Issue)
+    [*] --> DUPLICATE : 500m Spatial Duplicate Found
+
+    state REPORTED {
+        [*] --> Tier0_FieldOfficer : Intensity < 50
+        Tier0_FieldOfficer --> Tier1_ExecutiveEngineer : Intensity >= 50
+        Tier1_ExecutiveEngineer --> Tier2_SuperintendingEngineer : Intensity >= 100
+        Tier2_SuperintendingEngineer --> Tier3_MunicipalCommissioner : Intensity >= 200 (Spawns Strike Room)
+    }
+
+    REPORTED --> IN_PROGRESS : Officer Accepts & Dispatches Crew
+    IN_PROGRESS --> RESOLVED : Officer Uploads Resolution Photo Proof
+    RESOLVED --> CLOSED : Citizen Validates & Rates (1-5 Stars)
+    DUPLICATE --> [*] : Increments Support Count of Original Issue
+    CLOSED --> [*]
+```
+
+----------------------------------------------------------------------------------------------------
+DIAGRAM 6: DATA FLOW DIAGRAM - LEVEL 1 (MERMAID FLOWCHART)
+----------------------------------------------------------------------------------------------------
+```mermaid
+flowchart TD
+    P1[Citizen User] -->|1. Submit Photo & GPS| D1(Process 1.0: Multimodal Triage)
+    D1 -->|2. Send Image| P2[Gemini AI Engine]
+    P2 -->|3. Return Category & Severity| D1
+    D1 -->|4. Query 500m Radius| DB1[(Post Collection)]
+
+    DB1 -->|5. Return Spatial Candidates| D2(Process 2.0: Spatial Deduplication)
+    D2 -->|6a. Duplicate Found| DB1
+    D2 -->|6b. Unique Post| D3(Process 3.0: District Routing & Contact Attacher)
+
+    D3 -->|7. Query District Contacts| DB2[(Contact Collection)]
+    DB2 -->|8. Return Officer Details| D3
+    D3 -->|9. Save Enrich Post| DB1
+
+    P1 -->|10. Upvote & Witness| D4(Process 4.0: Intensity & Escalation Calculator)
+    D4 -->|11. Update Scores| DB1
+    D4 -->|12. Trigger Escalation| D5(Process 5.0: WebSocket Broadcaster)
+    D5 -->|13. Push Live Alert| P3[Department Officer & Citizens]
+```
+
+----------------------------------------------------------------------------------------------------
+DIAGRAM 7: ENTITY RELATIONSHIP DIAGRAM (MERMAID ERD)
+----------------------------------------------------------------------------------------------------
+```mermaid
+erDiagram
+    USER ||--o{ POST : "owns (via anonToken)"
+    USER ||--o{ COMMENT : "writes"
+    USER ||--o{ WITNESS_CONFIRMATION : "submits"
+    POST ||--o{ COMMENT : "contains"
+    POST ||--o{ POLL : "has"
+    POST ||--o| CAMPAIGN : "triggers"
+    POST ||--o{ WITNESS_CONFIRMATION : "receives"
+    CHATROOM ||--o{ MESSAGE : "contains"
+    POST ||--o| CHATROOM : "spawns strike room"
+    CONTACT ||--o{ POST : "automatically attached to"
+
+    USER {
+        string clerkId PK
+        string email
+        string displayName
+        string role
+        string district
+    }
+
+    POST {
+        ObjectId _id PK
+        string anonToken
+        string title
+        string description
+        Point location
+        string district
+        string category
+        string severity
+        string status
+        number intensityScore
+        boolean isDuplicate
+    }
+
+    CHATROOM {
+        ObjectId _id PK
+        string name
+        string type
+        string district
+        number intensityScore
+        number escalationLevel
+    }
+
+    CAMPAIGN {
+        ObjectId _id PK
+        ObjectId postId FK
+        date meetingDate
+        string meetingPoint
+        array volunteers
+    }
+
+    CONTACT {
+        ObjectId _id PK
+        string district
+        string department
+        string officerName
+        string phone
+        string email
+    }
+```
+
+----------------------------------------------------------------------------------------------------
+DIAGRAM 8: REALTIME WEBSOCKETS & CHAT LIFECYCLE (MERMAID SEQUENCE)
+----------------------------------------------------------------------------------------------------
+```mermaid
+sequenceDiagram
+    autonumber
+    actor CitizenA as Citizen A
+    participant WS as Socket.io Server
+    participant Room as ChatRoom DB
+    participant Msg as Message DB (TTL 3-Day)
+    actor CitizenB as Citizen B
+
+    CitizenA->>WS: socket.emit('room:join', { roomId })
+    WS->>Room: Verify Room Exists & Increment memberCount
+    WS-->>CitizenA: socket.emit('room:joined', { alias: "Citizen #4A12" })
+    WS-->>CitizenB: io.to(roomId).emit('room:user_joined')
+
+    CitizenA->>WS: socket.emit('message:send', { text: "Water supply disrupted here." })
+    WS->>WS: Filter Profanity & Censor Text
+    WS->>Msg: Save Message with expireAfterSeconds: 259200
+    WS-->>CitizenB: io.to(roomId).emit('message:new', { senderAlias: "Citizen #4A12", text })
+    WS-->>CitizenA: Ack Callback ({ ok: true })
+```
+
+----------------------------------------------------------------------------------------------------
+DIAGRAM 9: VOLUNTEER CAMPAIGN & SELF-FIX DRIVE WORKFLOW (MERMAID FLOWCHART)
+----------------------------------------------------------------------------------------------------
+```mermaid
+flowchart LR
+    A[Unresolved Issue > 7 Days] --> B[Citizen Clicks 'Organize Volunteer Drive']
+    B --> C[Set Meeting Point, Date, Time & Target Volunteers]
+    C --> D[Specify Needed Materials: Brooms, Trash Bags, Paint]
+    D --> E[Publish Campaign Drive]
+    E --> F[Community Members Join & Pledge Materials]
+    F --> G{Pledges Complete & Meeting Date Reached?}
+    G -- Yes --> H[Volunteers Execute Cleanup & Upload Resolution Photo]
+    H --> I[Issue Marked 'RESOLVED (Self-Fix)']
+    G -- No --> F
+```
+
+====================================================================================================
+                                       END OF DOCUMENTATION
+====================================================================================================
